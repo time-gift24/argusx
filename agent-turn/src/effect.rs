@@ -1,13 +1,14 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use agent_core::{
-    tools::{ToolCatalog, ToolExecutionContext, ToolExecutor},
+    tools::{ToolCatalog, ToolExecutionContext, ToolExecutor, ToolParallelMode},
     new_id, AgentError, LanguageModel, ModelOutputEvent, ModelRequest, RuntimeEvent, ToolCall,
     ToolResult, TranscriptItem,
 };
 use futures::StreamExt;
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::{mpsc, Mutex as AsyncMutex, Semaphore};
 
 #[derive(Debug, Clone)]
 pub enum Effect {
@@ -40,6 +41,7 @@ where
     tools: Arc<T>,
     tx: mpsc::UnboundedSender<RuntimeEvent>,
     semaphore: Arc<Semaphore>,
+    exclusive_tool_locks: Arc<StdMutex<HashMap<String, Arc<AsyncMutex<()>>>>>,
 }
 
 impl<L, T> EffectExecutor<L, T>
@@ -58,6 +60,7 @@ where
             tools,
             tx,
             semaphore: Arc::new(Semaphore::new(max_parallel_tools.max(1))),
+            exclusive_tool_locks: Arc::new(StdMutex::new(HashMap::new())),
         }
     }
 
@@ -160,10 +163,17 @@ where
         });
     }
 
-    fn spawn_tool_execution(&self, epoch: u64, session_id: String, turn_id: String, call: ToolCall) {
+    fn spawn_tool_execution(
+        &self,
+        epoch: u64,
+        session_id: String,
+        turn_id: String,
+        call: ToolCall,
+    ) {
         let tx = self.tx.clone();
         let tools = Arc::clone(&self.tools);
         let semaphore = Arc::clone(&self.semaphore);
+        let exclusive_tool_locks = Arc::clone(&self.exclusive_tool_locks);
 
         tokio::spawn(async move {
             let _ = tx.send(RuntimeEvent::ToolDispatched {
@@ -180,17 +190,33 @@ where
                 return;
             };
 
-            let result = tools
-                .execute_tool(
-                    call.clone(),
-                    ToolExecutionContext {
-                        session_id,
-                        turn_id,
-                        epoch,
-                        cwd: None,
-                    },
-                )
-                .await;
+            let ctx = ToolExecutionContext {
+                session_id,
+                turn_id,
+                epoch,
+                cwd: None,
+            };
+            let mode = tools
+                .tool_spec(&call.tool_name)
+                .await
+                .map(|spec| spec.execution_policy.parallel_mode)
+                .unwrap_or(ToolParallelMode::ParallelSafe);
+
+            let result = if matches!(mode, ToolParallelMode::Exclusive) {
+                let lock = {
+                    let mut locks = exclusive_tool_locks
+                        .lock()
+                        .expect("exclusive tool lock map poisoned");
+                    locks
+                        .entry(call.tool_name.clone())
+                        .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+                        .clone()
+                };
+                let _exclusive_guard = lock.lock().await;
+                tools.execute_tool(call.clone(), ctx).await
+            } else {
+                tools.execute_tool(call.clone(), ctx).await
+            };
             drop(permit);
 
             match result {
@@ -256,10 +282,12 @@ mod tests {
 
     use super::*;
     use async_trait::async_trait;
+    use agent_core::tools::{ToolExecutionPolicy, ToolParallelMode, ToolSpec};
 
     struct CountingTool {
         running: Arc<AtomicUsize>,
         max_seen: Arc<AtomicUsize>,
+        mode: ToolParallelMode,
     }
 
     #[async_trait]
@@ -294,12 +322,27 @@ mod tests {
 
     #[async_trait]
     impl ToolCatalog for CountingTool {
-        async fn list_tools(&self) -> Vec<agent_core::tools::ToolSpec> {
-            Vec::new()
+        async fn list_tools(&self) -> Vec<ToolSpec> {
+            vec![self.spec_for("tool")]
         }
 
-        async fn tool_spec(&self, _name: &str) -> Option<agent_core::tools::ToolSpec> {
-            None
+        async fn tool_spec(&self, name: &str) -> Option<ToolSpec> {
+            (name == "tool").then(|| self.spec_for(name))
+        }
+    }
+
+    impl CountingTool {
+        fn spec_for(&self, name: &str) -> ToolSpec {
+            ToolSpec {
+                name: name.to_string(),
+                description: "test tool".to_string(),
+                input_schema: serde_json::json!({"type": "object"}),
+                execution_policy: ToolExecutionPolicy {
+                    parallel_mode: self.mode.clone(),
+                    timeout_ms: None,
+                    retry: None,
+                },
+            }
         }
     }
 
@@ -331,9 +374,60 @@ mod tests {
             Arc::new(CountingTool {
                 running: Arc::clone(&running),
                 max_seen: Arc::clone(&max_seen),
+                mode: ToolParallelMode::ParallelSafe,
             }),
             tx,
             1,
+        );
+
+        let call1 = ToolCall::new("tool", serde_json::json!({"n": 1}));
+        let call2 = ToolCall::new("tool", serde_json::json!({"n": 2}));
+
+        exec.execute(Effect::ExecuteTool {
+            epoch: 0,
+            session_id: "s1".to_string(),
+            turn_id: "t1".to_string(),
+            call: call1,
+        })
+        .await;
+        exec.execute(Effect::ExecuteTool {
+            epoch: 0,
+            session_id: "s1".to_string(),
+            turn_id: "t1".to_string(),
+            call: call2,
+        })
+        .await;
+
+        let mut completed = 0;
+        while completed < 2 {
+            if let Some(ev) = rx.recv().await {
+                if matches!(
+                    ev,
+                    RuntimeEvent::ToolResultOk { .. } | RuntimeEvent::ToolResultErr { .. }
+                ) {
+                    completed += 1;
+                }
+            }
+        }
+
+        assert_eq!(max_seen.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn exclusive_tools_are_serialized_even_with_parallel_slots() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let running = Arc::new(AtomicUsize::new(0));
+        let max_seen = Arc::new(AtomicUsize::new(0));
+
+        let exec = EffectExecutor::new(
+            Arc::new(DummyModel),
+            Arc::new(CountingTool {
+                running: Arc::clone(&running),
+                max_seen: Arc::clone(&max_seen),
+                mode: ToolParallelMode::Exclusive,
+            }),
+            tx,
+            4,
         );
 
         let call1 = ToolCall::new("tool", serde_json::json!({"n": 1}));
