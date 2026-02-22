@@ -31,20 +31,53 @@ function getPageTitle(pathname: string): string {
   return page?.title || "PromptLab";
 }
 
-function isPromptLabSubPage(pathname: string): boolean {
-  return pathname.startsWith("/prompt-lab") && pathname !== "/prompt-lab";
+function isPromptLabPage(pathname: string): boolean {
+  return pathname.startsWith("/prompt-lab");
 }
 
 export function PromptLabBreadcrumb() {
   const pathname = usePathname();
 
-  if (!isPromptLabSubPage(pathname)) {
+  if (!isPromptLabPage(pathname)) {
     return null;
   }
 
   const currentTitle = getPageTitle(pathname);
+  const isDashboard = pathname === "/prompt-lab";
   const otherPages = promptLabPages.filter((p) => p.href !== pathname);
 
+  // On dashboard: 首页 > PromptLab
+  if (isDashboard) {
+    return (
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link href="/">首页</Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <DropdownMenu>
+              <DropdownMenuTrigger className="flex items-center gap-1 hover:text-foreground">
+                <span>PromptLab</span>
+                <ChevronDown className="h-3 w-3" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {otherPages.map((page) => (
+                  <DropdownMenuItem key={page.href} asChild>
+                    <Link href={page.href}>{page.title}</Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
+    );
+  }
+
+  // On sub-pages: 首页 > PromptLab > [Current Page]
   return (
     <Breadcrumb>
       <BreadcrumbList>
