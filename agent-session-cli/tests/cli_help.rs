@@ -9,6 +9,7 @@ fn help_shows_subcommands() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("--store-dir"));
     assert!(stdout.contains("create"));
     assert!(stdout.contains("list"));
     assert!(stdout.contains("run"));
