@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use agent_core::{
-    AgentError, InputEnvelope, InputPart, InputSource, LanguageModel, ModelEventStream,
+    new_id, AgentError, InputEnvelope, InputPart, InputSource, LanguageModel, ModelEventStream,
     ModelOutputEvent, ModelRequest, NoteLevel, ToolCall, TranscriptItem, TransientError, Usage,
 };
 use async_trait::async_trait;
@@ -92,15 +92,42 @@ fn emit_chunk(
     tx: &mpsc::UnboundedSender<Result<ModelOutputEvent, AgentError>>,
 ) {
     for choice in chunk.choices {
-        if let Some(delta) = choice.delta.reasoning_content {
-            if !delta.is_empty() {
-                let _ = tx.send(Ok(ModelOutputEvent::ReasoningDelta { delta }));
+        let delta = choice.delta;
+
+        if let Some(reasoning_delta) = delta.reasoning_content {
+            if !reasoning_delta.is_empty() {
+                let _ = tx.send(Ok(ModelOutputEvent::ReasoningDelta {
+                    delta: reasoning_delta,
+                }));
             }
         }
 
-        if let Some(delta) = choice.delta.content {
-            if !delta.is_empty() {
-                let _ = tx.send(Ok(ModelOutputEvent::TextDelta { delta }));
+        if let Some(tool_calls) = delta.tool_calls {
+            for tool_call in tool_calls {
+                let Some(function) = tool_call.function else {
+                    continue;
+                };
+                let Some(tool_name) = function.name else {
+                    continue;
+                };
+                let arguments = function
+                    .arguments
+                    .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+                    .unwrap_or_else(|| serde_json::json!({}));
+                let call = ToolCall {
+                    call_id: tool_call.id.unwrap_or_else(new_id),
+                    tool_name,
+                    arguments,
+                };
+                let _ = tx.send(Ok(ModelOutputEvent::ToolCall { call }));
+            }
+        }
+
+        if let Some(content_delta) = delta.content {
+            if !content_delta.is_empty() {
+                let _ = tx.send(Ok(ModelOutputEvent::TextDelta {
+                    delta: content_delta,
+                }));
             }
         }
     }
@@ -266,7 +293,7 @@ mod tests {
     use super::*;
     use agent_core::tools::ToolExecutionPolicy;
     use agent_core::{new_id, InputEnvelope, ToolResult};
-    use bigmodel_api::{ChoiceChunk, Delta};
+    use bigmodel_api::{ChoiceChunk, Delta, DeltaToolCall, DeltaToolFunction};
 
     #[test]
     fn convert_request_includes_system_prompt_and_streaming() {
@@ -339,6 +366,7 @@ mod tests {
                     role: Some("assistant".to_string()),
                     content: Some("hello".to_string()),
                     reasoning_content: Some("thinking".to_string()),
+                    tool_calls: None,
                 },
                 finish_reason: None,
             }],
@@ -363,6 +391,16 @@ mod tests {
                 delta: "hello".to_string()
             }
         );
+    }
+
+    #[test]
+    fn stream_chunk_emits_tool_call_event() {
+        let chunk = make_tool_call_chunk("c1", "shell", r#"{"command":"echo ok"}"#);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        emit_chunk(chunk, &tx);
+
+        let item = rx.try_recv().expect("event").expect("ok");
+        assert!(matches!(item, ModelOutputEvent::ToolCall { .. }));
     }
 
     #[test]
@@ -412,6 +450,33 @@ mod tests {
         match &message.content {
             Content::Text(text) => text,
             Content::Multimodal(_) => "",
+        }
+    }
+
+    fn make_tool_call_chunk(call_id: &str, name: &str, arguments: &str) -> ChatResponseChunk {
+        ChatResponseChunk {
+            id: "chunk-tool".to_string(),
+            created: 0,
+            model: "glm-test".to_string(),
+            choices: vec![ChoiceChunk {
+                index: 0,
+                delta: Delta {
+                    role: Some("assistant".to_string()),
+                    content: None,
+                    reasoning_content: None,
+                    tool_calls: Some(vec![DeltaToolCall {
+                        id: Some(call_id.to_string()),
+                        type_field: Some("function".to_string()),
+                        function: Some(DeltaToolFunction {
+                            name: Some(name.to_string()),
+                            arguments: Some(arguments.to_string()),
+                        }),
+                        index: Some(0),
+                    }]),
+                },
+                finish_reason: None,
+            }],
+            usage: None,
         }
     }
 }

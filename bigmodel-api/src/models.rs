@@ -191,6 +191,22 @@ pub struct Delta {
     pub role: Option<String>,
     pub content: Option<String>,
     pub reasoning_content: Option<String>,
+    pub tool_calls: Option<Vec<DeltaToolCall>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeltaToolCall {
+    pub id: Option<String>,
+    #[serde(rename = "type")]
+    pub type_field: Option<String>,
+    pub function: Option<DeltaToolFunction>,
+    pub index: Option<i32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeltaToolFunction {
+    pub name: Option<String>,
+    pub arguments: Option<String>,
 }
 
 // Builder methods
