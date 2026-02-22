@@ -3,6 +3,7 @@ pub mod events;
 pub mod model;
 pub mod runtime_event;
 pub mod session;
+pub mod tools;
 pub mod traits;
 pub mod transcript_item;
 
