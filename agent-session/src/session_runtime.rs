@@ -21,7 +21,7 @@ use crate::storage::{FileSessionStore, FileTurnCheckpointStore, SessionFilter, S
 pub struct SessionRuntime<L, T>
 where
     L: agent_core::LanguageModel + Send + Sync + 'static,
-    T: agent_core::tools::ToolExecutor + Send + Sync + 'static,
+    T: agent_core::tools::ToolExecutor + agent_core::tools::ToolCatalog + Send + Sync + 'static,
 {
     store: Arc<FileSessionStore>,
     checkpoint_store: Arc<FileTurnCheckpointStore>,
@@ -52,7 +52,7 @@ impl Default for SessionConfig {
 impl<L, T> SessionRuntime<L, T>
 where
     L: agent_core::LanguageModel + Send + Sync + 'static,
-    T: agent_core::tools::ToolExecutor + Send + Sync + 'static,
+    T: agent_core::tools::ToolExecutor + agent_core::tools::ToolCatalog + Send + Sync + 'static,
 {
     pub fn new(base_path: PathBuf, model: Arc<L>, tools: Arc<T>) -> Self {
         Self::with_config(base_path, model, tools, SessionConfig::default())
@@ -361,7 +361,7 @@ where
 impl<L, T> Runtime for SessionRuntime<L, T>
 where
     L: agent_core::LanguageModel + Send + Sync + 'static,
-    T: agent_core::tools::ToolExecutor + Send + Sync + 'static,
+    T: agent_core::tools::ToolExecutor + agent_core::tools::ToolCatalog + Send + Sync + 'static,
 {
     async fn run_turn(&self, request: TurnRequest) -> Result<RuntimeStreams, AgentError> {
         let session_id = request.meta.session_id.clone();
@@ -549,6 +549,17 @@ mod tests {
                 call.call_id,
                 serde_json::json!({"result": "ok"}),
             ))
+        }
+    }
+
+    #[async_trait]
+    impl agent_core::tools::ToolCatalog for MockTools {
+        async fn list_tools(&self) -> Vec<agent_core::tools::ToolSpec> {
+            Vec::new()
+        }
+
+        async fn tool_spec(&self, _name: &str) -> Option<agent_core::tools::ToolSpec> {
+            None
         }
     }
 

@@ -10,7 +10,7 @@ use crate::state::{Lifecycle, TurnEngineConfig, TurnState};
 pub struct TurnEngine<L, T>
 where
     L: agent_core::LanguageModel + 'static,
-    T: agent_core::tools::ToolExecutor + 'static,
+    T: agent_core::tools::ToolExecutor + agent_core::tools::ToolCatalog + 'static,
 {
     pub config: TurnEngineConfig,
     pub state: TurnState,
@@ -24,7 +24,7 @@ where
 impl<L, T> TurnEngine<L, T>
 where
     L: agent_core::LanguageModel + 'static,
-    T: agent_core::tools::ToolExecutor + 'static,
+    T: agent_core::tools::ToolExecutor + agent_core::tools::ToolCatalog + 'static,
 {
     pub async fn run(mut self) -> TurnState {
         while let Some(event) = self.event_rx.recv().await {

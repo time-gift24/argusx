@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use agent_core::tools::{ToolExecutionContext, ToolExecutionError, ToolExecutionErrorKind, ToolExecutor};
+use agent_core::tools::{
+    ToolCatalog, ToolExecutionContext, ToolExecutionError, ToolExecutionErrorKind, ToolExecutor,
+};
 use agent_core::{AgentError, LanguageModel, ModelEventStream, ModelRequest, ToolCall, ToolResult};
 use agent_turn::{TurnEngineConfig, TurnRuntime};
 use async_trait::async_trait;
@@ -29,6 +31,17 @@ impl ToolExecutor for DummyTools {
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolExecutionError> {
         Ok(ToolResult::ok(call.call_id, serde_json::json!({"ok": true})))
+    }
+}
+
+#[async_trait]
+impl ToolCatalog for DummyTools {
+    async fn list_tools(&self) -> Vec<agent_core::tools::ToolSpec> {
+        Vec::new()
+    }
+
+    async fn tool_spec(&self, _name: &str) -> Option<agent_core::tools::ToolSpec> {
+        None
     }
 }
 

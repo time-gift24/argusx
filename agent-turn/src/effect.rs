@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use agent_core::{
-    tools::{ToolExecutionContext, ToolExecutor},
+    tools::{ToolCatalog, ToolExecutionContext, ToolExecutor},
     new_id, AgentError, LanguageModel, ModelOutputEvent, ModelRequest, RuntimeEvent, ToolCall,
     ToolResult, TranscriptItem,
 };
@@ -34,7 +34,7 @@ pub enum Effect {
 pub struct EffectExecutor<L, T>
 where
     L: LanguageModel + 'static,
-    T: ToolExecutor + 'static,
+    T: ToolExecutor + ToolCatalog + 'static,
 {
     model: Arc<L>,
     tools: Arc<T>,
@@ -45,7 +45,7 @@ where
 impl<L, T> EffectExecutor<L, T>
 where
     L: LanguageModel + 'static,
-    T: ToolExecutor + 'static,
+    T: ToolExecutor + ToolCatalog + 'static,
 {
     pub fn new(
         model: Arc<L>,
@@ -95,14 +95,16 @@ where
         inputs: Vec<agent_core::InputEnvelope>,
     ) {
         let model = Arc::clone(&self.model);
+        let tools = Arc::clone(&self.tools);
         let tx = self.tx.clone();
 
         tokio::spawn(async move {
+            let tool_specs = tools.list_tools().await;
             let request = ModelRequest {
                 epoch,
                 transcript,
                 inputs,
-                tools: Vec::new(),
+                tools: tool_specs,
             };
             let mut saw_completed = false;
             match model.stream(request).await {
@@ -287,6 +289,17 @@ mod tests {
                 _call.call_id,
                 serde_json::json!({"ok": true}),
             ))
+        }
+    }
+
+    #[async_trait]
+    impl ToolCatalog for CountingTool {
+        async fn list_tools(&self) -> Vec<agent_core::tools::ToolSpec> {
+            Vec::new()
+        }
+
+        async fn tool_spec(&self, _name: &str) -> Option<agent_core::tools::ToolSpec> {
+            None
         }
     }
 

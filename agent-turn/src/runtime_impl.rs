@@ -22,7 +22,7 @@ struct TurnControl {
 pub struct TurnRuntime<L, T>
 where
     L: agent_core::LanguageModel + 'static,
-    T: agent_core::tools::ToolExecutor + 'static,
+    T: agent_core::tools::ToolExecutor + agent_core::tools::ToolCatalog + 'static,
 {
     model: Arc<L>,
     tools: Arc<T>,
@@ -34,7 +34,7 @@ where
 impl<L, T> TurnRuntime<L, T>
 where
     L: agent_core::LanguageModel + 'static,
-    T: agent_core::tools::ToolExecutor + 'static,
+    T: agent_core::tools::ToolExecutor + agent_core::tools::ToolCatalog + 'static,
 {
     pub fn new(model: Arc<L>, tools: Arc<T>, config: TurnEngineConfig) -> Self {
         Self {
@@ -56,7 +56,7 @@ where
 impl<L, T> Runtime for TurnRuntime<L, T>
 where
     L: agent_core::LanguageModel + 'static,
-    T: agent_core::tools::ToolExecutor + 'static,
+    T: agent_core::tools::ToolExecutor + agent_core::tools::ToolCatalog + 'static,
 {
     async fn run_turn(&self, request: TurnRequest) -> Result<RuntimeStreams, AgentError> {
         let TurnRequest {
