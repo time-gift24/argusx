@@ -4,6 +4,7 @@ pub mod context;
 pub mod trait_def;
 pub mod registry;
 pub mod builtin;
+pub mod mcp;
 
 pub use error::ToolError;
 pub use spec::ToolSpec;
