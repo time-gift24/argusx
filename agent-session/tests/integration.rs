@@ -1,5 +1,5 @@
-use agent_session::{SessionRuntime, SessionFilter};
-use agent_core::{InputEnvelope, ModelRequest, SessionMeta, TurnRequest};
+use agent_core::ModelRequest;
+use agent_session::{SessionFilter, SessionRuntime};
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -46,7 +46,10 @@ async fn test_full_session_lifecycle() {
     assert!(!session_id.is_empty());
 
     // List sessions
-    let sessions = runtime.list_sessions(SessionFilter::default()).await.unwrap();
+    let sessions = runtime
+        .list_sessions(SessionFilter::default())
+        .await
+        .unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].session_id, session_id);
 
@@ -58,7 +61,10 @@ async fn test_full_session_lifecycle() {
     // Delete session
     runtime.delete_session(&session_id).await.unwrap();
 
-    let sessions = runtime.list_sessions(SessionFilter::default()).await.unwrap();
+    let sessions = runtime
+        .list_sessions(SessionFilter::default())
+        .await
+        .unwrap();
     assert_eq!(sessions.len(), 0);
 }
 

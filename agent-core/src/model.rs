@@ -141,4 +141,16 @@ pub struct ModelRequest {
 pub struct TurnRequest {
     pub meta: SessionMeta,
     pub initial_input: InputEnvelope,
+    #[serde(default)]
+    pub transcript: Vec<TranscriptItem>,
+}
+
+impl TurnRequest {
+    pub fn new(meta: SessionMeta, initial_input: InputEnvelope) -> Self {
+        Self {
+            meta,
+            initial_input,
+            transcript: Vec::new(),
+        }
+    }
 }

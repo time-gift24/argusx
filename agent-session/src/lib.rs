@@ -1,5 +1,5 @@
-pub mod storage;
 pub mod session_runtime;
+pub mod storage;
 
-pub use storage::{FileSessionStore, SessionFilter, SessionStore};
 pub use session_runtime::SessionRuntime;
+pub use storage::{FileSessionStore, FileTurnCheckpointStore, SessionFilter, SessionStore};

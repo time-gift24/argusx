@@ -158,7 +158,7 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
 
             if inputs.is_empty() {
                 let message = "retry fired but no input available".to_string();
-                fail_turn(&mut tr, message);
+                fail_turn(&mut tr, message, false);
                 return tr;
             }
 
@@ -208,15 +208,15 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
                     next_epoch,
                 });
             } else {
-                fail_turn(&mut tr, message);
+                fail_turn(&mut tr, message, false);
             }
         }
         RuntimeEvent::FatalError { message, .. } => {
-            fail_turn(&mut tr, message);
+            fail_turn(&mut tr, message, false);
         }
         RuntimeEvent::CancelRequested { reason, .. } => {
             let message = reason.unwrap_or_else(|| "turn cancelled".to_string());
-            fail_turn(&mut tr, message);
+            fail_turn(&mut tr, message, true);
             tr.add_effect(Effect::CancelInflightTools);
         }
     }
@@ -328,6 +328,7 @@ fn maybe_finalize(tr: &mut Transition) {
 
     tr.add_run_event(RunStreamEvent::TurnDone {
         turn_id: tr.state.meta.turn_id.clone(),
+        epoch: tr.state.epoch,
         final_message: final_message.clone(),
         usage: tr.state.usage.clone(),
         stats: stats.clone(),
@@ -342,16 +343,25 @@ fn maybe_finalize(tr: &mut Transition) {
     tr.add_effect(Effect::PersistCheckpoint);
 }
 
-fn fail_turn(tr: &mut Transition, message: String) {
+fn fail_turn(tr: &mut Transition, message: String, cancelled: bool) {
     tr.state.lifecycle = Lifecycle::Failed;
     tr.state.model_state = ModelState::Error;
+    let stats = TurnStats {
+        tool_calls_count: tr.state.tool_calls_count(),
+        total_input_tokens: tr.state.usage.input_tokens,
+        total_output_tokens: tr.state.usage.output_tokens,
+    };
     tr.add_item(TranscriptItem::system_note(
         agent_core::NoteLevel::Error,
         message.clone(),
     ));
     tr.add_run_event(RunStreamEvent::TurnFailed {
         turn_id: tr.state.meta.turn_id.clone(),
+        epoch: tr.state.epoch,
         message: message.clone(),
+        usage: tr.state.usage.clone(),
+        stats,
+        cancelled,
     });
     tr.add_ui_event(UiThreadEvent::Error {
         turn_id: tr.state.meta.turn_id.clone(),
@@ -777,7 +787,7 @@ mod single_event_tests {
 
         assert!(result.state.inflight_tools.contains_key("c1"));
 
-        assert!(result.state.transcript.len() >= 1);
+        assert!(!result.state.transcript.is_empty());
 
         assert!(result
             .run_events
@@ -968,7 +978,7 @@ mod single_event_tests {
 
         assert_eq!(result.state.pending_inputs.len(), 1);
 
-        assert!(result.state.transcript.len() >= 1);
+        assert!(!result.state.transcript.is_empty());
 
         assert!(result
             .run_events
