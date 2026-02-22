@@ -1,3 +1,5 @@
+mod mock;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
