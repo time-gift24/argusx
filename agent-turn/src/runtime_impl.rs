@@ -59,7 +59,13 @@ where
     T: ToolExecutor + 'static,
 {
     async fn run_turn(&self, request: TurnRequest) -> Result<RuntimeStreams, AgentError> {
-        let turn_id = request.meta.turn_id.clone();
+        let TurnRequest {
+            meta,
+            initial_input,
+            transcript,
+        } = request;
+
+        let turn_id = meta.turn_id.clone();
         {
             let turns = self.turns.read().await;
             if turns.contains_key(&turn_id) {
@@ -71,7 +77,8 @@ where
         let (run_tx, run_rx) = mpsc::unbounded_channel();
         let (ui_tx, ui_rx) = mpsc::unbounded_channel();
 
-        let state = TurnState::new(request.meta.clone());
+        let mut state = TurnState::new(meta.clone());
+        state.transcript = transcript;
         let journal = TranscriptJournal::default();
 
         let effect_executor = EffectExecutor::new(
@@ -116,8 +123,8 @@ where
         if event_tx
             .send(RuntimeEvent::TurnStarted {
                 event_id: new_id(),
-                turn_id: request.meta.turn_id,
-                input: request.initial_input,
+                turn_id: meta.turn_id,
+                input: initial_input,
             })
             .is_err()
         {

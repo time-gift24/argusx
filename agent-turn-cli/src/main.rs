@@ -124,6 +124,7 @@ async fn main() -> Result<()> {
             cli.turn_id.unwrap_or_else(new_id),
         ),
         initial_input: InputEnvelope::user_text(prompt),
+        transcript: Vec::new(),
     };
 
     let streams = runtime.run_turn(request).await?;

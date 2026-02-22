@@ -67,13 +67,18 @@ pub enum RunStreamEvent {
     },
     TurnDone {
         turn_id: Id,
+        epoch: u64,
         final_message: Option<String>,
         usage: Usage,
         stats: TurnStats,
     },
     TurnFailed {
         turn_id: Id,
+        epoch: u64,
         message: String,
+        usage: Usage,
+        stats: TurnStats,
+        cancelled: bool,
     },
 }
 

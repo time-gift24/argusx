@@ -534,7 +534,7 @@ impl EventBuilder {
     }
 
     /// Sets the event ID (defaults to auto-generated)
-    pub fn with_event_id(mut self, event_id: impl Into<String>) -> Self {
+    pub fn with_event_id(self, _event_id: impl Into<String>) -> Self {
         // Note: We handle this in build() method
         self
     }
@@ -683,7 +683,7 @@ impl<'a> TransitionAssert<'a> {
     }
 
     /// Asserts lifecycle equals expected value
-    pub fn has_lifecycle(mut self, expected: Lifecycle) -> Self {
+    pub fn has_lifecycle(self, expected: Lifecycle) -> Self {
         assert_eq!(
             self.transition.state.lifecycle, expected,
             "Expected lifecycle {:?}, got {:?}",
@@ -693,7 +693,7 @@ impl<'a> TransitionAssert<'a> {
     }
 
     /// Asserts model_state equals expected value
-    pub fn has_model_state(mut self, expected: ModelState) -> Self {
+    pub fn has_model_state(self, expected: ModelState) -> Self {
         assert_eq!(
             self.transition.state.model_state, expected,
             "Expected model_state {:?}, got {:?}",
@@ -703,7 +703,7 @@ impl<'a> TransitionAssert<'a> {
     }
 
     /// Asserts epoch equals expected value
-    pub fn has_epoch(mut self, expected: u64) -> Self {
+    pub fn has_epoch(self, expected: u64) -> Self {
         assert_eq!(
             self.transition.state.epoch, expected,
             "Expected epoch {}, got {}",
@@ -713,7 +713,7 @@ impl<'a> TransitionAssert<'a> {
     }
 
     /// Asserts output_buffer equals expected value
-    pub fn has_output_buffer(mut self, expected: &str) -> Self {
+    pub fn has_output_buffer(self, expected: &str) -> Self {
         assert_eq!(
             self.transition.state.output_buffer, expected,
             "Expected output_buffer \"{}\", got \"{}\"",
@@ -723,7 +723,7 @@ impl<'a> TransitionAssert<'a> {
     }
 
     /// Asserts output_buffer contains expected substring
-    pub fn output_buffer_contains(mut self, expected: &str) -> Self {
+    pub fn output_buffer_contains(self, expected: &str) -> Self {
         assert!(
             self.transition.state.output_buffer.contains(expected),
             "Expected output_buffer to contain \"{}\", got \"{}\"",
@@ -734,7 +734,7 @@ impl<'a> TransitionAssert<'a> {
     }
 
     /// Asserts there are no inflight tools
-    pub fn has_no_inflight_tools(mut self) -> Self {
+    pub fn has_no_inflight_tools(self) -> Self {
         assert!(
             self.transition.state.inflight_tools.is_empty(),
             "Expected no inflight tools, got {:?}",
@@ -748,7 +748,7 @@ impl<'a> TransitionAssert<'a> {
     }
 
     /// Asserts inflight_tools contains expected call_id
-    pub fn has_inflight_tool(mut self, call_id: &str) -> Self {
+    pub fn has_inflight_tool(self, call_id: &str) -> Self {
         assert!(
             self.transition.state.inflight_tools.contains_key(call_id),
             "Expected inflight_tools to contain {}, got {:?}",
@@ -763,7 +763,7 @@ impl<'a> TransitionAssert<'a> {
     }
 
     /// Asserts there are no pending inputs
-    pub fn has_no_pending_inputs(mut self) -> Self {
+    pub fn has_no_pending_inputs(self) -> Self {
         assert!(
             self.transition.state.pending_inputs.is_empty(),
             "Expected no pending inputs, got {}",
@@ -773,7 +773,7 @@ impl<'a> TransitionAssert<'a> {
     }
 
     /// Asserts pending_inputs has expected count
-    pub fn has_pending_inputs_count(mut self, expected: usize) -> Self {
+    pub fn has_pending_inputs_count(self, expected: usize) -> Self {
         assert_eq!(
             self.transition.state.pending_inputs.len(),
             expected,
@@ -785,7 +785,7 @@ impl<'a> TransitionAssert<'a> {
     }
 
     /// Asserts done_emitted equals expected value
-    pub fn has_done_emitted(mut self, expected: bool) -> Self {
+    pub fn has_done_emitted(self, expected: bool) -> Self {
         assert_eq!(
             self.transition.state.done_emitted, expected,
             "Expected done_emitted {}, got {}",
@@ -795,7 +795,7 @@ impl<'a> TransitionAssert<'a> {
     }
 
     /// Asserts retry_attempt equals expected value
-    pub fn has_retry_attempt(mut self, expected: u32) -> Self {
+    pub fn has_retry_attempt(self, expected: u32) -> Self {
         assert_eq!(
             self.transition.state.retry_attempt, expected,
             "Expected retry_attempt {}, got {}",
@@ -805,7 +805,7 @@ impl<'a> TransitionAssert<'a> {
     }
 
     /// Asserts transcript has expected number of items
-    pub fn has_transcript_count(mut self, expected: usize) -> Self {
+    pub fn has_transcript_count(self, expected: usize) -> Self {
         assert_eq!(
             self.transition.state.transcript.len(),
             expected,
@@ -853,7 +853,7 @@ impl<'a> TransitionAssert<'a> {
 
     /// Asserts run_events contains a specific RunStreamEvent variant
     #[allow(dead_code)]
-    pub fn emits_run_event_matching(mut self, f: impl Fn(&RunStreamEvent) -> bool) -> Self {
+    pub fn emits_run_event_matching(self, f: impl Fn(&RunStreamEvent) -> bool) -> Self {
         let has_event = self.transition.run_events.iter().any(f);
 
         assert!(has_event, "Expected run_events to match predicate");
