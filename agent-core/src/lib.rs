@@ -2,6 +2,7 @@ pub mod error;
 pub mod events;
 pub mod model;
 pub mod runtime_event;
+pub mod session;
 pub mod traits;
 pub mod transcript_item;
 
@@ -15,6 +16,9 @@ pub use runtime_event::RuntimeEvent;
 pub use traits::{
     CheckpointStore, LanguageModel, ModelEventStream, RunEventStream, Runtime, RuntimeStreams,
     UiEventStream,
+};
+pub use session::{
+    SessionId, SessionInfo, SessionStatus, TurnContext, TurnId, TurnStatus, TurnSummary,
 };
 pub use transcript_item::{NoteLevel, TranscriptItem};
 
