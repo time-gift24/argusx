@@ -22,13 +22,27 @@ impl agent_core::LanguageModel for MockModel {
 }
 
 #[async_trait]
-impl agent_turn::effect::ToolExecutor for MockTools {
+impl agent_core::tools::ToolExecutor for MockTools {
     async fn execute_tool(
         &self,
-        _call: agent_core::ToolCall,
-        _epoch: u64,
-    ) -> Result<serde_json::Value, String> {
-        Ok(serde_json::json!({"result": "ok"}))
+        call: agent_core::ToolCall,
+        _ctx: agent_core::tools::ToolExecutionContext,
+    ) -> Result<agent_core::ToolResult, agent_core::tools::ToolExecutionError> {
+        Ok(agent_core::ToolResult::ok(
+            call.call_id,
+            serde_json::json!({"result": "ok"}),
+        ))
+    }
+}
+
+#[async_trait]
+impl agent_core::tools::ToolCatalog for MockTools {
+    async fn list_tools(&self) -> Vec<agent_core::tools::ToolSpec> {
+        Vec::new()
+    }
+
+    async fn tool_spec(&self, _name: &str) -> Option<agent_core::tools::ToolSpec> {
+        None
     }
 }
 
