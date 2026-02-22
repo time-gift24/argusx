@@ -85,7 +85,12 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
                 call_id,
                 tool_name: call.tool_name.clone(),
             });
-            tr.add_effect(Effect::ExecuteTool { epoch, call });
+            tr.add_effect(Effect::ExecuteTool {
+                epoch,
+                session_id: tr.state.meta.session_id.clone(),
+                turn_id: tr.state.meta.turn_id.clone(),
+                call,
+            });
         }
         RuntimeEvent::ToolDispatched { epoch, call_id, .. } => {
             if !is_active_epoch(&tr.state, epoch) {

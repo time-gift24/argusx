@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use tokio::sync::{mpsc, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::effect::{EffectExecutor, ToolExecutor};
+use crate::effect::EffectExecutor;
 use crate::engine::TurnEngine;
 use crate::journal::TranscriptJournal;
 use crate::state::{TurnEngineConfig, TurnState};
@@ -22,7 +22,7 @@ struct TurnControl {
 pub struct TurnRuntime<L, T>
 where
     L: agent_core::LanguageModel + 'static,
-    T: ToolExecutor + 'static,
+    T: agent_core::tools::ToolExecutor + 'static,
 {
     model: Arc<L>,
     tools: Arc<T>,
@@ -34,7 +34,7 @@ where
 impl<L, T> TurnRuntime<L, T>
 where
     L: agent_core::LanguageModel + 'static,
-    T: ToolExecutor + 'static,
+    T: agent_core::tools::ToolExecutor + 'static,
 {
     pub fn new(model: Arc<L>, tools: Arc<T>, config: TurnEngineConfig) -> Self {
         Self {
@@ -56,7 +56,7 @@ where
 impl<L, T> Runtime for TurnRuntime<L, T>
 where
     L: agent_core::LanguageModel + 'static,
-    T: ToolExecutor + 'static,
+    T: agent_core::tools::ToolExecutor + 'static,
 {
     async fn run_turn(&self, request: TurnRequest) -> Result<RuntimeStreams, AgentError> {
         let TurnRequest {

@@ -1,7 +1,7 @@
 use agent_core::{RunStreamEvent, RuntimeEvent, UiThreadEvent};
 use tokio::sync::mpsc;
 
-use crate::effect::{EffectExecutor, ToolExecutor};
+use crate::effect::EffectExecutor;
 use crate::journal::TranscriptJournal;
 use crate::projection::{emit_run_events, emit_ui_events};
 use crate::reducer::reduce;
@@ -10,7 +10,7 @@ use crate::state::{Lifecycle, TurnEngineConfig, TurnState};
 pub struct TurnEngine<L, T>
 where
     L: agent_core::LanguageModel + 'static,
-    T: ToolExecutor + 'static,
+    T: agent_core::tools::ToolExecutor + 'static,
 {
     pub config: TurnEngineConfig,
     pub state: TurnState,
@@ -24,7 +24,7 @@ where
 impl<L, T> TurnEngine<L, T>
 where
     L: agent_core::LanguageModel + 'static,
-    T: ToolExecutor + 'static,
+    T: agent_core::tools::ToolExecutor + 'static,
 {
     pub async fn run(mut self) -> TurnState {
         while let Some(event) = self.event_rx.recv().await {

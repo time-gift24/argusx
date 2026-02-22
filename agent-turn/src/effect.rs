@@ -2,10 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use agent_core::{
+    tools::{ToolExecutionContext, ToolExecutor},
     new_id, AgentError, LanguageModel, ModelOutputEvent, ModelRequest, RuntimeEvent, ToolCall,
     ToolResult, TranscriptItem,
 };
-use async_trait::async_trait;
 use futures::StreamExt;
 use tokio::sync::{mpsc, Semaphore};
 
@@ -18,6 +18,8 @@ pub enum Effect {
     },
     ExecuteTool {
         epoch: u64,
+        session_id: String,
+        turn_id: String,
         call: ToolCall,
     },
     ScheduleRetry {
@@ -26,11 +28,6 @@ pub enum Effect {
     },
     PersistCheckpoint,
     CancelInflightTools,
-}
-
-#[async_trait]
-pub trait ToolExecutor: Send + Sync {
-    async fn execute_tool(&self, call: ToolCall, epoch: u64) -> Result<serde_json::Value, String>;
 }
 
 #[derive(Clone)]
@@ -73,8 +70,13 @@ where
             } => {
                 self.spawn_model_stream(epoch, transcript, inputs);
             }
-            Effect::ExecuteTool { epoch, call } => {
-                self.spawn_tool_execution(epoch, call);
+            Effect::ExecuteTool {
+                epoch,
+                session_id,
+                turn_id,
+                call,
+            } => {
+                self.spawn_tool_execution(epoch, session_id, turn_id, call);
             }
             Effect::ScheduleRetry {
                 delay_ms,
@@ -100,6 +102,7 @@ where
                 epoch,
                 transcript,
                 inputs,
+                tools: Vec::new(),
             };
             let mut saw_completed = false;
             match model.stream(request).await {
@@ -155,7 +158,7 @@ where
         });
     }
 
-    fn spawn_tool_execution(&self, epoch: u64, call: ToolCall) {
+    fn spawn_tool_execution(&self, epoch: u64, session_id: String, turn_id: String, call: ToolCall) {
         let tx = self.tx.clone();
         let tools = Arc::clone(&self.tools);
         let semaphore = Arc::clone(&self.semaphore);
@@ -175,22 +178,43 @@ where
                 return;
             };
 
-            let result = tools.execute_tool(call.clone(), epoch).await;
+            let result = tools
+                .execute_tool(
+                    call.clone(),
+                    ToolExecutionContext {
+                        session_id,
+                        turn_id,
+                        epoch,
+                        cwd: None,
+                    },
+                )
+                .await;
             drop(permit);
 
             match result {
-                Ok(output) => {
-                    let _ = tx.send(RuntimeEvent::ToolResultOk {
-                        event_id: new_id(),
-                        epoch,
-                        result: ToolResult::ok(call.call_id, output),
+                Ok(mut result) => {
+                    if result.call_id != call.call_id {
+                        result.call_id = call.call_id.clone();
+                    }
+                    let _ = tx.send(if result.is_error {
+                        RuntimeEvent::ToolResultErr {
+                            event_id: new_id(),
+                            epoch,
+                            result,
+                        }
+                    } else {
+                        RuntimeEvent::ToolResultOk {
+                            event_id: new_id(),
+                            epoch,
+                            result,
+                        }
                     });
                 }
                 Err(err) => {
                     let _ = tx.send(RuntimeEvent::ToolResultErr {
                         event_id: new_id(),
                         epoch,
-                        result: ToolResult::err(call.call_id, err),
+                        result: ToolResult::err(call.call_id, err.message),
                     });
                 }
             }
@@ -229,6 +253,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
+    use async_trait::async_trait;
 
     struct CountingTool {
         running: Arc<AtomicUsize>,
@@ -240,8 +265,8 @@ mod tests {
         async fn execute_tool(
             &self,
             _call: ToolCall,
-            _epoch: u64,
-        ) -> Result<serde_json::Value, String> {
+            _ctx: ToolExecutionContext,
+        ) -> Result<ToolResult, agent_core::tools::ToolExecutionError> {
             let now = self.running.fetch_add(1, Ordering::SeqCst) + 1;
             loop {
                 let old = self.max_seen.load(Ordering::SeqCst);
@@ -258,7 +283,10 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
             self.running.fetch_sub(1, Ordering::SeqCst);
-            Ok(serde_json::json!({"ok": true}))
+            Ok(ToolResult::ok(
+                _call.call_id,
+                serde_json::json!({"ok": true}),
+            ))
         }
     }
 
@@ -300,11 +328,15 @@ mod tests {
 
         exec.execute(Effect::ExecuteTool {
             epoch: 0,
+            session_id: "s1".to_string(),
+            turn_id: "t1".to_string(),
             call: call1,
         })
         .await;
         exec.execute(Effect::ExecuteTool {
             epoch: 0,
+            session_id: "s1".to_string(),
+            turn_id: "t1".to_string(),
             call: call2,
         })
         .await;
