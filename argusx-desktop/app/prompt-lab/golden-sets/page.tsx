@@ -10,7 +10,7 @@ import {
   unbindGoldenSetItem,
   type GoldenSetItem,
 } from "@/lib/api/prompt-lab";
-import { PromptLabBreadcrumb } from "@/components/layouts/prompt-lab-breadcrumb";
+
 // Mock golden set display
 const goldenSets = [
   { id: 1, name: "Default Set", itemCount: 2 },
@@ -40,7 +40,6 @@ export default function GoldenSetsPage() {
 
   return (
     <div className="space-y-4">
-      <PromptLabBreadcrumb />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Golden Sets</h1>
         <Button>

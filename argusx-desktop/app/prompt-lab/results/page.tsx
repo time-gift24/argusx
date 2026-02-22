@@ -5,7 +5,6 @@ import { CheckCircle, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { listCheckResults, type CheckResult } from "@/lib/api/prompt-lab";
-import { PromptLabBreadcrumb } from "@/components/layouts/prompt-lab-breadcrumb";
 
 export default function ResultsPage() {
   const [results, setResults] = useState<CheckResult[]>([]);
@@ -24,7 +23,6 @@ export default function ResultsPage() {
 
   return (
     <div className="space-y-4">
-      <PromptLabBreadcrumb />
       <h1 className="text-2xl font-bold">Check Results</h1>
 
       <div className="grid gap-4">
