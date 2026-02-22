@@ -11,3 +11,4 @@ pub use spec::ToolSpec;
 pub use context::{ToolContext, ToolResult};
 pub use trait_def::Tool;
 pub use registry::ToolRegistry;
+pub use builtin::{ReadFileTool, ShellTool};
