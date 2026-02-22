@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { listAiExecutionLogs, type AiExecutionLog } from "@/lib/api/prompt-lab";
+import { PromptLabBreadcrumb } from "@/components/layouts/prompt-lab-breadcrumb";
 
 export default function LogsPage() {
   const [logs, setLogs] = useState<AiExecutionLog[]>([]);
@@ -36,6 +37,7 @@ export default function LogsPage() {
 
   return (
     <div className="space-y-4">
+      <PromptLabBreadcrumb />
       <h1 className="text-2xl font-bold">Execution Logs</h1>
 
       <div className="grid gap-4">

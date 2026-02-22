@@ -8,6 +8,7 @@ import {
   listGoldenSetItems,
   listCheckResults,
 } from "@/lib/api/prompt-lab";
+import { PromptLabBreadcrumb } from "@/components/layouts/prompt-lab-breadcrumb";
 export default function PromptLabDashboard() {
   const [stats, setStats] = useState({
     checklistItems: 0,
@@ -46,6 +47,7 @@ export default function PromptLabDashboard() {
 
   return (
     <div className="space-y-6">
+      <PromptLabBreadcrumb />
       <h1 className="text-2xl font-bold">PromptLab Dashboard</h1>
       <div className="grid gap-4 md:grid-cols-4">
         {statCards.map((stat) => (

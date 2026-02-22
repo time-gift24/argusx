@@ -15,6 +15,7 @@ import {
   type ChecklistItem,
   type CreateChecklistItemInput,
 } from "@/lib/api/prompt-lab";
+import { PromptLabBreadcrumb } from "@/components/layouts/prompt-lab-breadcrumb";
 
 export default function ChecklistPage() {
   const [items, setItems] = useState<ChecklistItem[]>([]);
@@ -68,6 +69,7 @@ export default function ChecklistPage() {
 
   return (
     <div className="space-y-4">
+      <PromptLabBreadcrumb />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Checklist Items</h1>
         {!isCreating && (
