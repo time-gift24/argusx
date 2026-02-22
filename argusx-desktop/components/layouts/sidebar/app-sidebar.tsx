@@ -67,7 +67,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <SidebarMenu>
                     {navPromptLab.map((item) => (
                       <SidebarMenuItem key={item.title}>
-                        <SidebarMenuButton asChild isActive={pathname === item.url}>
+                        <SidebarMenuButton asChild isActive={pathname === item.url} className="pl-6">
                           <Link href={item.url}>
                             <span>{item.title}</span>
                           </Link>
