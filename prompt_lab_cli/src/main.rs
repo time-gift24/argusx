@@ -9,7 +9,7 @@ use prompt_lab_core::{
 use serde_json::Value;
 use std::path::PathBuf;
 
-const DEFAULT_DB_PATH: &str = "/Users/wanyaozhong/projects/argusx/argusx-b/prompt_lab/dev.db";
+const DEFAULT_DB_PATH: &str = "/Users/wanyaozhong/projects/argusx/argusx/prompt_lab/dev.db";
 
 #[derive(Parser, Debug)]
 #[command(name = "prompt-lab")]
