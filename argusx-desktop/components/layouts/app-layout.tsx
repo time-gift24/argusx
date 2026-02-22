@@ -19,14 +19,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <AppSidebar variant="floating" />
         <SidebarInset>
           <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-4">
-            <div className="w-20">
+            <div className="flex items-center gap-2">
               <SidebarTrigger
                 className="-ml-1"
                 side="left"
               />
+              <PromptLabBreadcrumb />
             </div>
-            <PromptLabBreadcrumb />
-            <div className="flex items-center gap-2 w-20 justify-end">
+            <div className="flex items-center gap-2">
               <ThemeToggle />
               <SidebarTrigger
                 className="-mr-1"
