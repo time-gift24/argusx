@@ -2,8 +2,8 @@
 target/
 Cargo.lock
 
-# Docs (not committed)
-docs/
+# Docs (committed)
+# docs/
 
 # IDE
 .idea/
