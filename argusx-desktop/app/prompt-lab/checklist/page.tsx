@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Pencil, Trash2, Check } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, Eye } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -11,12 +12,14 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import {
   listChecklistItems,
   createChecklistItem,
+  updateChecklistItem,
   deleteChecklistItem,
   type ChecklistItem,
   type CreateChecklistItemInput,
 } from "@/lib/api/prompt-lab";
 
 export default function ChecklistPage() {
+  const router = useRouter();
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -24,6 +27,7 @@ export default function ChecklistPage() {
   const [prompt, setPrompt] = useState("");
   const [targetLevel, setTargetLevel] = useState<"step" | "sop">("step");
   const [submitting, setSubmitting] = useState(false);
+  const [editingItem, setEditingItem] = useState<ChecklistItem | null>(null);
 
   const loadItems = () => {
     listChecklistItems({}).then((data) => {
@@ -57,6 +61,35 @@ export default function ChecklistPage() {
     }
   };
 
+  const handleEdit = (item: ChecklistItem) => {
+    setEditingItem(item);
+    setName(item.name);
+    setPrompt(item.prompt);
+    setTargetLevel(item.target_level);
+    setIsCreating(true);
+  };
+
+  const handleUpdate = async () => {
+    if (!editingItem || !name.trim() || !prompt.trim()) return;
+    setSubmitting(true);
+    try {
+      const updated = await updateChecklistItem({
+        id: editingItem.id,
+        name: name.trim(),
+        prompt: prompt.trim(),
+        target_level: targetLevel,
+      });
+      setItems(items.map((i) => (i.id === updated.id ? updated : i)));
+      setIsCreating(false);
+      setEditingItem(null);
+      setName("");
+      setPrompt("");
+      setTargetLevel("step");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleDelete = async (id: number) => {
     await deleteChecklistItem(id);
     setItems(items.filter((i) => i.id !== id));
@@ -79,11 +112,11 @@ export default function ChecklistPage() {
       </div>
 
       <div className="grid gap-4">
-        {/* Create Form Card */}
+        {/* Create/Edit Form Card */}
         {isCreating && (
           <Card>
             <CardHeader>
-              <CardTitle>New Checklist Item</CardTitle>
+              <CardTitle>{editingItem ? "Edit Checklist Item" : "New Checklist Item"}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -117,14 +150,29 @@ export default function ChecklistPage() {
                   </select>
                 </Field>
                 <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setIsCreating(false)}>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsCreating(false);
+                      setEditingItem(null);
+                      setName("");
+                      setPrompt("");
+                      setTargetLevel("step");
+                    }}
+                  >
                     Cancel
                   </Button>
                   <Button
-                    onClick={handleCreate}
+                    onClick={editingItem ? handleUpdate : handleCreate}
                     disabled={submitting || !name.trim() || !prompt.trim()}
                   >
-                    {submitting ? "Creating..." : "Create"}
+                    {submitting
+                      ? editingItem
+                        ? "Updating..."
+                        : "Creating..."
+                      : editingItem
+                        ? "Update"
+                        : "Create"}
                   </Button>
                 </div>
               </div>
@@ -134,7 +182,11 @@ export default function ChecklistPage() {
 
         {/* Existing Items */}
         {items.map((item) => (
-          <Card key={item.id}>
+          <Card
+            key={item.id}
+            className="cursor-pointer hover:bg-muted/50"
+            onClick={() => router.push(`/prompt-lab/checklist/${item.id}`)}
+          >
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>{item.name}</CardTitle>
               <div className="flex items-center gap-2">
@@ -145,12 +197,42 @@ export default function ChecklistPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground line-clamp-2">{item.prompt}</p>
+              <p className="text-sm text-muted-foreground line-clamp-2">
+                {item.prompt.slice(0, 100)}
+                {item.prompt.length > 100 ? "..." : ""}
+              </p>
               <div className="flex justify-end gap-2 mt-4">
-                <Button variant="outline" size="sm">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push(`/prompt-lab/checklist/${item.id}`);
+                  }}
+                  aria-label="View item"
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEdit(item);
+                  }}
+                  aria-label="Edit item"
+                >
                   <Pencil className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => handleDelete(item.id)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label="Delete item"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(item.id);
+                  }}
+                >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
