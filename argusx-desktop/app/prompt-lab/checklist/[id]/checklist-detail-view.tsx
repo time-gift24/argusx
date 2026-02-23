@@ -15,6 +15,24 @@ export function ChecklistDetailView({ id }: { id: string }) {
   const [item, setItem] = useState<ChecklistItem | null>(null);
   const [results, setResults] = useState<CheckResult[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Validate ID
+  if (isNaN(numericId)) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="sm" onClick={() => router.back()}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </Button>
+        </div>
+        <div className="text-center text-muted-foreground py-8">
+          Invalid checklist item ID
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     Promise.all([
@@ -24,7 +42,8 @@ export function ChecklistDetailView({ id }: { id: string }) {
       setItem(itemData);
       setResults(resultsData);
       setLoading(false);
-    }).catch(() => {
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : "Failed to load checklist item");
       setLoading(false);
     });
   }, [numericId]);
@@ -33,6 +52,22 @@ export function ChecklistDetailView({ id }: { id: string }) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
         <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="sm" onClick={() => router.back()}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </Button>
+        </div>
+        <div className="text-center text-destructive py-8">
+          {error}
+        </div>
       </div>
     );
   }
