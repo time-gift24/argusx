@@ -114,6 +114,28 @@ impl PromptLabRepository {
         rows.into_iter().map(TryInto::try_into).collect()
     }
 
+    pub async fn get_checklist_item(&self, id: i64) -> Result<ChecklistItem> {
+        let row = sqlx::query_as::<_, ChecklistItemRow>(
+            r#"
+        SELECT
+          id, name, prompt, target_level, result_schema, version, status,
+          created_at, updated_at, created_by, updated_by, deleted_at
+        FROM checklist_items
+        WHERE id = ?1 AND deleted_at IS NULL
+        "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let row = row.ok_or(PromptLabError::NotFound {
+            entity: "checklist_items",
+            id,
+        })?;
+
+        row.try_into()
+    }
+
     pub async fn bind_golden_set_item(
         &self,
         input: BindGoldenSetItemInput,

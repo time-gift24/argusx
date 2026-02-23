@@ -188,6 +188,10 @@ export async function listChecklistItems(
   return invoke<ChecklistItem[]>("list_checklist_items", { filter });
 }
 
+export async function getChecklistItem(id: number): Promise<ChecklistItem> {
+  return invoke<ChecklistItem>("get_checklist_item", { id });
+}
+
 export async function deleteChecklistItem(id: number): Promise<void> {
   return invoke<void>("delete_checklist_item", { id });
 }

@@ -527,6 +527,19 @@ async fn list_checklist_items(
     Ok(results.into_iter().map(|i| i.into()).collect())
 }
 
+#[tauri::command]
+async fn get_checklist_item(
+    state: State<'_, Arc<PromptLab>>,
+    id: i64,
+) -> Result<ChecklistItemResponse, ApiError> {
+    let result = state
+        .checklist_service()
+        .get(id)
+        .await
+        .map_err(ApiError::from)?;
+    Ok(result.into())
+}
+
 // ============================================================================
 // GoldenSet Commands
 // ============================================================================
@@ -679,6 +692,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             update_checklist_item,
             delete_checklist_item,
             list_checklist_items,
+            get_checklist_item,
             bind_golden_set_item,
             unbind_golden_set_item,
             list_golden_set_items,

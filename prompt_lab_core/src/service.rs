@@ -38,6 +38,10 @@ impl ChecklistService {
         self.repo.list_checklist_items(filter).await
     }
 
+    pub async fn get(&self, id: i64) -> Result<ChecklistItem> {
+        self.repo.get_checklist_item(id).await
+    }
+
     pub async fn soft_delete(&self, id: i64) -> Result<()> {
         self.repo.soft_delete_checklist_item(id).await
     }
