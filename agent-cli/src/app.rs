@@ -22,6 +22,12 @@ pub struct SubmitCommand {
     pub message: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolProgressItem {
+    pub tool_name: String,
+    pub status: String,
+}
+
 pub struct AppState {
     pub session_id: String,
     pub input: String,
@@ -29,6 +35,8 @@ pub struct AppState {
     pub active_turn: Option<ActiveTurn>,
     pub last_warning: Option<String>,
     pub show_reasoning: bool,
+    pub reasoning_text: String,
+    pub tool_progress: Vec<ToolProgressItem>,
 }
 
 impl AppState {
@@ -40,6 +48,8 @@ impl AppState {
             active_turn: None,
             last_warning: None,
             show_reasoning: true,
+            reasoning_text: String::new(),
+            tool_progress: Vec::new(),
         }
     }
 

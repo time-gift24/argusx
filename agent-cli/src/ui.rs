@@ -12,12 +12,24 @@ pub fn draw(frame: &mut Frame<'_>, app: &AppState) {
         .constraints([Constraint::Min(3), Constraint::Length(3)])
         .split(frame.area());
 
-    let history_text = app
+    // Build history lines from messages
+    let mut history_lines: Vec<String> = app
         .messages
         .iter()
-        .map(|m| m.text.as_str())
-        .collect::<Vec<_>>()
-        .join("\n");
+        .map(|m| m.text.clone())
+        .collect();
+
+    // Add reasoning text if show_reasoning is enabled and there's reasoning content
+    if app.show_reasoning && !app.reasoning_text.is_empty() {
+        history_lines.push(format!("[reasoning] {}", app.reasoning_text));
+    }
+
+    // Add tool progress items
+    for item in &app.tool_progress {
+        history_lines.push(format!("[tool:{}] {}", item.tool_name, item.status));
+    }
+
+    let history_text = history_lines.join("\n");
 
     let history = Paragraph::new(history_text)
         .block(Block::default().title("Chat").borders(Borders::ALL))
@@ -72,6 +84,49 @@ mod tests {
         assert!(
             content.contains("hello"),
             "buffer should contain input 'hello', got: {}",
+            content
+        );
+    }
+
+    #[test]
+    fn folded_reasoning_hides_reasoning_lines() {
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = AppState::new("s-1".into());
+        app.show_reasoning = false;
+        app.reasoning_text = "secret reasoning".into();
+
+        terminal.draw(|frame| draw(frame, &app)).unwrap();
+        let buf = terminal.backend().buffer();
+        let content = buffer_to_string(buf);
+        assert!(
+            !content.contains("secret reasoning"),
+            "buffer should NOT contain reasoning when folded, got: {}",
+            content
+        );
+    }
+
+    #[test]
+    fn tool_progress_renders_status_labels() {
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = AppState::new("s-1".into());
+        app.tool_progress.push(crate::app::ToolProgressItem {
+            tool_name: "read_file".into(),
+            status: "running".into(),
+        });
+
+        terminal.draw(|frame| draw(frame, &app)).unwrap();
+        let buf = terminal.backend().buffer();
+        let content = buffer_to_string(buf);
+        assert!(
+            content.contains("read_file"),
+            "buffer should contain tool_name, got: {}",
+            content
+        );
+        assert!(
+            content.contains("running"),
+            "buffer should contain status, got: {}",
             content
         );
     }
