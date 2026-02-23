@@ -248,3 +248,135 @@ export async function listAiExecutionLogs(
 ): Promise<AiExecutionLog[]> {
   return invoke<AiExecutionLog[]>("list_ai_execution_logs", { filter });
 }
+
+// ============================================================================
+// SOP Types
+// ============================================================================
+
+export type SopStatus = "active" | "inactive" | "draft";
+
+export interface Sop {
+  id: number;
+  sop_id: string;
+  name: string;
+  ticket_id: string | null;
+  version: number;
+  detect: Record<string, unknown> | null;
+  handle: Record<string, unknown> | null;
+  verification: Record<string, unknown> | null;
+  rollback: Record<string, unknown> | null;
+  status: SopStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSopInput {
+  sop_id: string;
+  name: string;
+  ticket_id?: string;
+  version?: number;
+  detect?: Record<string, unknown>;
+  handle?: Record<string, unknown>;
+  verification?: Record<string, unknown>;
+  rollback?: Record<string, unknown>;
+  status: SopStatus;
+}
+
+export interface UpdateSopInput {
+  id: number;
+  sop_id?: string;
+  name?: string;
+  ticket_id?: string;
+  version?: number;
+  detect?: Record<string, unknown>;
+  handle?: Record<string, unknown>;
+  verification?: Record<string, unknown>;
+  rollback?: Record<string, unknown>;
+  status?: SopStatus;
+}
+
+export interface SopFilter {
+  status?: SopStatus;
+  ticket_id?: string;
+}
+
+export interface SopStep {
+  id: number;
+  sop_id: string;
+  name: string;
+  version: number;
+  operation: Record<string, unknown> | null;
+  verification: Record<string, unknown> | null;
+  impact_analysis: Record<string, unknown> | null;
+  rollback: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSopStepInput {
+  sop_id: string;
+  name: string;
+  version?: number;
+  operation?: Record<string, unknown>;
+  verification?: Record<string, unknown>;
+  impact_analysis?: Record<string, unknown>;
+  rollback?: Record<string, unknown>;
+}
+
+export interface UpdateSopStepInput {
+  id: number;
+  name?: string;
+  version?: number;
+  operation?: Record<string, unknown>;
+  verification?: Record<string, unknown>;
+  impact_analysis?: Record<string, unknown>;
+  rollback?: Record<string, unknown>;
+}
+
+export interface SopStepFilter {
+  sop_id?: string;
+}
+
+// ============================================================================
+// SOP API Functions
+// ============================================================================
+
+export async function createSop(input: CreateSopInput): Promise<Sop> {
+  return invoke<Sop>("create_sop", { input });
+}
+
+export async function updateSop(input: UpdateSopInput): Promise<Sop> {
+  return invoke<Sop>("update_sop", { input });
+}
+
+export async function listSops(filter: SopFilter = {}): Promise<Sop[]> {
+  return invoke<Sop[]>("list_sops", { filter });
+}
+
+export async function getSop(id: number): Promise<Sop> {
+  return invoke<Sop>("get_sop", { id });
+}
+
+export async function deleteSop(id: number): Promise<void> {
+  return invoke<void>("delete_sop", { id });
+}
+
+export async function createSopStep(input: CreateSopStepInput): Promise<SopStep> {
+  return invoke<SopStep>("create_sop_step", { input });
+}
+
+export async function updateSopStep(input: UpdateSopStepInput): Promise<SopStep> {
+  return invoke<SopStep>("update_sop_step", { input });
+}
+
+export async function listSopSteps(filter: SopStepFilter = {}): Promise<SopStep[]> {
+  return invoke<SopStep[]>("list_sop_steps", { filter });
+}
+
+export async function getSopStep(id: number): Promise<SopStep> {
+  return invoke<SopStep>("get_sop_step", { id });
+}
+
+export async function deleteSopStep(id: number): Promise<void> {
+  return invoke<void>("delete_sop_step", { id });
+}
