@@ -1,4 +1,4 @@
-use agent::AgentStreamEvent;
+use agent::{AgentStreamEvent, AgentStream};
 use agent_core::{RunStreamEvent, UiThreadEvent};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +51,20 @@ pub fn map_stream_event(event: AgentStreamEvent) -> Option<AppEvent> {
     }
 }
 
+pub async fn pump_stream(
+    mut stream: AgentStream,
+    tx: tokio::sync::mpsc::UnboundedSender<AppEvent>,
+) {
+    use futures::StreamExt;
+    while let Some(event) = stream.next().await {
+        if let Some(mapped) = map_stream_event(event) {
+            if tx.send(mapped).is_err() {
+                break;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,5 +85,36 @@ mod tests {
             stats: agent_core::TurnStats::default(),
         }));
         assert!(matches!(done, Some(AppEvent::TurnFinished { .. })));
+    }
+
+    #[tokio::test]
+    async fn stream_pump_emits_turn_finished() {
+        use futures::stream;
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let events = vec![
+            AgentStreamEvent::Ui(UiThreadEvent::MessageDelta {
+                turn_id: "t1".into(),
+                delta: "hello".into(),
+            }),
+            AgentStreamEvent::Run(RunStreamEvent::TurnDone {
+                turn_id: "t1".into(),
+                epoch: 0,
+                final_message: Some("hello".into()),
+                usage: agent_core::Usage::default(),
+                stats: agent_core::TurnStats::default(),
+            }),
+        ];
+        let stream: AgentStream = Box::pin(stream::iter(events));
+
+        pump_stream(stream, tx).await;
+
+        let mut got_finish = false;
+        while let Ok(ev) = rx.try_recv() {
+            if matches!(ev, AppEvent::TurnFinished { failed: false, .. }) {
+                got_finish = true;
+            }
+        }
+        assert!(got_finish);
     }
 }
