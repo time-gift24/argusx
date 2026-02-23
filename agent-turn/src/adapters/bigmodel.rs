@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use agent_core::{
-    AgentError, InputEnvelope, InputPart, InputSource, LanguageModel, ModelEventStream,
+    new_id, AgentError, InputEnvelope, InputPart, InputSource, LanguageModel, ModelEventStream,
     ModelOutputEvent, ModelRequest, NoteLevel, ToolCall, TranscriptItem, TransientError, Usage,
 };
 use async_trait::async_trait;
 use bigmodel_api::{
-    BigModelClient, BigModelError, ChatRequest, ChatResponseChunk, Content, Message, Role,
-    Usage as BigModelUsage,
+    BigModelClient, BigModelError, ChatRequest, ChatResponseChunk, Content, FunctionDefinition,
+    FunctionTool, Message, Role, Tool as BigModelTool, Usage as BigModelUsage,
 };
 use futures::StreamExt;
 use tokio::sync::mpsc;
@@ -92,15 +92,42 @@ fn emit_chunk(
     tx: &mpsc::UnboundedSender<Result<ModelOutputEvent, AgentError>>,
 ) {
     for choice in chunk.choices {
-        if let Some(delta) = choice.delta.reasoning_content {
-            if !delta.is_empty() {
-                let _ = tx.send(Ok(ModelOutputEvent::ReasoningDelta { delta }));
+        let delta = choice.delta;
+
+        if let Some(reasoning_delta) = delta.reasoning_content {
+            if !reasoning_delta.is_empty() {
+                let _ = tx.send(Ok(ModelOutputEvent::ReasoningDelta {
+                    delta: reasoning_delta,
+                }));
             }
         }
 
-        if let Some(delta) = choice.delta.content {
-            if !delta.is_empty() {
-                let _ = tx.send(Ok(ModelOutputEvent::TextDelta { delta }));
+        if let Some(tool_calls) = delta.tool_calls {
+            for tool_call in tool_calls {
+                let Some(function) = tool_call.function else {
+                    continue;
+                };
+                let Some(tool_name) = function.name else {
+                    continue;
+                };
+                let arguments = function
+                    .arguments
+                    .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+                    .unwrap_or_else(|| serde_json::json!({}));
+                let call = ToolCall {
+                    call_id: tool_call.id.unwrap_or_else(new_id),
+                    tool_name,
+                    arguments,
+                };
+                let _ = tx.send(Ok(ModelOutputEvent::ToolCall { call }));
+            }
+        }
+
+        if let Some(content_delta) = delta.content {
+            if !content_delta.is_empty() {
+                let _ = tx.send(Ok(ModelOutputEvent::TextDelta {
+                    delta: content_delta,
+                }));
             }
         }
     }
@@ -123,27 +150,51 @@ fn non_negative_u64(value: i32) -> u64 {
 }
 
 fn convert_model_request(request: ModelRequest, cfg: &BigModelAdapterConfig) -> ChatRequest {
+    let ModelRequest {
+        transcript,
+        inputs,
+        tools,
+        ..
+    } = request;
     let mut messages = Vec::new();
 
     if let Some(prompt) = cfg.system_prompt.as_ref() {
         messages.push(Message::system(prompt.clone()));
     }
 
-    for item in request.transcript {
+    for item in transcript {
         if let Some(message) = transcript_item_to_message(item) {
             messages.push(message);
         }
     }
 
-    for input in request.inputs {
+    for input in inputs {
         messages.push(input_envelope_to_message(input));
     }
 
+    let tools = tools
+        .into_iter()
+        .map(core_tool_spec_to_bigmodel_tool)
+        .collect::<Vec<_>>();
+
     let mut chat_request = ChatRequest::new(cfg.model.clone(), messages).stream();
+    if !tools.is_empty() {
+        chat_request = chat_request.tools(tools);
+    }
     chat_request.max_tokens = cfg.max_tokens;
     chat_request.temperature = cfg.temperature;
     chat_request.top_p = cfg.top_p;
     chat_request
+}
+
+fn core_tool_spec_to_bigmodel_tool(spec: agent_core::tools::ToolSpec) -> BigModelTool {
+    BigModelTool::Function(FunctionTool {
+        function: FunctionDefinition {
+            name: spec.name,
+            description: spec.description,
+            parameters: spec.input_schema,
+        },
+    })
 }
 
 fn transcript_item_to_message(item: TranscriptItem) -> Option<Message> {
@@ -240,8 +291,9 @@ fn map_bigmodel_error(err: BigModelError) -> AgentError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use agent_core::tools::ToolExecutionPolicy;
     use agent_core::{new_id, InputEnvelope, ToolResult};
-    use bigmodel_api::{ChoiceChunk, Delta};
+    use bigmodel_api::{ChoiceChunk, Delta, DeltaToolCall, DeltaToolFunction};
 
     #[test]
     fn convert_request_includes_system_prompt_and_streaming() {
@@ -249,6 +301,7 @@ mod tests {
             epoch: 0,
             transcript: vec![TranscriptItem::assistant_message("previous")],
             inputs: vec![InputEnvelope::user_text("hello")],
+            tools: vec![],
         };
         let cfg = BigModelAdapterConfig {
             model: "glm-test".to_string(),
@@ -272,6 +325,20 @@ mod tests {
         assert_eq!(message_text(&converted.messages[1]), "previous");
         assert!(matches!(&converted.messages[2].role, Role::User));
         assert_eq!(message_text(&converted.messages[2]), "hello");
+    }
+
+    #[test]
+    fn convert_request_includes_tools() {
+        let req = ModelRequest {
+            epoch: 0,
+            transcript: vec![],
+            inputs: vec![InputEnvelope::user_text("hi")],
+            tools: vec![tool_spec_echo()],
+        };
+
+        let out = convert_model_request(req, &BigModelAdapterConfig::default());
+        assert!(out.tools.is_some());
+        assert_eq!(out.tools.expect("tools").len(), 1);
     }
 
     #[test]
@@ -299,6 +366,7 @@ mod tests {
                     role: Some("assistant".to_string()),
                     content: Some("hello".to_string()),
                     reasoning_content: Some("thinking".to_string()),
+                    tool_calls: None,
                 },
                 finish_reason: None,
             }],
@@ -323,6 +391,16 @@ mod tests {
                 delta: "hello".to_string()
             }
         );
+    }
+
+    #[test]
+    fn stream_chunk_emits_tool_call_event() {
+        let chunk = make_tool_call_chunk("c1", "shell", r#"{"command":"echo ok"}"#);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        emit_chunk(chunk, &tx);
+
+        let item = rx.try_recv().expect("event").expect("ok");
+        assert!(matches!(item, ModelOutputEvent::ToolCall { .. }));
     }
 
     #[test]
@@ -359,10 +437,46 @@ mod tests {
         );
     }
 
+    fn tool_spec_echo() -> agent_core::tools::ToolSpec {
+        agent_core::tools::ToolSpec {
+            name: "echo".to_string(),
+            description: "echo args".to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
+            execution_policy: ToolExecutionPolicy::default(),
+        }
+    }
+
     fn message_text(message: &Message) -> &str {
         match &message.content {
             Content::Text(text) => text,
             Content::Multimodal(_) => "",
+        }
+    }
+
+    fn make_tool_call_chunk(call_id: &str, name: &str, arguments: &str) -> ChatResponseChunk {
+        ChatResponseChunk {
+            id: "chunk-tool".to_string(),
+            created: 0,
+            model: "glm-test".to_string(),
+            choices: vec![ChoiceChunk {
+                index: 0,
+                delta: Delta {
+                    role: Some("assistant".to_string()),
+                    content: None,
+                    reasoning_content: None,
+                    tool_calls: Some(vec![DeltaToolCall {
+                        id: Some(call_id.to_string()),
+                        type_field: Some("function".to_string()),
+                        function: Some(DeltaToolFunction {
+                            name: Some(name.to_string()),
+                            arguments: Some(arguments.to_string()),
+                        }),
+                        index: Some(0),
+                    }]),
+                },
+                finish_reason: None,
+            }],
+            usage: None,
         }
     }
 }

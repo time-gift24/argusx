@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use agent_core::tools::{ToolCatalog, ToolExecutionContext, ToolExecutionError, ToolExecutor};
 use agent_core::{AgentError, LanguageModel, ModelEventStream, ModelOutputEvent, ModelRequest};
 use agent_session::SessionRuntime;
-use agent_turn::effect::ToolExecutor;
 use async_trait::async_trait;
 use futures::stream;
 
@@ -36,10 +36,24 @@ impl LanguageModel for MockModel {
 impl ToolExecutor for MockTools {
     async fn execute_tool(
         &self,
-        _call: agent_core::ToolCall,
-        _epoch: u64,
-    ) -> Result<serde_json::Value, String> {
-        Ok(serde_json::json!({"result": "ok"}))
+        call: agent_core::ToolCall,
+        _ctx: ToolExecutionContext,
+    ) -> Result<agent_core::ToolResult, ToolExecutionError> {
+        Ok(agent_core::ToolResult::ok(
+            call.call_id,
+            serde_json::json!({"result": "ok"}),
+        ))
+    }
+}
+
+#[async_trait]
+impl ToolCatalog for MockTools {
+    async fn list_tools(&self) -> Vec<agent_core::tools::ToolSpec> {
+        Vec::new()
+    }
+
+    async fn tool_spec(&self, _name: &str) -> Option<agent_core::tools::ToolSpec> {
+        None
     }
 }
 
@@ -55,6 +69,7 @@ mod tests {
             epoch: 0,
             transcript: vec![],
             inputs: vec![],
+            tools: vec![],
         };
         let mut stream = model.stream(req).await.expect("stream");
         let first = stream.next().await.expect("event").expect("ok");

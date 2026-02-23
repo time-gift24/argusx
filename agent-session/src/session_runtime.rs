@@ -7,7 +7,6 @@ use agent_core::{
     SessionInfo, SessionStatus, TranscriptItem, TurnContext, TurnId, TurnRequest, TurnStatus,
     TurnSummary,
 };
-use agent_turn::effect::ToolExecutor;
 use agent_turn::{TurnEngineConfig, TurnRuntime};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -22,7 +21,7 @@ use crate::storage::{FileSessionStore, FileTurnCheckpointStore, SessionFilter, S
 pub struct SessionRuntime<L, T>
 where
     L: agent_core::LanguageModel + Send + Sync + 'static,
-    T: ToolExecutor + Send + Sync + 'static,
+    T: agent_core::tools::ToolExecutor + agent_core::tools::ToolCatalog + Send + Sync + 'static,
 {
     store: Arc<FileSessionStore>,
     checkpoint_store: Arc<FileTurnCheckpointStore>,
@@ -53,7 +52,7 @@ impl Default for SessionConfig {
 impl<L, T> SessionRuntime<L, T>
 where
     L: agent_core::LanguageModel + Send + Sync + 'static,
-    T: ToolExecutor + Send + Sync + 'static,
+    T: agent_core::tools::ToolExecutor + agent_core::tools::ToolCatalog + Send + Sync + 'static,
 {
     pub fn new(base_path: PathBuf, model: Arc<L>, tools: Arc<T>) -> Self {
         Self::with_config(base_path, model, tools, SessionConfig::default())
@@ -362,7 +361,7 @@ where
 impl<L, T> Runtime for SessionRuntime<L, T>
 where
     L: agent_core::LanguageModel + Send + Sync + 'static,
-    T: ToolExecutor + Send + Sync + 'static,
+    T: agent_core::tools::ToolExecutor + agent_core::tools::ToolCatalog + Send + Sync + 'static,
 {
     async fn run_turn(&self, request: TurnRequest) -> Result<RuntimeStreams, AgentError> {
         let session_id = request.meta.session_id.clone();
@@ -540,13 +539,27 @@ mod tests {
     }
 
     #[async_trait]
-    impl ToolExecutor for MockTools {
+    impl agent_core::tools::ToolExecutor for MockTools {
         async fn execute_tool(
             &self,
-            _call: agent_core::ToolCall,
-            _epoch: u64,
-        ) -> Result<serde_json::Value, String> {
-            Ok(serde_json::json!({"result": "ok"}))
+            call: agent_core::ToolCall,
+            _ctx: agent_core::tools::ToolExecutionContext,
+        ) -> Result<agent_core::ToolResult, agent_core::tools::ToolExecutionError> {
+            Ok(agent_core::ToolResult::ok(
+                call.call_id,
+                serde_json::json!({"result": "ok"}),
+            ))
+        }
+    }
+
+    #[async_trait]
+    impl agent_core::tools::ToolCatalog for MockTools {
+        async fn list_tools(&self) -> Vec<agent_core::tools::ToolSpec> {
+            Vec::new()
+        }
+
+        async fn tool_spec(&self, _name: &str) -> Option<agent_core::tools::ToolSpec> {
+            None
         }
     }
 

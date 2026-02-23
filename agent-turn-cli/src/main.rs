@@ -5,12 +5,11 @@ use agent_core::{
     new_id, InputEnvelope, RunEventStream, RunStreamEvent, Runtime, SessionMeta, TurnRequest,
     UiEventStream, UiThreadEvent,
 };
+use agent_tool::AgentToolRuntime;
 use agent_turn::adapters::bigmodel::{BigModelAdapterConfig, BigModelModelAdapter};
-use agent_turn::effect::ToolExecutor;
 use agent_turn::state::RetryPolicy;
 use agent_turn::{TurnEngineConfig, TurnRuntime};
 use anyhow::{bail, Context, Result};
-use async_trait::async_trait;
 use bigmodel_api::{BigModelClient, Config};
 use clap::Parser;
 use futures::StreamExt;
@@ -70,24 +69,6 @@ struct Cli {
     base_delay_ms: u64,
 }
 
-struct CliToolExecutor;
-
-#[async_trait]
-impl ToolExecutor for CliToolExecutor {
-    async fn execute_tool(
-        &self,
-        call: agent_core::ToolCall,
-        _epoch: u64,
-    ) -> Result<serde_json::Value, String> {
-        match call.tool_name.as_str() {
-            "echo" => Ok(call.arguments),
-            other => Err(format!(
-                "unsupported tool '{other}' in agent-turn-cli; built-in tools: echo"
-            )),
-        }
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -106,7 +87,7 @@ async fn main() -> Result<()> {
     };
 
     let model = Arc::new(BigModelModelAdapter::new(client).with_config(model_cfg));
-    let tools = Arc::new(CliToolExecutor);
+    let tools = Arc::new(AgentToolRuntime::default_with_builtins().await);
 
     let runtime_cfg = TurnEngineConfig {
         max_parallel_tools: cli.max_parallel_tools,
@@ -332,6 +313,12 @@ mod tests {
 
     fn ui_event_turn_id() -> String {
         "turn-1".to_string()
+    }
+
+    #[test]
+    fn cli_builds_runtime_with_agent_tool() {
+        let name = std::any::type_name::<agent_tool::AgentToolRuntime>();
+        assert!(!name.is_empty());
     }
 
     #[test]

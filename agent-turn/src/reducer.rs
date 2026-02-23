@@ -85,7 +85,12 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
                 call_id,
                 tool_name: call.tool_name.clone(),
             });
-            tr.add_effect(Effect::ExecuteTool { epoch, call });
+            tr.add_effect(Effect::ExecuteTool {
+                epoch,
+                session_id: tr.state.meta.session_id.clone(),
+                turn_id: tr.state.meta.turn_id.clone(),
+                call,
+            });
         }
         RuntimeEvent::ToolDispatched { epoch, call_id, .. } => {
             if !is_active_epoch(&tr.state, epoch) {
@@ -602,7 +607,7 @@ mod single_event_tests {
     use crate::effect::Effect;
     use crate::state::{Lifecycle, ModelState};
     use crate::test_helpers::*;
-    use agent_core::{RunStreamEvent, ToolCallStatus, UiThreadEvent};
+    use agent_core::{InputPart, InputSource, RunStreamEvent, ToolCallStatus, UiThreadEvent};
 
     // -------------------------------------------------------------------------
     // TurnStarted Tests
@@ -949,6 +954,42 @@ mod single_event_tests {
         );
 
         assert!(result.state.inflight_tools.is_empty());
+    }
+
+    #[test]
+    fn tool_result_err_removes_inflight_and_reinjects_error_input() {
+        let state = StateBuilder::new("s1", "t1")
+            .with_lifecycle(Lifecycle::Active)
+            .with_model_state(ModelState::Streaming)
+            .with_inflight_tool("c1", tool_call("c1", "echo", serde_json::json!({})))
+            .build();
+        let err_message = "failed";
+        let err_json = serde_json::json!({"error": err_message});
+
+        let result = reduce(
+            state,
+            EventBuilder::tool_result_err("c1", err_message).build(),
+            &test_config(),
+        );
+
+        assert!(!result.state.inflight_tools.contains_key("c1"));
+        assert_eq!(result.state.pending_inputs.len(), 1);
+        assert!(result
+            .run_events
+            .iter()
+            .any(|e| matches!(e, RunStreamEvent::ToolExecutionError { .. })));
+
+        let injected = result
+            .state
+            .pending_inputs
+            .front()
+            .expect("error result should be reinjected as input");
+        assert!(matches!(injected.source, InputSource::Tool));
+        assert_eq!(injected.parts.len(), 1);
+        match &injected.parts[0] {
+            InputPart::Json { value } => assert_eq!(value, &err_json),
+            _ => panic!("expected json tool input"),
+        }
     }
 
     // -------------------------------------------------------------------------

@@ -135,6 +135,8 @@ pub struct ModelRequest {
     pub epoch: u64,
     pub transcript: Vec<TranscriptItem>,
     pub inputs: Vec<InputEnvelope>,
+    #[serde(default)]
+    pub tools: Vec<crate::tools::ToolSpec>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

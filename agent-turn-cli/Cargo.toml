@@ -7,10 +7,10 @@ description = "Manual test CLI for agent-turn runtime"
 
 [dependencies]
 agent-core = { path = "../agent-core" }
+agent-tool = { path = "../agent-tool" }
 agent-turn = { path = "../agent-turn" }
 bigmodel-api = { path = "../bigmodel-api" }
 anyhow.workspace = true
-async-trait.workspace = true
 clap.workspace = true
 futures.workspace = true
 serde.workspace = true
