@@ -1,5 +1,7 @@
 use clap::Parser;
 use agent_cli::cli::CliArgs;
+use agent_cli::app::AppState;
+use agent_cli::event_loop::run_tui_loop;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -26,13 +28,14 @@ async fn main() -> anyhow::Result<()> {
         builder = builder.store_dir(store_dir);
     }
     let agent = builder.build().await?;
+    let agent = std::sync::Arc::new(agent);
 
     let gateway = AgentSessionGateway::new(&agent);
     let session_id = agent_cli::session::resolve_session_id(&gateway, args.session.as_deref()).await?;
 
-    // TODO: run_tui_loop(&agent, &mut app, args.debug_events).await?;
+    let mut app = AppState::new(session_id);
+    run_tui_loop(agent, &mut app, args.debug_events).await?;
 
-    println!("Session started: {}", session_id);
     Ok(())
 }
 

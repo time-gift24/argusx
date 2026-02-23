@@ -37,10 +37,20 @@ async fn same_session_supports_two_turns() {
     let first = agent.chat(&session_id, "first").await.unwrap();
     let second = agent.chat(&session_id, "second").await.unwrap();
 
-    // First turn: transcript has system + user message = 2 entries (count=3 includes role)
-    // Second turn: transcript grows, verifying session continuity
-    let first_count = first.final_message.as_deref().unwrap();
-    let second_count = second.final_message.as_deref().unwrap();
+    // Parse "history=N" format to get numeric transcript counts
+    let first_msg = first.final_message.as_deref().unwrap();
+    let second_msg = second.final_message.as_deref().unwrap();
+
+    let first_count = first_msg
+        .strip_prefix("history=")
+        .and_then(|s| s.parse::<usize>().ok())
+        .expect("first response should be in 'history=N' format");
+
+    let second_count = second_msg
+        .strip_prefix("history=")
+        .and_then(|s| s.parse::<usize>().ok())
+        .expect("second response should be in 'history=N' format");
+
     // Verify second turn has MORE history than first (proves session continuity)
     assert!(
         second_count > first_count,
