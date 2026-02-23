@@ -48,3 +48,9 @@ impl ToolRegistry {
         tool.execute(ctx, args).await
     }
 }
+
+impl Default for ToolRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
