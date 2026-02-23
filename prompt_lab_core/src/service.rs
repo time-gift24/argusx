@@ -132,3 +132,58 @@ fn validate_result_schema(schema: Option<&Value>) -> Result<()> {
     }
     Ok(())
 }
+
+#[derive(Clone)]
+pub struct SopService {
+    repo: Arc<PromptLabRepository>,
+}
+
+impl SopService {
+    pub fn new(repo: Arc<PromptLabRepository>) -> Self {
+        Self { repo }
+    }
+
+    pub async fn create_sop(&self, input: CreateSopInput) -> Result<Sop> {
+        self.repo.create_sop(input).await
+    }
+
+    pub async fn update_sop(&self, input: UpdateSopInput) -> Result<Sop> {
+        self.repo.update_sop(input).await
+    }
+
+    pub async fn list_sops(&self, filter: SopFilter) -> Result<Vec<Sop>> {
+        self.repo.list_sops(filter).await
+    }
+
+    pub async fn get_sop(&self, id: i64) -> Result<Sop> {
+        self.repo.get_sop(id).await
+    }
+
+    pub async fn get_sop_by_sop_id(&self, sop_id: &str) -> Result<Sop> {
+        self.repo.get_sop_by_sop_id(sop_id).await
+    }
+
+    pub async fn delete_sop(&self, id: i64) -> Result<()> {
+        self.repo.delete_sop(id).await
+    }
+
+    pub async fn create_sop_step(&self, input: CreateSopStepInput) -> Result<SopStep> {
+        self.repo.create_sop_step(input).await
+    }
+
+    pub async fn update_sop_step(&self, input: UpdateSopStepInput) -> Result<SopStep> {
+        self.repo.update_sop_step(input).await
+    }
+
+    pub async fn list_sop_steps(&self, filter: SopStepFilter) -> Result<Vec<SopStep>> {
+        self.repo.list_sop_steps(filter).await
+    }
+
+    pub async fn get_sop_step(&self, id: i64) -> Result<SopStep> {
+        self.repo.get_sop_step(id).await
+    }
+
+    pub async fn delete_sop_step(&self, id: i64) -> Result<()> {
+        self.repo.delete_sop_step(id).await
+    }
+}

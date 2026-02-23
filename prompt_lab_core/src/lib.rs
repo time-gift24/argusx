@@ -10,7 +10,7 @@ use argusx_common::config::Settings;
 
 pub use domain::*;
 pub use error::{PromptLabError, Result};
-pub use service::{AiLogService, CheckResultService, ChecklistService, GoldenSetService};
+pub use service::{AiLogService, CheckResultService, ChecklistService, GoldenSetService, SopService};
 pub use sqlite::{DbConfig, PragmaStatus};
 
 use repository::PromptLabRepository;
@@ -22,6 +22,7 @@ pub struct PromptLab {
     golden_set_service: GoldenSetService,
     check_result_service: CheckResultService,
     ai_log_service: AiLogService,
+    sop_service: SopService,
 }
 
 impl PromptLab {
@@ -36,7 +37,8 @@ impl PromptLab {
             checklist_service: ChecklistService::new(repo.clone()),
             golden_set_service: GoldenSetService::new(repo.clone()),
             check_result_service: CheckResultService::new(repo.clone()),
-            ai_log_service: AiLogService::new(repo),
+            ai_log_service: AiLogService::new(repo.clone()),
+            sop_service: SopService::new(repo),
         })
     }
 
@@ -54,6 +56,10 @@ impl PromptLab {
 
     pub fn ai_log_service(&self) -> AiLogService {
         self.ai_log_service.clone()
+    }
+
+    pub fn sop_service(&self) -> SopService {
+        self.sop_service.clone()
     }
 
     pub async fn pragma_status(&self) -> Result<PragmaStatus> {

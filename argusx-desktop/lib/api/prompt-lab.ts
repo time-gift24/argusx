@@ -249,9 +249,7 @@ export async function listAiExecutionLogs(
   return invoke<AiExecutionLog[]>("list_ai_execution_logs", { filter });
 }
 
-// ============================================================================
-// SOP Types
-// ============================================================================
+// ============== SOP Types ==============
 
 export type SopStatus = "active" | "inactive" | "draft";
 
@@ -337,46 +335,44 @@ export interface SopStepFilter {
   sop_id?: string;
 }
 
-// ============================================================================
-// SOP API Functions
-// ============================================================================
+// ============== SOP API Functions ==============
 
 export async function createSop(input: CreateSopInput): Promise<Sop> {
-  return invoke<Sop>("create_sop", { input });
+  return invoke("create_sop", { input });
 }
 
 export async function updateSop(input: UpdateSopInput): Promise<Sop> {
-  return invoke<Sop>("update_sop", { input });
+  return invoke("update_sop", { input });
 }
 
 export async function listSops(filter: SopFilter = {}): Promise<Sop[]> {
-  return invoke<Sop[]>("list_sops", { filter });
+  return invoke("list_sops", { filter });
 }
 
 export async function getSop(id: number): Promise<Sop> {
-  return invoke<Sop>("get_sop", { id });
+  return invoke("get_sop", { id });
 }
 
 export async function deleteSop(id: number): Promise<void> {
-  return invoke<void>("delete_sop", { id });
+  return invoke("delete_sop", { id });
 }
 
 export async function createSopStep(input: CreateSopStepInput): Promise<SopStep> {
-  return invoke<SopStep>("create_sop_step", { input });
+  return invoke("create_sop_step", { input });
 }
 
 export async function updateSopStep(input: UpdateSopStepInput): Promise<SopStep> {
-  return invoke<SopStep>("update_sop_step", { input });
+  return invoke("update_sop_step", { input });
 }
 
 export async function listSopSteps(filter: SopStepFilter = {}): Promise<SopStep[]> {
-  return invoke<SopStep[]>("list_sop_steps", { filter });
+  return invoke("list_sop_steps", { filter });
 }
 
 export async function getSopStep(id: number): Promise<SopStep> {
-  return invoke<SopStep>("get_sop_step", { id });
+  return invoke("get_sop_step", { id });
 }
 
 export async function deleteSopStep(id: number): Promise<void> {
-  return invoke<void>("delete_sop_step", { id });
+  return invoke("delete_sop_step", { id });
 }

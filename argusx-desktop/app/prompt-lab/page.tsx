@@ -9,6 +9,7 @@ import {
   listGoldenSetItems,
   listCheckResults,
   listAiExecutionLogs,
+  listSops,
 } from "@/lib/api/prompt-lab";
 
 interface ModuleStats {
@@ -16,6 +17,7 @@ interface ModuleStats {
   goldenSets: number;
   results: { passed: number; failed: number };
   logs: number;
+  sops: number;
 }
 
 const modules = [
@@ -23,6 +25,7 @@ const modules = [
   { key: "goldenSets", name: "Golden Sets", icon: Folder, href: "/prompt-lab/golden-sets" },
   { key: "results", name: "Results", icon: FileText, href: "/prompt-lab/results" },
   { key: "logs", name: "Logs", icon: FileText, href: "/prompt-lab/logs" },
+  { key: "sops", name: "SOPs", icon: FileText, href: "/prompt-lab/sops" },
 ];
 
 export default function PromptLabDashboard() {
@@ -31,6 +34,7 @@ export default function PromptLabDashboard() {
     goldenSets: 0,
     results: { passed: 0, failed: 0 },
     logs: 0,
+    sops: 0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -40,7 +44,8 @@ export default function PromptLabDashboard() {
       listGoldenSetItems(1),
       listCheckResults({}),
       listAiExecutionLogs({}),
-    ]).then(([items, goldenItems, results, logs]) => {
+      listSops({}),
+    ]).then(([items, goldenItems, results, logs, sopsData]) => {
       setStats({
         checklist: items.length,
         goldenSets: goldenItems.length,
@@ -49,6 +54,7 @@ export default function PromptLabDashboard() {
           failed: results.filter((r) => !r.is_pass).length,
         },
         logs: logs.length,
+        sops: sopsData.length,
       });
       setLoading(false);
     });
@@ -60,6 +66,7 @@ export default function PromptLabDashboard() {
       case "goldenSets": return stats.goldenSets;
       case "results": return stats.results.passed + stats.results.failed;
       case "logs": return stats.logs;
+      case "sops": return stats.sops;
       default: return 0;
     }
   };
@@ -70,6 +77,7 @@ export default function PromptLabDashboard() {
       case "goldenSets": return "sets";
       case "results": return `${stats.results.passed} passed, ${stats.results.failed} failed`;
       case "logs": return "entries";
+      case "sops": return "SOPs";
       default: return "";
     }
   };

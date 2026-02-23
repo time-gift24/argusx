@@ -360,6 +360,242 @@ impl PromptLabRepository {
 
         rows.into_iter().map(TryInto::try_into).collect()
     }
+
+    // ============== SOP Repository ==============
+
+    pub async fn create_sop(&self, input: CreateSopInput) -> Result<Sop> {
+        let detect = input.detect.map(|v| v.to_string());
+        let handle = input.handle.map(|v| v.to_string());
+        let verification = input.verification.map(|v| v.to_string());
+        let rollback = input.rollback.map(|v| v.to_string());
+
+        let row = sqlx::query_as::<_, SopRow>(
+            r#"
+            INSERT INTO sops (sop_id, name, ticket_id, version, detect, handle, verification, rollback, status)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            RETURNING id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status, created_at, updated_at
+            "#,
+        )
+        .bind(input.sop_id)
+        .bind(input.name)
+        .bind(input.ticket_id)
+        .bind(input.version.unwrap_or(1))
+        .bind(detect)
+        .bind(handle)
+        .bind(verification)
+        .bind(rollback)
+        .bind(input.status.as_str())
+        .fetch_one(&self.pool)
+        .await?;
+
+        row.try_into()
+    }
+
+    pub async fn update_sop(&self, input: UpdateSopInput) -> Result<Sop> {
+        let detect = input.detect.map(|v| v.to_string());
+        let handle = input.handle.map(|v| v.to_string());
+        let verification = input.verification.map(|v| v.to_string());
+        let rollback = input.rollback.map(|v| v.to_string());
+
+        let row = sqlx::query_as::<_, SopRow>(
+            r#"
+            UPDATE sops
+            SET
+              sop_id = COALESCE(?2, sop_id),
+              name = COALESCE(?3, name),
+              ticket_id = COALESCE(?4, ticket_id),
+              version = COALESCE(?5, version),
+              detect = COALESCE(?6, detect),
+              handle = COALESCE(?7, handle),
+              verification = COALESCE(?8, verification),
+              rollback = COALESCE(?9, rollback),
+              status = COALESCE(?10, status)
+            WHERE id = ?1
+            RETURNING id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status, created_at, updated_at
+            "#,
+        )
+        .bind(input.id)
+        .bind(input.sop_id)
+        .bind(input.name)
+        .bind(input.ticket_id)
+        .bind(input.version)
+        .bind(detect)
+        .bind(handle)
+        .bind(verification)
+        .bind(rollback)
+        .bind(input.status.map(|v| v.as_str().to_string()))
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let row = row.ok_or(PromptLabError::NotFound { entity: "sops", id: input.id })?;
+        row.try_into()
+    }
+
+    pub async fn list_sops(&self, filter: SopFilter) -> Result<Vec<Sop>> {
+        let status = filter.status.map(|v| v.as_str().to_string());
+
+        let rows = sqlx::query_as::<_, SopRow>(
+            r#"
+            SELECT id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status, created_at, updated_at
+            FROM sops
+            WHERE status = COALESCE(?1, status)
+              AND ticket_id = COALESCE(?2, ticket_id)
+            ORDER BY id DESC
+            "#,
+        )
+        .bind(status)
+        .bind(filter.ticket_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter().map(TryInto::try_into).collect()
+    }
+
+    pub async fn get_sop(&self, id: i64) -> Result<Sop> {
+        let row = sqlx::query_as::<_, SopRow>(
+            r#"
+            SELECT id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status, created_at, updated_at
+            FROM sops
+            WHERE id = ?1
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let row = row.ok_or(PromptLabError::NotFound { entity: "sops", id })?;
+        row.try_into()
+    }
+
+    pub async fn get_sop_by_sop_id(&self, sop_id: &str) -> Result<Sop> {
+        let row = sqlx::query_as::<_, SopRow>(
+            r#"
+            SELECT id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status, created_at, updated_at
+            FROM sops
+            WHERE sop_id = ?1
+            "#,
+        )
+        .bind(sop_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let row = row.ok_or(PromptLabError::NotFound { entity: "sops", id: 0 })?;
+        row.try_into()
+    }
+
+    pub async fn delete_sop(&self, id: i64) -> Result<()> {
+        let result = sqlx::query("DELETE FROM sops WHERE id = ?1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(PromptLabError::NotFound { entity: "sops", id });
+        }
+        Ok(())
+    }
+
+    pub async fn create_sop_step(&self, input: CreateSopStepInput) -> Result<SopStep> {
+        let operation = input.operation.map(|v| v.to_string());
+        let verification = input.verification.map(|v| v.to_string());
+        let impact_analysis = input.impact_analysis.map(|v| v.to_string());
+        let rollback = input.rollback.map(|v| v.to_string());
+
+        let row = sqlx::query_as::<_, SopStepRow>(
+            r#"
+            INSERT INTO sop_steps (sop_id, name, version, operation, verification, impact_analysis, rollback)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            RETURNING id, sop_id, name, version, operation, verification, impact_analysis, rollback, created_at, updated_at
+            "#,
+        )
+        .bind(input.sop_id)
+        .bind(input.name)
+        .bind(input.version.unwrap_or(1))
+        .bind(operation)
+        .bind(verification)
+        .bind(impact_analysis)
+        .bind(rollback)
+        .fetch_one(&self.pool)
+        .await?;
+
+        row.try_into()
+    }
+
+    pub async fn update_sop_step(&self, input: UpdateSopStepInput) -> Result<SopStep> {
+        let operation = input.operation.map(|v| v.to_string());
+        let verification = input.verification.map(|v| v.to_string());
+        let impact_analysis = input.impact_analysis.map(|v| v.to_string());
+        let rollback = input.rollback.map(|v| v.to_string());
+
+        let row = sqlx::query_as::<_, SopStepRow>(
+            r#"
+            UPDATE sop_steps
+            SET
+              name = COALESCE(?2, name),
+              version = COALESCE(?3, version),
+              operation = COALESCE(?4, operation),
+              verification = COALESCE(?5, verification),
+              impact_analysis = COALESCE(?6, impact_analysis),
+              rollback = COALESCE(?7, rollback)
+            WHERE id = ?1
+            RETURNING id, sop_id, name, version, operation, verification, impact_analysis, rollback, created_at, updated_at
+            "#,
+        )
+        .bind(input.id)
+        .bind(input.name)
+        .bind(input.version)
+        .bind(operation)
+        .bind(verification)
+        .bind(impact_analysis)
+        .bind(rollback)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let row = row.ok_or(PromptLabError::NotFound { entity: "sop_steps", id: input.id })?;
+        row.try_into()
+    }
+
+    pub async fn list_sop_steps(&self, filter: SopStepFilter) -> Result<Vec<SopStep>> {
+        let rows = sqlx::query_as::<_, SopStepRow>(
+            r#"
+            SELECT id, sop_id, name, version, operation, verification, impact_analysis, rollback, created_at, updated_at
+            FROM sop_steps
+            WHERE sop_id = COALESCE(?1, sop_id)
+            ORDER BY id ASC
+            "#,
+        )
+        .bind(filter.sop_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter().map(TryInto::try_into).collect()
+    }
+
+    pub async fn get_sop_step(&self, id: i64) -> Result<SopStep> {
+        let row = sqlx::query_as::<_, SopStepRow>(
+            r#"
+            SELECT id, sop_id, name, version, operation, verification, impact_analysis, rollback, created_at, updated_at
+            FROM sop_steps
+            WHERE id = ?1
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        let row = row.ok_or(PromptLabError::NotFound { entity: "sop_steps", id })?;
+        row.try_into()
+    }
+
+    pub async fn delete_sop_step(&self, id: i64) -> Result<()> {
+        let result = sqlx::query("DELETE FROM sop_steps WHERE id = ?1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(PromptLabError::NotFound { entity: "sop_steps", id });
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, FromRow)]
@@ -498,4 +734,76 @@ fn parse_json_option(value: Option<String>) -> Result<Option<Value>> {
     value
         .map(|raw| serde_json::from_str::<Value>(&raw).map_err(PromptLabError::from))
         .transpose()
+}
+
+// ============== Row Types ==============
+
+#[derive(Debug, FromRow)]
+struct SopRow {
+    id: i64,
+    sop_id: String,
+    name: String,
+    ticket_id: Option<String>,
+    version: i64,
+    detect: Option<String>,
+    handle: Option<String>,
+    verification: Option<String>,
+    rollback: Option<String>,
+    status: String,
+    created_at: String,
+    updated_at: String,
+}
+
+impl TryFrom<SopRow> for Sop {
+    type Error = PromptLabError;
+
+    fn try_from(row: SopRow) -> Result<Self> {
+        Ok(Self {
+            id: row.id,
+            sop_id: row.sop_id,
+            name: row.name,
+            ticket_id: row.ticket_id,
+            version: row.version,
+            detect: parse_json_option(row.detect)?,
+            handle: parse_json_option(row.handle)?,
+            verification: parse_json_option(row.verification)?,
+            rollback: parse_json_option(row.rollback)?,
+            status: row.status.parse()?,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        })
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct SopStepRow {
+    id: i64,
+    sop_id: String,
+    name: String,
+    version: i64,
+    operation: Option<String>,
+    verification: Option<String>,
+    impact_analysis: Option<String>,
+    rollback: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+impl TryFrom<SopStepRow> for SopStep {
+    type Error = PromptLabError;
+
+    fn try_from(row: SopStepRow) -> Result<Self> {
+        Ok(Self {
+            id: row.id,
+            sop_id: row.sop_id,
+            name: row.name,
+            version: row.version,
+            operation: parse_json_option(row.operation)?,
+            verification: parse_json_option(row.verification)?,
+            impact_analysis: parse_json_option(row.impact_analysis)?,
+            rollback: parse_json_option(row.rollback)?,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        })
+    }
 }

@@ -276,3 +276,133 @@ pub struct AiExecutionLogFilter {
     pub context_id: Option<i64>,
     pub check_item_id: Option<i64>,
 }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SopStatus {
+    Active,
+    Inactive,
+    Draft,
+}
+
+impl SopStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Inactive => "inactive",
+            Self::Draft => "draft",
+        }
+    }
+}
+
+impl fmt::Display for SopStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for SopStatus {
+    type Err = PromptLabError;
+
+    fn from_str(value: &str) -> Result<Self> {
+        match value {
+            "active" => Ok(Self::Active),
+            "inactive" => Ok(Self::Inactive),
+            "draft" => Ok(Self::Draft),
+            _ => Err(PromptLabError::InvalidEnum {
+                field: "status",
+                value: value.to_string(),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Sop {
+    pub id: i64,
+    pub sop_id: String,
+    pub name: String,
+    pub ticket_id: Option<String>,
+    pub version: i64,
+    pub detect: Option<Value>,
+    pub handle: Option<Value>,
+    pub verification: Option<Value>,
+    pub rollback: Option<Value>,
+    pub status: SopStatus,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateSopInput {
+    pub sop_id: String,
+    pub name: String,
+    pub ticket_id: Option<String>,
+    pub version: Option<i64>,
+    pub detect: Option<Value>,
+    pub handle: Option<Value>,
+    pub verification: Option<Value>,
+    pub rollback: Option<Value>,
+    pub status: SopStatus,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateSopInput {
+    pub id: i64,
+    pub sop_id: Option<String>,
+    pub name: Option<String>,
+    pub ticket_id: Option<String>,
+    pub version: Option<i64>,
+    pub detect: Option<Value>,
+    pub handle: Option<Value>,
+    pub verification: Option<Value>,
+    pub rollback: Option<Value>,
+    pub status: Option<SopStatus>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SopFilter {
+    pub status: Option<SopStatus>,
+    pub ticket_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SopStep {
+    pub id: i64,
+    pub sop_id: String,
+    pub name: String,
+    pub version: i64,
+    pub operation: Option<Value>,
+    pub verification: Option<Value>,
+    pub impact_analysis: Option<Value>,
+    pub rollback: Option<Value>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateSopStepInput {
+    pub sop_id: String,
+    pub name: String,
+    pub version: Option<i64>,
+    pub operation: Option<Value>,
+    pub verification: Option<Value>,
+    pub impact_analysis: Option<Value>,
+    pub rollback: Option<Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateSopStepInput {
+    pub id: i64,
+    pub name: Option<String>,
+    pub version: Option<i64>,
+    pub operation: Option<Value>,
+    pub verification: Option<Value>,
+    pub impact_analysis: Option<Value>,
+    pub rollback: Option<Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SopStepFilter {
+    pub sop_id: Option<String>,
+}

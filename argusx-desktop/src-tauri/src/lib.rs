@@ -2,7 +2,8 @@ use argusx_common::config::{DatabaseConfig, Settings};
 use prompt_lab_core::PromptLab;
 use prompt_lab_core::{
     AiExecutionLog, CheckResult as CheckResultModel, ChecklistItem, ChecklistStatus, ExecStatus,
-    GoldenSetItem, SourceType, TargetLevel,
+    GoldenSetItem, SourceType, TargetLevel, CreateSopInput, UpdateSopInput, SopFilter, Sop,
+    SopStep, CreateSopStepInput, UpdateSopStepInput, SopStepFilter,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -344,6 +345,175 @@ impl From<AiExecutionLogFilter> for prompt_lab_core::AiExecutionLogFilter {
     }
 }
 
+// SopStatus Types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SopStatusInput {
+    Active,
+    Inactive,
+    Draft,
+}
+
+impl From<SopStatusInput> for prompt_lab_core::SopStatus {
+    fn from(v: SopStatusInput) -> Self {
+        match v {
+            SopStatusInput::Active => prompt_lab_core::SopStatus::Active,
+            SopStatusInput::Inactive => prompt_lab_core::SopStatus::Inactive,
+            SopStatusInput::Draft => prompt_lab_core::SopStatus::Draft,
+        }
+    }
+}
+
+impl From<prompt_lab_core::SopStatus> for SopStatusInput {
+    fn from(v: prompt_lab_core::SopStatus) -> Self {
+        match v {
+            prompt_lab_core::SopStatus::Active => SopStatusInput::Active,
+            prompt_lab_core::SopStatus::Inactive => SopStatusInput::Inactive,
+            prompt_lab_core::SopStatus::Draft => SopStatusInput::Draft,
+        }
+    }
+}
+
+// SOP Types
+#[derive(Debug, Deserialize)]
+pub struct CreateSopInputInternal {
+    pub sop_id: String,
+    pub name: String,
+    pub ticket_id: Option<String>,
+    pub version: Option<i64>,
+    pub detect: Option<Value>,
+    pub handle: Option<Value>,
+    pub verification: Option<Value>,
+    pub rollback: Option<Value>,
+    pub status: SopStatusInput,
+}
+
+impl From<CreateSopInputInternal> for CreateSopInput {
+    fn from(v: CreateSopInputInternal) -> Self {
+        CreateSopInput {
+            sop_id: v.sop_id,
+            name: v.name,
+            ticket_id: v.ticket_id,
+            version: v.version,
+            detect: v.detect,
+            handle: v.handle,
+            verification: v.verification,
+            rollback: v.rollback,
+            status: v.status.into(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSopInputInternal {
+    pub id: i64,
+    pub sop_id: Option<String>,
+    pub name: Option<String>,
+    pub ticket_id: Option<String>,
+    pub version: Option<i64>,
+    pub detect: Option<Value>,
+    pub handle: Option<Value>,
+    pub verification: Option<Value>,
+    pub rollback: Option<Value>,
+    pub status: Option<SopStatusInput>,
+}
+
+impl From<UpdateSopInputInternal> for UpdateSopInput {
+    fn from(v: UpdateSopInputInternal) -> Self {
+        UpdateSopInput {
+            id: v.id,
+            sop_id: v.sop_id,
+            name: v.name,
+            ticket_id: v.ticket_id,
+            version: v.version,
+            detect: v.detect,
+            handle: v.handle,
+            verification: v.verification,
+            rollback: v.rollback,
+            status: v.status.map(|s| s.into()),
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct SopFilterInternal {
+    pub status: Option<SopStatusInput>,
+    pub ticket_id: Option<String>,
+}
+
+impl From<SopFilterInternal> for SopFilter {
+    fn from(v: SopFilterInternal) -> Self {
+        SopFilter {
+            status: v.status.map(|s| s.into()),
+            ticket_id: v.ticket_id,
+        }
+    }
+}
+
+// SopStep Types
+#[derive(Debug, Deserialize)]
+pub struct CreateSopStepInputInternal {
+    pub sop_id: String,
+    pub name: String,
+    pub version: Option<i64>,
+    pub operation: Option<Value>,
+    pub verification: Option<Value>,
+    pub impact_analysis: Option<Value>,
+    pub rollback: Option<Value>,
+}
+
+impl From<CreateSopStepInputInternal> for CreateSopStepInput {
+    fn from(v: CreateSopStepInputInternal) -> Self {
+        CreateSopStepInput {
+            sop_id: v.sop_id,
+            name: v.name,
+            version: v.version,
+            operation: v.operation,
+            verification: v.verification,
+            impact_analysis: v.impact_analysis,
+            rollback: v.rollback,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSopStepInputInternal {
+    pub id: i64,
+    pub name: Option<String>,
+    pub version: Option<i64>,
+    pub operation: Option<Value>,
+    pub verification: Option<Value>,
+    pub impact_analysis: Option<Value>,
+    pub rollback: Option<Value>,
+}
+
+impl From<UpdateSopStepInputInternal> for UpdateSopStepInput {
+    fn from(v: UpdateSopStepInputInternal) -> Self {
+        UpdateSopStepInput {
+            id: v.id,
+            name: v.name,
+            version: v.version,
+            operation: v.operation,
+            verification: v.verification,
+            impact_analysis: v.impact_analysis,
+            rollback: v.rollback,
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct SopStepFilterInternal {
+    pub sop_id: Option<String>,
+}
+
+impl From<SopStepFilterInternal> for SopStepFilter {
+    fn from(v: SopStepFilterInternal) -> Self {
+        SopStepFilter {
+            sop_id: v.sop_id,
+        }
+    }
+}
+
 // ============================================================================
 // Response Types
 // ============================================================================
@@ -470,6 +640,72 @@ impl From<AiExecutionLog> for AiExecutionLogResponse {
             error_message: v.error_message,
             latency_ms: v.latency_ms,
             created_at: v.created_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct SopResponse {
+    pub id: i64,
+    pub sop_id: String,
+    pub name: String,
+    pub ticket_id: Option<String>,
+    pub version: i64,
+    pub detect: Option<Value>,
+    pub handle: Option<Value>,
+    pub verification: Option<Value>,
+    pub rollback: Option<Value>,
+    pub status: SopStatusInput,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl From<Sop> for SopResponse {
+    fn from(v: Sop) -> Self {
+        SopResponse {
+            id: v.id,
+            sop_id: v.sop_id,
+            name: v.name,
+            ticket_id: v.ticket_id,
+            version: v.version,
+            detect: v.detect,
+            handle: v.handle,
+            verification: v.verification,
+            rollback: v.rollback,
+            status: v.status.into(),
+            created_at: v.created_at,
+            updated_at: v.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct SopStepResponse {
+    pub id: i64,
+    pub sop_id: String,
+    pub name: String,
+    pub version: i64,
+    pub operation: Option<Value>,
+    pub verification: Option<Value>,
+    pub impact_analysis: Option<Value>,
+    pub rollback: Option<Value>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl From<SopStep> for SopStepResponse {
+    fn from(v: SopStep) -> Self {
+        SopStepResponse {
+            id: v.id,
+            sop_id: v.sop_id,
+            name: v.name,
+            version: v.version,
+            operation: v.operation,
+            verification: v.verification,
+            impact_analysis: v.impact_analysis,
+            rollback: v.rollback,
+            created_at: v.created_at,
+            updated_at: v.updated_at,
         }
     }
 }
@@ -644,6 +880,140 @@ async fn list_ai_execution_logs(
 }
 
 // ============================================================================
+// SOP Commands
+// ============================================================================
+
+#[tauri::command]
+async fn create_sop(
+    state: State<'_, Arc<PromptLab>>,
+    input: CreateSopInputInternal,
+) -> Result<SopResponse, ApiError> {
+    let result = state
+        .sop_service()
+        .create_sop(input.into())
+        .await
+        .map_err(ApiError::from)?;
+    Ok(result.into())
+}
+
+#[tauri::command]
+async fn update_sop(
+    state: State<'_, Arc<PromptLab>>,
+    input: UpdateSopInputInternal,
+) -> Result<SopResponse, ApiError> {
+    let result = state
+        .sop_service()
+        .update_sop(input.into())
+        .await
+        .map_err(ApiError::from)?;
+    Ok(result.into())
+}
+
+#[tauri::command]
+async fn list_sops(
+    state: State<'_, Arc<PromptLab>>,
+    filter: SopFilterInternal,
+) -> Result<Vec<SopResponse>, ApiError> {
+    let results = state
+        .sop_service()
+        .list_sops(filter.into())
+        .await
+        .map_err(ApiError::from)?;
+    Ok(results.into_iter().map(|i| i.into()).collect())
+}
+
+#[tauri::command]
+async fn get_sop(
+    state: State<'_, Arc<PromptLab>>,
+    id: i64,
+) -> Result<SopResponse, ApiError> {
+    let result = state
+        .sop_service()
+        .get_sop(id)
+        .await
+        .map_err(ApiError::from)?;
+    Ok(result.into())
+}
+
+#[tauri::command]
+async fn delete_sop(
+    state: State<'_, Arc<PromptLab>>,
+    id: i64,
+) -> Result<(), ApiError> {
+    state
+        .sop_service()
+        .delete_sop(id)
+        .await
+        .map_err(ApiError::from)?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn create_sop_step(
+    state: State<'_, Arc<PromptLab>>,
+    input: CreateSopStepInputInternal,
+) -> Result<SopStepResponse, ApiError> {
+    let result = state
+        .sop_service()
+        .create_sop_step(input.into())
+        .await
+        .map_err(ApiError::from)?;
+    Ok(result.into())
+}
+
+#[tauri::command]
+async fn update_sop_step(
+    state: State<'_, Arc<PromptLab>>,
+    input: UpdateSopStepInputInternal,
+) -> Result<SopStepResponse, ApiError> {
+    let result = state
+        .sop_service()
+        .update_sop_step(input.into())
+        .await
+        .map_err(ApiError::from)?;
+    Ok(result.into())
+}
+
+#[tauri::command]
+async fn list_sop_steps(
+    state: State<'_, Arc<PromptLab>>,
+    filter: SopStepFilterInternal,
+) -> Result<Vec<SopStepResponse>, ApiError> {
+    let results = state
+        .sop_service()
+        .list_sop_steps(filter.into())
+        .await
+        .map_err(ApiError::from)?;
+    Ok(results.into_iter().map(|i| i.into()).collect())
+}
+
+#[tauri::command]
+async fn get_sop_step(
+    state: State<'_, Arc<PromptLab>>,
+    id: i64,
+) -> Result<SopStepResponse, ApiError> {
+    let result = state
+        .sop_service()
+        .get_sop_step(id)
+        .await
+        .map_err(ApiError::from)?;
+    Ok(result.into())
+}
+
+#[tauri::command]
+async fn delete_sop_step(
+    state: State<'_, Arc<PromptLab>>,
+    id: i64,
+) -> Result<(), ApiError> {
+    state
+        .sop_service()
+        .delete_sop_step(id)
+        .await
+        .map_err(ApiError::from)?;
+    Ok(())
+}
+
+// ============================================================================
 // App Entry Point
 // ============================================================================
 
@@ -700,6 +1070,16 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             list_check_results,
             append_ai_execution_log,
             list_ai_execution_logs,
+            create_sop,
+            update_sop,
+            list_sops,
+            get_sop,
+            delete_sop,
+            create_sop_step,
+            update_sop_step,
+            list_sop_steps,
+            get_sop_step,
+            delete_sop_step,
         ])
         .run(tauri::generate_context!())?;
     Ok(())
