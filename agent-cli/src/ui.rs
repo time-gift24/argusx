@@ -34,6 +34,21 @@ mod tests {
     use super::*;
     use ratatui::{backend::TestBackend, Terminal};
 
+    fn buffer_to_string(buf: &ratatui::buffer::Buffer) -> String {
+        let mut lines = Vec::new();
+        for y in 0..buf.area.height {
+            let mut line = String::new();
+            for x in 0..buf.area.width {
+                let cell = &buf.content[(y * buf.area.width + x) as usize];
+                if !cell.skip {
+                    line.push_str(cell.symbol());
+                }
+            }
+            lines.push(line);
+        }
+        lines.join("\n")
+    }
+
     #[test]
     fn render_shows_input_and_messages() {
         let backend = TestBackend::new(80, 20);
@@ -45,7 +60,19 @@ mod tests {
             text: "hi".into(),
         });
 
-        // This should not panic - just verify rendering works
         terminal.draw(|frame| draw(frame, &app)).unwrap();
+        let buf = terminal.backend().buffer();
+        let content = buffer_to_string(buf);
+
+        assert!(
+            content.contains("hi"),
+            "buffer should contain assistant message 'hi', got: {}",
+            content
+        );
+        assert!(
+            content.contains("hello"),
+            "buffer should contain input 'hello', got: {}",
+            content
+        );
     }
 }
