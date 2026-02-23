@@ -2,7 +2,7 @@ mod mock;
 
 use std::path::PathBuf;
 
-use agent_session::SessionFilter;
+use agent::SessionFilter;
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -42,8 +42,8 @@ async fn main() -> anyhow::Result<()> {
             user_id,
             json,
         } => {
-            let runtime = mock::build_runtime(cli.store_dir.clone());
-            let session_id = runtime.create_session(user_id, title).await?;
+            let agent = mock::build_agent(cli.store_dir.clone()).await?;
+            let session_id = agent.create_session(user_id, title).await?;
             if json {
                 println!(
                     "{}",
@@ -54,8 +54,8 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Commands::List { json } => {
-            let runtime = mock::build_runtime(cli.store_dir.clone());
-            let sessions = runtime.list_sessions(SessionFilter::default()).await?;
+            let agent = mock::build_agent(cli.store_dir.clone()).await?;
+            let sessions = agent.list_sessions(SessionFilter::default()).await?;
             if json {
                 println!("{}", serde_json::to_string(&sessions)?);
             } else {

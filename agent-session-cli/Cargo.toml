@@ -4,9 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+agent = { path = "../agent" }
 agent-core = { path = "../agent-core" }
-agent-session = { path = "../agent-session" }
-agent-turn = { path = "../agent-turn" }
 anyhow.workspace = true
 async-trait.workspace = true
 clap.workspace = true

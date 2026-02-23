@@ -1,14 +1,10 @@
 use std::io::{self, IsTerminal, Read, Write};
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use agent_core::{
-    new_id, InputEnvelope, RunEventStream, RunStreamEvent, Runtime, SessionMeta, TurnRequest,
-    UiEventStream, UiThreadEvent,
-};
-use agent_tool::AgentToolRuntime;
+use agent::{AgentBuilder, AgentStream, AgentStreamEvent};
+use agent_core::{RunStreamEvent, UiThreadEvent};
 use agent_turn::adapters::bigmodel::{BigModelAdapterConfig, BigModelModelAdapter};
-use agent_turn::state::RetryPolicy;
-use agent_turn::{TurnEngineConfig, TurnRuntime};
 use anyhow::{bail, Context, Result};
 use bigmodel_api::{BigModelClient, Config};
 use clap::Parser;
@@ -51,6 +47,9 @@ struct Cli {
     session_id: Option<String>,
 
     #[arg(long)]
+    store_dir: Option<PathBuf>,
+
+    #[arg(long)]
     turn_id: Option<String>,
 
     #[arg(long, help = "Print run stream events")]
@@ -74,6 +73,13 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let prompt = resolve_prompt(cli.prompt)?;
 
+    if cli.turn_id.is_some() {
+        eprintln!("[warning] --turn-id is ignored when using agent facade");
+    }
+    if cli.max_retries != 3 || cli.base_delay_ms != 200 {
+        eprintln!("[warning] --max-retries/--base-delay-ms are currently ignored in facade mode");
+    }
+
     let client = Arc::new(BigModelClient::new(
         Config::new(cli.api_key).with_base_url(cli.base_url),
     ));
@@ -87,29 +93,32 @@ async fn main() -> Result<()> {
     };
 
     let model = Arc::new(BigModelModelAdapter::new(client).with_config(model_cfg));
-    let tools = Arc::new(AgentToolRuntime::default_with_builtins().await);
 
-    let runtime_cfg = TurnEngineConfig {
-        max_parallel_tools: cli.max_parallel_tools,
-        retry_policy: RetryPolicy {
-            max_retries: cli.max_retries,
-            base_delay_ms: cli.base_delay_ms,
-        },
+    let mut builder = AgentBuilder::new()
+        .model(model)
+        .max_parallel_tools(cli.max_parallel_tools);
+    if let Some(store_dir) = cli.store_dir {
+        builder = builder.store_dir(store_dir);
+    }
+    let agent = builder.build().await?;
+
+    let session_id = match cli.session_id {
+        Some(session_id) => {
+            let exists = agent.get_session(&session_id).await?.is_some();
+            if !exists {
+                bail!("session not found: {session_id}");
+            }
+            session_id
+        }
+        None => {
+            agent
+                .create_session(None, Some("agent-turn-cli".to_string()))
+                .await?
+        }
     };
 
-    let runtime = TurnRuntime::new(model, tools, runtime_cfg);
-
-    let request = TurnRequest {
-        meta: SessionMeta::new(
-            cli.session_id.unwrap_or_else(new_id),
-            cli.turn_id.unwrap_or_else(new_id),
-        ),
-        initial_input: InputEnvelope::user_text(prompt),
-        transcript: Vec::new(),
-    };
-
-    let streams = runtime.run_turn(request).await?;
-    stream_events(streams.run, streams.ui, cli.show_run, cli.json).await
+    let stream = agent.chat_stream(&session_id, &prompt).await?;
+    stream_events(stream, cli.show_run, cli.json).await
 }
 
 fn resolve_prompt(cli_prompt: Option<String>) -> Result<String> {
@@ -137,31 +146,16 @@ fn resolve_prompt(cli_prompt: Option<String>) -> Result<String> {
     Ok(trimmed)
 }
 
-async fn stream_events(
-    mut run: RunEventStream,
-    mut ui: UiEventStream,
-    show_run: bool,
-    as_json: bool,
-) -> Result<()> {
-    let mut run_open = true;
-    let mut ui_open = true;
+async fn stream_events(mut stream: AgentStream, show_run: bool, as_json: bool) -> Result<()> {
     let mut render_state = UiRenderState::default();
     let mut stdout = io::stdout();
     let mut stderr = io::stderr();
 
-    while run_open || ui_open {
-        tokio::select! {
-            event = run.next(), if run_open => {
-                match event {
-                    Some(event) => handle_run_event(event, show_run, as_json)?,
-                    None => run_open = false,
-                }
-            }
-            event = ui.next(), if ui_open => {
-                match event {
-                    Some(event) => handle_ui_event(event, as_json, &mut stdout, &mut stderr, &mut render_state)?,
-                    None => ui_open = false,
-                }
+    while let Some(event) = stream.next().await {
+        match event {
+            AgentStreamEvent::Run(event) => handle_run_event(event, show_run, as_json)?,
+            AgentStreamEvent::Ui(event) => {
+                handle_ui_event(event, as_json, &mut stdout, &mut stderr, &mut render_state)?
             }
         }
     }
@@ -316,8 +310,8 @@ mod tests {
     }
 
     #[test]
-    fn cli_builds_runtime_with_agent_tool() {
-        let name = std::any::type_name::<agent_tool::AgentToolRuntime>();
+    fn cli_builds_agent_facade() {
+        let name = std::any::type_name::<agent::AgentBuilder<BigModelModelAdapter>>();
         assert!(!name.is_empty());
     }
 

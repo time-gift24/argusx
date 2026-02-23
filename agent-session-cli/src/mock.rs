@@ -1,19 +1,21 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use agent_core::tools::{ToolCatalog, ToolExecutionContext, ToolExecutionError, ToolExecutor};
+use agent::AgentBuilder;
 use agent_core::{AgentError, LanguageModel, ModelEventStream, ModelOutputEvent, ModelRequest};
-use agent_session::SessionRuntime;
 use async_trait::async_trait;
 use futures::stream;
 
 #[derive(Default)]
 pub struct MockModel;
 
-pub struct MockTools;
-
-pub fn build_runtime(store_dir: PathBuf) -> SessionRuntime<MockModel, MockTools> {
-    SessionRuntime::new(store_dir, Arc::new(MockModel), Arc::new(MockTools))
+pub async fn build_agent(store_dir: PathBuf) -> anyhow::Result<agent::Agent<MockModel>> {
+    AgentBuilder::new()
+        .model(Arc::new(MockModel))
+        .store_dir(store_dir)
+        .build()
+        .await
+        .map_err(anyhow::Error::from)
 }
 
 #[async_trait]
@@ -29,31 +31,6 @@ impl LanguageModel for MockModel {
             }),
             Ok(ModelOutputEvent::Completed { usage: None }),
         ])))
-    }
-}
-
-#[async_trait]
-impl ToolExecutor for MockTools {
-    async fn execute_tool(
-        &self,
-        call: agent_core::ToolCall,
-        _ctx: ToolExecutionContext,
-    ) -> Result<agent_core::ToolResult, ToolExecutionError> {
-        Ok(agent_core::ToolResult::ok(
-            call.call_id,
-            serde_json::json!({"result": "ok"}),
-        ))
-    }
-}
-
-#[async_trait]
-impl ToolCatalog for MockTools {
-    async fn list_tools(&self) -> Vec<agent_core::tools::ToolSpec> {
-        Vec::new()
-    }
-
-    async fn tool_spec(&self, _name: &str) -> Option<agent_core::tools::ToolSpec> {
-        None
     }
 }
 
