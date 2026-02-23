@@ -1,8 +1,7 @@
 import { invoke as originalInvoke } from "@tauri-apps/api/core";
-import { mockInvoke } from "@/lib/mocks/prompt-lab-mock";
 
-// Use mock in development, real invoke in production
-const invoke = process.env.NODE_ENV === "development" ? mockInvoke : originalInvoke;
+// Use real Tauri backend
+const invoke = originalInvoke;
 
 // ============================================================================
 // Error Types
