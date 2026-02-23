@@ -85,7 +85,8 @@ pub fn process_app_event(app: &mut AppState, event: AppEvent) {
             // Clear reasoning and tool progress for next turn
             app.reasoning_text.clear();
             app.tool_progress.clear();
-            if failed {
+            // Only set "turn failed" if there's no existing error message
+            if failed && app.last_warning.is_none() {
                 app.last_warning = Some("turn failed".to_string());
             }
         }
@@ -136,8 +137,8 @@ where
         // Render
         terminal.draw(|frame| draw(frame, app))?;
 
-        // Check for events from agent (non-blocking)
-        if let Ok(event) = rx.try_recv() {
+        // Drain all available events from agent (non-blocking)
+        while let Ok(event) = rx.try_recv() {
             if debug_events {
                 eprintln!("[DEBUG] event: {:?}", event);
             }
@@ -315,6 +316,33 @@ mod tests {
 
         assert!(app.active_turn.is_none());
         assert_eq!(app.last_warning, Some("turn failed".to_string()));
+    }
+
+    #[test]
+    fn error_message_preserved_after_turn_finished() {
+        let mut app = AppState::new("s-1".into());
+        app.active_turn = Some(crate::app::ActiveTurn::default());
+
+        // Send error first
+        process_app_event(
+            &mut app,
+            AppEvent::Error {
+                message: "connection refused".to_string(),
+            },
+        );
+        // Then send TurnFinished (simulates chat_stream error path)
+        process_app_event(
+            &mut app,
+            AppEvent::TurnFinished {
+                turn_id: "t1".to_string(),
+                failed: true,
+            },
+        );
+
+        // Error message should be preserved, not overwritten
+        assert!(app.active_turn.is_none());
+        assert!(app.last_warning.is_some());
+        assert!(app.last_warning.unwrap().contains("connection refused"));
     }
 
     #[test]
