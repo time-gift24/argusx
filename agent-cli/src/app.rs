@@ -24,6 +24,7 @@ pub struct SubmitCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolProgressItem {
+    pub call_id: String,
     pub tool_name: String,
     pub status: String,
 }

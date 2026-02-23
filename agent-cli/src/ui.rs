@@ -108,6 +108,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = AppState::new("s-1".into());
         app.tool_progress.push(crate::app::ToolProgressItem {
+            call_id: "call-1".into(),
             tool_name: "read_file".into(),
             status: "running".into(),
         });

@@ -61,21 +61,22 @@ pub fn process_app_event(app: &mut AppState, event: AppEvent) {
         }
         AppEvent::ToolRequested { call_id, tool_name } => {
             app.tool_progress.push(crate::app::ToolProgressItem {
+                call_id: call_id.clone(),
                 tool_name,
                 status: format!("requested: {}", call_id),
             });
         }
-        AppEvent::ToolProgress { call_id: _, status } => {
-            // Update the latest tool progress entry
-            if let Some(last) = app.tool_progress.last_mut() {
-                last.status = status;
+        AppEvent::ToolProgress { call_id, status } => {
+            // Update the tool progress entry by call_id
+            if let Some(item) = app.tool_progress.iter_mut().find(|i| i.call_id == call_id) {
+                item.status = status;
             }
         }
-        AppEvent::ToolCompleted { call_id: _ } => {
-            // Mark the latest tool as completed
-            if let Some(last) = app.tool_progress.last_mut() {
-                if !last.status.starts_with("completed") {
-                    last.status = format!("completed: {}", last.status);
+        AppEvent::ToolCompleted { call_id } => {
+            // Mark the specific tool as completed by call_id
+            if let Some(item) = app.tool_progress.iter_mut().find(|i| i.call_id == call_id) {
+                if !item.status.starts_with("completed") {
+                    item.status = format!("completed: {}", item.status);
                 }
             }
         }
@@ -110,7 +111,7 @@ impl Drop for RawModeGuard {
 pub async fn run_tui_loop<L>(
     agent: std::sync::Arc<agent::Agent<L>>,
     app: &mut AppState,
-    _debug_events: bool,
+    debug_events: bool,
 ) -> anyhow::Result<()>
 where
     L: agent_core::LanguageModel + Send + Sync + 'static,
@@ -137,6 +138,9 @@ where
 
         // Check for events from agent (non-blocking)
         if let Ok(event) = rx.try_recv() {
+            if debug_events {
+                eprintln!("[DEBUG] event: {:?}", event);
+            }
             process_app_event(app, event);
         }
 
@@ -169,8 +173,13 @@ where
                                         pump_stream(stream, tx).await;
                                     }
                                     Err(e) => {
+                                        // Send error first, then TurnFinished to unlock input
                                         let _ = tx.send(AppEvent::Error {
                                             message: format!("chat error: {}", e),
+                                        });
+                                        let _ = tx.send(AppEvent::TurnFinished {
+                                            turn_id: String::new(),
+                                            failed: true,
                                         });
                                     }
                                 }
@@ -272,6 +281,7 @@ mod tests {
         let mut app = AppState::new("s-1".into());
         app.reasoning_text = "some reasoning".to_string();
         app.tool_progress.push(crate::app::ToolProgressItem {
+            call_id: "call-1".to_string(),
             tool_name: "bash".to_string(),
             status: "done".to_string(),
         });
@@ -305,5 +315,55 @@ mod tests {
 
         assert!(app.active_turn.is_none());
         assert_eq!(app.last_warning, Some("turn failed".to_string()));
+    }
+
+    #[test]
+    fn multiple_tools_track_by_call_id_separately() {
+        let mut app = AppState::new("s-1".into());
+        // Request two tools
+        process_app_event(
+            &mut app,
+            AppEvent::ToolRequested {
+                call_id: "call-1".to_string(),
+                tool_name: "bash".to_string(),
+            },
+        );
+        process_app_event(
+            &mut app,
+            AppEvent::ToolRequested {
+                call_id: "call-2".to_string(),
+                tool_name: "read".to_string(),
+            },
+        );
+        // Update progress for call-1 only
+        process_app_event(
+            &mut app,
+            AppEvent::ToolProgress {
+                call_id: "call-1".to_string(),
+                status: "Running...".to_string(),
+            },
+        );
+        // Complete call-2
+        process_app_event(
+            &mut app,
+            AppEvent::ToolCompleted {
+                call_id: "call-2".to_string(),
+            },
+        );
+
+        // Verify each tool has correct state
+        let call1 = app
+            .tool_progress
+            .iter()
+            .find(|i| i.call_id == "call-1")
+            .unwrap();
+        let call2 = app
+            .tool_progress
+            .iter()
+            .find(|i| i.call_id == "call-2")
+            .unwrap();
+
+        assert_eq!(call1.status, "Running...");
+        assert!(call2.status.starts_with("completed"));
     }
 }
