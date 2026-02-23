@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Pencil, Trash2, Check, Eye } from "lucide-react";
+import { Plus, Pencil, Trash2, Eye } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,7 +51,7 @@ export default function ChecklistPage() {
         status: "active",
       };
       const newItem = await createChecklistItem(input);
-      setItems([newItem, ...items]);
+      setItems((prev) => [newItem, ...prev]);
       setIsCreating(false);
       setName("");
       setPrompt("");
@@ -79,7 +79,7 @@ export default function ChecklistPage() {
         prompt: prompt.trim(),
         target_level: targetLevel,
       });
-      setItems(items.map((i) => (i.id === updated.id ? updated : i)));
+      setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
       setIsCreating(false);
       setEditingItem(null);
       setName("");
@@ -92,7 +92,7 @@ export default function ChecklistPage() {
 
   const handleDelete = async (id: number) => {
     await deleteChecklistItem(id);
-    setItems(items.filter((i) => i.id !== id));
+    setItems((prev) => prev.filter((i) => i.id !== id));
   };
 
   if (loading) {
