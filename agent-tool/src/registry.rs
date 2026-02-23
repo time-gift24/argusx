@@ -26,7 +26,10 @@ impl ToolRegistry {
 
     pub async fn register(&self, tool: impl Tool + 'static) {
         let tool = Arc::new(tool);
-        self.tools.write().await.insert(tool.name().to_string(), tool);
+        self.tools
+            .write()
+            .await
+            .insert(tool.name().to_string(), tool);
     }
 
     pub async fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
@@ -44,13 +47,10 @@ impl ToolRegistry {
         args: serde_json::Value,
         ctx: ToolContext,
     ) -> Result<ToolResult, ToolError> {
-        let tool = self.get(name).await.ok_or_else(|| ToolError::NotFound(name.to_string()))?;
+        let tool = self
+            .get(name)
+            .await
+            .ok_or_else(|| ToolError::NotFound(name.to_string()))?;
         tool.execute(ctx, args).await
-    }
-}
-
-impl Default for ToolRegistry {
-    fn default() -> Self {
-        Self::new()
     }
 }

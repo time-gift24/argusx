@@ -1,7 +1,7 @@
-use async_trait::async_trait;
 use crate::context::{ToolContext, ToolResult};
 use crate::error::ToolError;
 use crate::spec::ToolSpec;
+use async_trait::async_trait;
 
 #[async_trait]
 pub trait Tool: Send + Sync {

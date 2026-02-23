@@ -25,7 +25,6 @@ let goldenSetItems: GoldenSetItem[] = [...mockGoldenSetItems];
 let checkResults: CheckResult[] = [...mockCheckResults];
 let aiExecutionLogs: AiExecutionLog[] = [...mockAiExecutionLogs];
 let nextChecklistId = 3;
-let nextGoldenSetId = 2;
 
 // Mock invoke function that simulates Tauri IPC calls
 export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

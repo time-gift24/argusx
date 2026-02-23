@@ -3,9 +3,10 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use agent_core::{
+    new_id,
     tools::{ToolCatalog, ToolExecutionContext, ToolExecutor, ToolParallelMode},
-    new_id, AgentError, LanguageModel, ModelOutputEvent, ModelRequest, RuntimeEvent, ToolCall,
-    ToolResult, TranscriptItem,
+    AgentError, LanguageModel, ModelOutputEvent, ModelRequest, RuntimeEvent, ToolCall, ToolResult,
+    TranscriptItem,
 };
 use futures::StreamExt;
 use tokio::sync::{mpsc, Mutex as AsyncMutex, Semaphore};
@@ -281,8 +282,8 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
-    use async_trait::async_trait;
     use agent_core::tools::{ToolExecutionPolicy, ToolParallelMode, ToolSpec};
+    use async_trait::async_trait;
 
     struct CountingTool {
         running: Arc<AtomicUsize>,

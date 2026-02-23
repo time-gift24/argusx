@@ -14,12 +14,12 @@ pub use model::{
     ToolCall, ToolResult, TurnRequest, Usage,
 };
 pub use runtime_event::RuntimeEvent;
+pub use session::{
+    SessionId, SessionInfo, SessionStatus, TurnContext, TurnId, TurnStatus, TurnSummary,
+};
 pub use traits::{
     CheckpointStore, LanguageModel, ModelEventStream, RunEventStream, Runtime, RuntimeStreams,
     UiEventStream,
-};
-pub use session::{
-    SessionId, SessionInfo, SessionStatus, TurnContext, TurnId, TurnStatus, TurnSummary,
 };
 pub use transcript_item::{NoteLevel, TranscriptItem};
 

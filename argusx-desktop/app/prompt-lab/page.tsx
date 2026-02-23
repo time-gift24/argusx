@@ -26,7 +26,7 @@ export default function PromptLabDashboard() {
     ]).then(([items, goldenItems, results]) => {
       setStats({
         checklistItems: items.length,
-        goldenSets: 1, // Mock
+        goldenSets: goldenItems.length,
         passed: results.filter((r) => r.is_pass).length,
         failed: results.filter((r) => !r.is_pass).length,
       });

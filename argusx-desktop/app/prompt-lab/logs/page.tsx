@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { ChevronDown, ChevronRight, Clock, Cpu, Hash } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { listAiExecutionLogs, type AiExecutionLog } from "@/lib/api/prompt-lab";
 

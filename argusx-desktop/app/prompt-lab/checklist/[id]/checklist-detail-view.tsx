@@ -17,6 +17,39 @@ export function ChecklistDetailView({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (isNaN(numericId)) {
+      return;
+    }
+
+    let cancelled = false;
+
+    Promise.all([
+      getChecklistItem(numericId),
+      listCheckResults({ check_item_id: numericId }),
+    ])
+      .then(([itemData, resultsData]) => {
+        if (cancelled) {
+          return;
+        }
+        setItem(itemData);
+        setResults(resultsData);
+        setError(null);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return;
+        }
+        setError(err instanceof Error ? err.message : "Failed to load checklist item");
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [numericId]);
+
   // Validate ID
   if (isNaN(numericId)) {
     return (
@@ -33,20 +66,6 @@ export function ChecklistDetailView({ id }: { id: string }) {
       </div>
     );
   }
-
-  useEffect(() => {
-    Promise.all([
-      getChecklistItem(numericId),
-      listCheckResults({ check_item_id: numericId }),
-    ]).then(([itemData, resultsData]) => {
-      setItem(itemData);
-      setResults(resultsData);
-      setLoading(false);
-    }).catch((err) => {
-      setError(err instanceof Error ? err.message : "Failed to load checklist item");
-      setLoading(false);
-    });
-  }, [numericId]);
 
   if (loading) {
     return (

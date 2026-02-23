@@ -30,7 +30,10 @@ impl ToolExecutor for DummyTools {
         call: ToolCall,
         _ctx: ToolExecutionContext,
     ) -> Result<ToolResult, ToolExecutionError> {
-        Ok(ToolResult::ok(call.call_id, serde_json::json!({"ok": true})))
+        Ok(ToolResult::ok(
+            call.call_id,
+            serde_json::json!({"ok": true}),
+        ))
     }
 }
 

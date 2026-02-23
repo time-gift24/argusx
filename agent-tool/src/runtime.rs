@@ -35,7 +35,10 @@ impl ToolCatalog for AgentToolRuntime {
     }
 
     async fn tool_spec(&self, name: &str) -> Option<agent_core::tools::ToolSpec> {
-        self.registry.get(name).await.map(|tool| map_spec(tool.spec()))
+        self.registry
+            .get(name)
+            .await
+            .map(|tool| map_spec(tool.spec()))
     }
 }
 

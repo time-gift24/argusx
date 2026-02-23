@@ -1,21 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import { Geist, Geist_Mono, Nunito_Sans } from "next/font/google";
-import { cn } from "@/lib/utils";
 import "./globals.css";
 import { AppLayout } from "@/components/layouts";
-
-const nunitoSans = Nunito_Sans({ variable: "--font-sans" });
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "ArgusX",
@@ -57,11 +43,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={cn(nunitoSans.variable, geistSans.variable, geistMono.variable)}
-      suppressHydrationWarning
-    >
+    <html lang="en" suppressHydrationWarning>
       <body className="antialiased">
         <Script id="argusx-theme-init" strategy="beforeInteractive">
           {themeInitScript}
