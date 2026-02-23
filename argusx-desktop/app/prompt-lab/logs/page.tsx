@@ -1,21 +1,26 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChevronDown, ChevronRight, Clock, Cpu, Hash } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, Cpu, Hash, FileText, Layers } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { listAiExecutionLogs, type AiExecutionLog } from "@/lib/api/prompt-lab";
+import { listAiExecutionLogs, listChecklistItems, type AiExecutionLog, type ChecklistItem } from "@/lib/api/prompt-lab";
 
 export default function LogsPage() {
   const [logs, setLogs] = useState<AiExecutionLog[]>([]);
+  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    listAiExecutionLogs({}).then((data) => {
-      setLogs(data);
+    Promise.all([
+      listAiExecutionLogs({}),
+      listChecklistItems({}),
+    ]).then(([logsData, itemsData]) => {
+      setLogs(logsData);
+      setChecklistItems(itemsData);
       setLoading(false);
     });
   }, []);
@@ -30,8 +35,13 @@ export default function LogsPage() {
     setExpanded(next);
   };
 
+  const getChecklistName = (id: number) => {
+    const item = checklistItems.find((i) => i.id === id);
+    return item?.name || `Checklist Item #${id}`;
+  };
+
   if (loading) {
-    return <div>Loading...</div>;
+    return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
   }
 
   return (
@@ -41,17 +51,21 @@ export default function LogsPage() {
       <div className="grid gap-4">
         {logs.map((log) => (
           <Collapsible key={log.id} open={expanded.has(log.id)}>
-            <Card>
+            <Card className="hover:shadow-md transition-shadow">
               <CardHeader className="py-3">
                 <CollapsibleTrigger asChild onClick={() => toggleExpanded(log.id)}>
                   <Button variant="ghost" className="w-full justify-between">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3">
                       {expanded.has(log.id) ? (
                         <ChevronDown className="h-4 w-4" />
                       ) : (
                         <ChevronRight className="h-4 w-4" />
                       )}
                       <span className="font-mono text-sm">Log #{log.id}</span>
+                      <div className="flex items-center gap-1">
+                        <Layers className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-xs">{log.context_type} #{log.context_id}</span>
+                      </div>
                       <Badge variant="outline">{log.model_provider}</Badge>
                     </div>
                     <Badge
@@ -70,7 +84,12 @@ export default function LogsPage() {
               </CardHeader>
               <CollapsibleContent>
                 <CardContent className="pt-0">
-                  <div className="grid grid-cols-4 gap-4 text-sm mb-4">
+                  <div className="flex flex-wrap gap-4 text-sm mb-4">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">检查项:</span>
+                      <span className="font-medium">{getChecklistName(log.check_item_id)}</span>
+                    </div>
                     <div className="flex items-center gap-2">
                       <Cpu className="h-4 w-4 text-muted-foreground" />
                       <span className="text-muted-foreground">Latency:</span>
