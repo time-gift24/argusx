@@ -1,4 +1,4 @@
-use agent::{AgentStreamEvent, AgentStream};
+use agent::{AgentStream, AgentStreamEvent};
 use agent_core::{RunStreamEvent, UiThreadEvent};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,15 +21,15 @@ pub fn map_stream_event(event: AgentStreamEvent) -> Option<AppEvent> {
         AgentStreamEvent::Ui(UiThreadEvent::ReasoningDelta { delta, .. }) => {
             Some(AppEvent::ReasoningDelta { delta })
         }
-        AgentStreamEvent::Ui(UiThreadEvent::ToolCallRequested { call_id, tool_name, .. }) => {
-            Some(AppEvent::ToolRequested { call_id, tool_name })
-        }
-        AgentStreamEvent::Ui(UiThreadEvent::ToolCallProgress { call_id, status, .. }) => {
-            Some(AppEvent::ToolProgress {
-                call_id,
-                status: format!("{status:?}"),
-            })
-        }
+        AgentStreamEvent::Ui(UiThreadEvent::ToolCallRequested {
+            call_id, tool_name, ..
+        }) => Some(AppEvent::ToolRequested { call_id, tool_name }),
+        AgentStreamEvent::Ui(UiThreadEvent::ToolCallProgress {
+            call_id, status, ..
+        }) => Some(AppEvent::ToolProgress {
+            call_id,
+            status: format!("{status:?}"),
+        }),
         AgentStreamEvent::Ui(UiThreadEvent::ToolCallCompleted { result, .. }) => {
             Some(AppEvent::ToolCompleted {
                 call_id: result.call_id,
@@ -42,10 +42,16 @@ pub fn map_stream_event(event: AgentStreamEvent) -> Option<AppEvent> {
             Some(AppEvent::Error { message })
         }
         AgentStreamEvent::Run(RunStreamEvent::TurnDone { turn_id, .. }) => {
-            Some(AppEvent::TurnFinished { turn_id, failed: false })
+            Some(AppEvent::TurnFinished {
+                turn_id,
+                failed: false,
+            })
         }
         AgentStreamEvent::Run(RunStreamEvent::TurnFailed { turn_id, .. }) => {
-            Some(AppEvent::TurnFinished { turn_id, failed: true })
+            Some(AppEvent::TurnFinished {
+                turn_id,
+                failed: true,
+            })
         }
         _ => None,
     }

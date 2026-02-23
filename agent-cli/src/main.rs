@@ -1,7 +1,7 @@
-use clap::Parser;
-use agent_cli::cli::CliArgs;
 use agent_cli::app::AppState;
+use agent_cli::cli::CliArgs;
 use agent_cli::event_loop::run_tui_loop;
+use clap::Parser;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -31,7 +31,8 @@ async fn main() -> anyhow::Result<()> {
     let agent = std::sync::Arc::new(agent);
 
     let gateway = AgentSessionGateway::new(&agent);
-    let session_id = agent_cli::session::resolve_session_id(&gateway, args.session.as_deref()).await?;
+    let session_id =
+        agent_cli::session::resolve_session_id(&gateway, args.session.as_deref()).await?;
 
     let mut app = AppState::new(session_id);
     run_tui_loop(agent, &mut app, args.debug_events).await?;
@@ -61,7 +62,10 @@ where
     L: agent_core::LanguageModel + Send + Sync + 'static,
 {
     async fn create_session(&self) -> anyhow::Result<String> {
-        Ok(self.agent.create_session(None, Some("agent-cli".into())).await?)
+        Ok(self
+            .agent
+            .create_session(None, Some("agent-cli".into()))
+            .await?)
     }
 
     async fn session_exists(&self, session_id: &str) -> anyhow::Result<bool> {

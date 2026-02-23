@@ -69,7 +69,9 @@ mod tests {
     #[tokio::test]
     async fn missing_provided_session_returns_error() {
         let gateway = FakeGateway::default();
-        let err = resolve_session_id(&gateway, Some("missing")).await.unwrap_err();
+        let err = resolve_session_id(&gateway, Some("missing"))
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("session not found"));
     }
 

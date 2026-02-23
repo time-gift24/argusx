@@ -5,7 +5,11 @@ use clap::Parser;
 pub struct CliArgs {
     #[arg(long, env = "BIGMODEL_API_KEY")]
     pub api_key: String,
-    #[arg(long, env = "BIGMODEL_BASE_URL", default_value = "https://open.bigmodel.cn/api/paas/v4")]
+    #[arg(
+        long,
+        env = "BIGMODEL_BASE_URL",
+        default_value = "https://open.bigmodel.cn/api/paas/v4"
+    )]
     pub base_url: String,
     #[arg(long, default_value = "glm-4.5")]
     pub model: String,

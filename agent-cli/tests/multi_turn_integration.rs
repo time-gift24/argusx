@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use async_trait::async_trait;
 use futures::stream;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 struct EchoModel;
@@ -33,7 +33,10 @@ async fn same_session_supports_two_turns() {
         .await
         .unwrap();
 
-    let session_id = agent.create_session(None, Some("demo".into())).await.unwrap();
+    let session_id = agent
+        .create_session(None, Some("demo".into()))
+        .await
+        .unwrap();
     let first = agent.chat(&session_id, "first").await.unwrap();
     let second = agent.chat(&session_id, "second").await.unwrap();
 
@@ -55,6 +58,7 @@ async fn same_session_supports_two_turns() {
     assert!(
         second_count > first_count,
         "second turn should have more history than first, got first={}, second={}",
-        first_count, second_count
+        first_count,
+        second_count
     );
 }

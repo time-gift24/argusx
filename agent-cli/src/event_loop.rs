@@ -1,5 +1,5 @@
-use crossterm::event::{KeyCode, KeyEvent, Event, poll, read};
-use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
+use crossterm::event::{poll, read, Event, KeyCode, KeyEvent};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use std::time::Duration;
 
 use crate::app::{AppState, Role};
@@ -139,10 +139,7 @@ mod tests {
     #[test]
     fn esc_requests_exit() {
         let mut app = AppState::new("s-1".into());
-        let action = handle_key_event(
-            &mut app,
-            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
-        );
+        let action = handle_key_event(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert!(matches!(action, LoopAction::Quit));
     }
 

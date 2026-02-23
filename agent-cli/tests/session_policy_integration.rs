@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use agent_cli::session::{resolve_session_id, SessionGateway};
+use async_trait::async_trait;
 
 #[derive(Default)]
 struct FakeGateway;
@@ -16,6 +16,8 @@ impl SessionGateway for FakeGateway {
 
 #[tokio::test]
 async fn resume_mode_rejects_missing_session() {
-    let err = resolve_session_id(&FakeGateway, Some("missing")).await.unwrap_err();
+    let err = resolve_session_id(&FakeGateway, Some("missing"))
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("session not found: missing"));
 }

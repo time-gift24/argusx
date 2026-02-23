@@ -13,11 +13,7 @@ pub fn draw(frame: &mut Frame<'_>, app: &AppState) {
         .split(frame.area());
 
     // Build history lines from messages
-    let mut history_lines: Vec<String> = app
-        .messages
-        .iter()
-        .map(|m| m.text.clone())
-        .collect();
+    let mut history_lines: Vec<String> = app.messages.iter().map(|m| m.text.clone()).collect();
 
     // Add reasoning text if show_reasoning is enabled and there's reasoning content
     if app.show_reasoning && !app.reasoning_text.is_empty() {
