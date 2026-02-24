@@ -165,6 +165,12 @@ impl From<ChecklistFilter> for prompt_lab_core::ChecklistFilter {
 
 // GoldenSet Types
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListGoldenSetItemsInput {
+    pub golden_set_id: i64,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct BindGoldenSetItemInput {
     pub golden_set_id: i64,
     pub checklist_item_id: i64,
@@ -809,11 +815,11 @@ async fn unbind_golden_set_item(
 #[tauri::command]
 async fn list_golden_set_items(
     state: State<'_, Arc<PromptLab>>,
-    golden_set_id: i64,
+    input: ListGoldenSetItemsInput,
 ) -> Result<Vec<GoldenSetItemResponse>, ApiError> {
     let results = state
         .golden_set_service()
-        .list(golden_set_id)
+        .list(input.golden_set_id)
         .await
         .map_err(ApiError::from)?;
     Ok(results.into_iter().map(|i| i.into()).collect())
