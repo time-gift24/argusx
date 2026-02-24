@@ -1,0 +1,20 @@
+[package]
+name = "agent-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+agent = { path = "../agent" }
+agent-core = { path = "../agent-core" }
+agent-turn = { path = "../agent-turn" }
+bigmodel-api = { path = "../bigmodel-api" }
+anyhow.workspace = true
+async-trait.workspace = true
+clap.workspace = true
+futures.workspace = true
+tokio.workspace = true
+ratatui = "0.29"
+crossterm = "0.28"
+
+[dev-dependencies]
+tempfile.workspace = true
