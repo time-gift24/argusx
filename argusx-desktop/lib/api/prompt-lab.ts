@@ -207,7 +207,7 @@ export async function listGoldenSetItems(
   goldenSetId: number
 ): Promise<GoldenSetItem[]> {
   return invoke<GoldenSetItem[]>("list_golden_set_items", {
-    golden_set_id: goldenSetId,
+    goldenSetId,
   });
 }
 
