@@ -20,3 +20,29 @@ fn test_chat_request_serialization() {
     assert!(json.contains("glm-4"));
     assert!(json.contains("Hello"));
 }
+
+#[test]
+fn test_tool_serialization_uses_function_lowercase_type() {
+    let request = bigmodel_api::ChatRequest::new(
+        "glm-4",
+        vec![bigmodel_api::Message::user("Hello")],
+    )
+    .tools(vec![bigmodel_api::Tool::Function(
+        bigmodel_api::FunctionTool {
+            function: bigmodel_api::FunctionDefinition {
+                name: "shell".to_string(),
+                description: "Execute shell command".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "command": { "type": "string" }
+                    },
+                    "required": ["command"]
+                }),
+            },
+        },
+    )]);
+
+    let value = serde_json::to_value(&request).expect("serialize request");
+    assert_eq!(value["tools"][0]["type"], "function");
+}

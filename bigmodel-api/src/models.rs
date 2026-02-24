@@ -62,9 +62,13 @@ pub struct ImageUrl {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Tool {
+    #[serde(rename = "function")]
     Function(FunctionTool),
+    #[serde(rename = "retrieval")]
     Retrieval(RetrievalTool),
+    #[serde(rename = "web_search")]
     WebSearch(WebSearchTool),
+    #[serde(rename = "mcp")]
     MCP(McpTool),
 }
 

@@ -28,7 +28,7 @@ struct Cli {
     )]
     base_url: String,
 
-    #[arg(long, default_value = "glm-4.5")]
+    #[arg(long, default_value = "glm-5")]
     model: String,
 
     #[arg(long)]

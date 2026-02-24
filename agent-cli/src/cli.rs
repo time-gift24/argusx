@@ -11,7 +11,7 @@ pub struct CliArgs {
         default_value = "https://open.bigmodel.cn/api/paas/v4"
     )]
     pub base_url: String,
-    #[arg(long, default_value = "glm-4.5")]
+    #[arg(long, default_value = "glm-5")]
     pub model: String,
     #[arg(long)]
     pub system_prompt: Option<String>,

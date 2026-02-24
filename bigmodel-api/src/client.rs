@@ -61,47 +61,41 @@ impl BigModelClient {
                 .send()
                 .await?;
 
-            // Use error_for_status to handle errors - returns Err if status is error
-            let response = match response.error_for_status() {
-                Ok(r) => r,
-                Err(e) => {
-                    // For error responses, we can't stream - just return error
-                    Err(BigModelError::ServerError(format!(
-                        "Stream error: {}",
-                        e
-                    )))?
-                }
-            };
+            let status = response.status();
+            if status.is_success() {
+                let mut stream = response.bytes_stream();
 
-            let mut stream = response.bytes_stream();
+                use futures::stream::StreamExt;
+                let mut buffer = String::new();
 
-            use futures::stream::StreamExt;
-            let mut buffer = String::new();
+                while let Some(chunk) = stream.next().await {
+                    let bytes: bytes::Bytes = chunk?;
+                    if let Ok(text) = String::from_utf8(bytes.to_vec()) {
+                        buffer.push_str(&text);
 
-            while let Some(chunk) = stream.next().await {
-                let bytes: bytes::Bytes = chunk?;
-                if let Ok(text) = String::from_utf8(bytes.to_vec()) {
-                    buffer.push_str(&text);
+                        // Process complete lines, keep incomplete ones in buffer
+                        while let Some(pos) = buffer.find('\n') {
+                            let line = buffer[..pos].trim_end().to_string();
+                            buffer = buffer[pos + 1..].to_string();
 
-                    // Process complete lines, keep incomplete ones in buffer
-                    while let Some(pos) = buffer.find('\n') {
-                        let line = buffer[..pos].trim_end().to_string();
-                        buffer = buffer[pos + 1..].to_string();
-
-                        if let Some(data) = line.strip_prefix("data: ") {
-                            if data == "[DONE]" {
-                                return;
-                            }
-                            match serde_json::from_str::<ChatResponseChunk>(data) {
-                                Ok(response) => yield response,
-                                Err(e) => {
-                                    // Log or handle parse error appropriately
-                                    eprintln!("Failed to parse SSE chunk: {}", e);
+                            if let Some(data) = line.strip_prefix("data: ") {
+                                if data == "[DONE]" {
+                                    return;
+                                }
+                                match serde_json::from_str::<ChatResponseChunk>(data) {
+                                    Ok(response) => yield response,
+                                    Err(e) => {
+                                        // Log or handle parse error appropriately
+                                        eprintln!("Failed to parse SSE chunk: {}", e);
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            } else {
+                let error_text = response.text().await.unwrap_or_default();
+                Err(Self::handle_error(status.as_u16(), error_text))?
             }
         })
     }

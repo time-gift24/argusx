@@ -25,7 +25,7 @@ pub struct BigModelAdapterConfig {
 impl Default for BigModelAdapterConfig {
     fn default() -> Self {
         Self {
-            model: "glm-4.5".to_string(),
+            model: "glm-5".to_string(),
             system_prompt: None,
             max_tokens: None,
             temperature: None,
@@ -325,6 +325,12 @@ mod tests {
         assert_eq!(message_text(&converted.messages[1]), "previous");
         assert!(matches!(&converted.messages[2].role, Role::User));
         assert_eq!(message_text(&converted.messages[2]), "hello");
+    }
+
+    #[test]
+    fn default_config_uses_supported_model_name() {
+        let cfg = BigModelAdapterConfig::default();
+        assert_eq!(cfg.model, "glm-5");
     }
 
     #[test]
