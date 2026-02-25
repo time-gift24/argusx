@@ -1,13 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tauri::State;
 use prompt_lab_core::{
     ChecklistFilter, ChecklistItem, PromptLab, Sop, SopStage, SopStep, UpdateSopStepInput,
 };
-
-pub struct AppState {
-    pub prompt_lab: PromptLab,
-}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ChatSession {
@@ -89,15 +83,36 @@ impl From<prompt_lab_core::SopAggregate> for SopData {
     }
 }
 
+// Helper function to create a new PromptLab instance
+fn get_default_db_path() -> String {
+    let default_dir = std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("prompt_lab")
+        .join("dev.db");
+    default_dir.to_string_lossy().to_string()
+}
+
+async fn create_prompt_lab() -> Result<PromptLab, String> {
+    let settings = argusx_common::config::Settings {
+        database: argusx_common::config::DatabaseConfig {
+            path: get_default_db_path(),
+            busy_timeout_ms: 5_000,
+            max_connections: 5,
+        },
+        logging: argusx_common::config::LoggingConfig::default(),
+    };
+
+    PromptLab::new(settings)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // SOP Commands
 
 #[tauri::command]
-async fn get_sop_with_steps(
-    state: State<'_, Arc<AppState>>,
-    sop_id: String,
-) -> Result<SopData, String> {
-    let agg = state
-        .prompt_lab
+async fn get_sop_with_steps(sop_id: String) -> Result<SopData, String> {
+    let prompt_lab = create_prompt_lab().await?;
+    let agg = prompt_lab
         .sop_service()
         .get_sop_aggregate_by_sop_id(&sop_id)
         .await
@@ -106,12 +121,9 @@ async fn get_sop_with_steps(
 }
 
 #[tauri::command]
-async fn get_checklist_items_by_step(
-    state: State<'_, Arc<AppState>>,
-    step_id: i64,
-) -> Result<Vec<ChecklistItem>, String> {
-    let items = state
-        .prompt_lab
+async fn get_checklist_items_by_step(step_id: i64) -> Result<Vec<ChecklistItem>, String> {
+    let prompt_lab = create_prompt_lab().await?;
+    let items = prompt_lab
         .checklist_service()
         .list(ChecklistFilter {
             status: None,
@@ -125,15 +137,14 @@ async fn get_checklist_items_by_step(
 
 #[tauri::command]
 async fn update_sop_step(
-    state: State<'_, Arc<AppState>>,
     id: i64,
     operation: Option<String>,
     verification: Option<String>,
     impact_analysis: Option<String>,
     rollback: Option<String>,
 ) -> Result<SopStep, String> {
-    let step = state
-        .prompt_lab
+    let prompt_lab = create_prompt_lab().await?;
+    let step = prompt_lab
         .sop_service()
         .update_sop_step(UpdateSopStepInput {
             id,
@@ -172,34 +183,10 @@ async fn delete_chat_session(_id: String) -> Result<(), String> {
     Ok(())
 }
 
-fn get_default_db_path() -> String {
-    let default_dir = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join("prompt_lab")
-        .join("dev.db");
-    default_dir.to_string_lossy().to_string()
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize PromptLab
-    let settings = argusx_common::config::Settings {
-        database: argusx_common::config::DatabaseConfig {
-            path: get_default_db_path(),
-            busy_timeout_ms: 5_000,
-            max_connections: 5,
-        },
-        logging: argusx_common::config::LoggingConfig::default(),
-    };
-
-    let runtime = tokio::runtime::Runtime::new()?;
-    let prompt_lab = runtime.block_on(PromptLab::new(settings))?;
-
-    let app_state = Arc::new(AppState { prompt_lab });
-
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             create_chat_session,
             list_chat_sessions,
