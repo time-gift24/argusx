@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, ClipboardCheck, ChevronDown } from "lucide-react";
+import { Home, ClipboardCheck, ChevronDown, MessageSquare } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -24,6 +24,11 @@ const navMain = [
     title: "Dashboard",
     url: "/",
     icon: Home,
+  },
+  {
+    title: "Chat",
+    url: "/chat",
+    icon: MessageSquare,
   },
 ];
 
