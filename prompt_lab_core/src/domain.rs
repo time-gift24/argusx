@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
 use std::str::FromStr;
@@ -266,23 +266,21 @@ pub struct BindGoldenSetItemInput {
 pub struct CheckResult {
     pub id: i64,
     pub context_type: String,
-    #[serde(default)]
-    pub context_id: i64,
+    pub context_key: String,
     pub check_item_id: Option<i64>,
     pub source_type: SourceType,
     pub operator_id: Option<String>,
     pub result: Option<Value>,
     pub is_pass: bool,
-    #[serde(deserialize_with = "deserialize_string_or_i64")]
-    pub created_at: String,
+    pub created_at: i64,
 }
 
 #[derive(Debug, Clone)]
 pub struct UpsertCheckResultInput {
     pub id: Option<i64>,
     pub context_type: String,
-    pub context_id: i64,
-    pub check_item_id: i64,
+    pub context_key: String,
+    pub check_item_id: Option<i64>,
     pub source_type: SourceType,
     pub operator_id: Option<String>,
     pub result: Option<Value>,
@@ -292,7 +290,7 @@ pub struct UpsertCheckResultInput {
 #[derive(Debug, Clone)]
 pub struct CheckResultFilter {
     pub context_type: Option<String>,
-    pub context_id: Option<i64>,
+    pub context_key: Option<String>,
     pub check_item_id: Option<i64>,
 }
 
@@ -301,7 +299,7 @@ pub struct AiExecutionLog {
     pub id: i64,
     pub check_result_id: Option<i64>,
     pub context_type: String,
-    pub context_id: i64,
+    pub context_key: String,
     pub check_item_id: i64,
     pub model_provider: Option<String>,
     pub model_version: String,
@@ -313,14 +311,14 @@ pub struct AiExecutionLog {
     pub exec_status: ExecStatus,
     pub error_message: Option<String>,
     pub latency_ms: i64,
-    pub created_at: String,
+    pub created_at: i64,
 }
 
 #[derive(Debug, Clone)]
 pub struct AppendAiExecutionLogInput {
     pub check_result_id: Option<i64>,
     pub context_type: String,
-    pub context_id: i64,
+    pub context_key: String,
     pub check_item_id: i64,
     pub model_provider: Option<String>,
     pub model_version: String,
@@ -337,7 +335,7 @@ pub struct AppendAiExecutionLogInput {
 #[derive(Debug, Clone)]
 pub struct AiExecutionLogFilter {
     pub context_type: Option<String>,
-    pub context_id: Option<i64>,
+    pub context_key: Option<String>,
     pub check_item_id: Option<i64>,
 }
 
@@ -484,18 +482,4 @@ pub struct UpdateSopStepInput {
 #[derive(Debug, Clone)]
 pub struct SopStepFilter {
     pub sop_id: Option<String>,
-}
-
-fn deserialize_string_or_i64<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Value::deserialize(deserializer)?;
-    match value {
-        Value::String(v) => Ok(v),
-        Value::Number(v) => Ok(v.to_string()),
-        other => Err(serde::de::Error::custom(format!(
-            "expected string or integer timestamp, got {other}"
-        ))),
-    }
 }

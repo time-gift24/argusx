@@ -83,8 +83,13 @@ impl CheckResultService {
     }
 
     pub async fn upsert(&self, input: UpsertCheckResultInput) -> Result<CheckResult> {
+        self.upsert_or_append(input).await
+    }
+
+    pub async fn upsert_or_append(&self, input: UpsertCheckResultInput) -> Result<CheckResult> {
         validate_non_empty("context_type", &input.context_type)?;
-        self.repo.upsert_check_result(input).await
+        validate_non_empty("context_key", &input.context_key)?;
+        self.repo.upsert_or_append_check_result(input).await
     }
 
     pub async fn list(&self, filter: CheckResultFilter) -> Result<Vec<CheckResult>> {
@@ -104,6 +109,7 @@ impl AiLogService {
 
     pub async fn append(&self, input: AppendAiExecutionLogInput) -> Result<AiExecutionLog> {
         validate_non_empty("context_type", &input.context_type)?;
+        validate_non_empty("context_key", &input.context_key)?;
         validate_non_empty("model_version", &input.model_version)?;
         self.repo.append_ai_execution_log(input).await
     }

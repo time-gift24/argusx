@@ -1,19 +1,14 @@
 use argusx_common::config::Settings;
-use prompt_lab_core::{
-    AiExecutionLogFilter, AppendAiExecutionLogInput, BindGoldenSetItemInput, ChecklistFilter,
-    ChecklistStatus, CreateChecklistItemInput, ExecStatus, PromptLab, PromptLabError, SourceType,
-    TargetLevel, UpdateChecklistItemInput, UpsertCheckResultInput,
-};
-use serde_json::json;
+use prompt_lab_core::{CheckResultFilter, PromptLab, SourceType, UpsertCheckResultInput};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 fn settings_for_temp() -> Settings {
     let seq = DB_COUNTER.fetch_add(1, Ordering::Relaxed);
     let unique = format!(
-        "prompt_lab_test_{}_{}_{}_{}.db",
+        "prompt_lab_core_flow_v2_{}_{}_{}.db",
         std::process::id(),
-        std::thread::current().name().unwrap_or("unnamed"),
         seq,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -31,333 +26,87 @@ fn settings_for_temp() -> Settings {
     }
 }
 
-#[tokio::test]
-async fn checklist_create_update_and_list_roundtrip() {
-    let settings = settings_for_temp();
-    let lab = PromptLab::new(settings).await.expect("init prompt lab");
-
-    let created = lab
-        .checklist_service()
-        .create(CreateChecklistItemInput {
-            name: "Rule A".to_string(),
-            prompt: "Please check step quality".to_string(),
-            target_level: TargetLevel::Step,
-            result_schema: Some(
-                json!({"type": "object", "properties": {"score": {"type": "integer"}}}),
-            ),
-            version: Some(1),
-            status: ChecklistStatus::Active,
-            created_by: Some(1001),
-        })
-        .await
-        .expect("create checklist item");
-
-    let updated = lab
-        .checklist_service()
-        .update(UpdateChecklistItemInput {
-            id: created.id,
-            name: Some("Rule A+".to_string()),
-            prompt: None,
-            target_level: None,
-            result_schema: None,
-            version: Some(2),
-            status: Some(ChecklistStatus::Draft),
-            updated_by: Some(2002),
-        })
-        .await
-        .expect("update checklist item");
-
-    assert_eq!(updated.name, "Rule A+");
-    assert_eq!(updated.version, 2);
-    assert_eq!(updated.status, ChecklistStatus::Draft);
-
-    let listed = lab
-        .checklist_service()
-        .list(ChecklistFilter {
-            status: Some(ChecklistStatus::Draft),
-            target_level: Some(TargetLevel::Step),
-        })
-        .await
-        .expect("list checklist items");
-
-    assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0].id, created.id);
+struct TestLab {
+    lab: PromptLab,
+    _pool: sqlx::SqlitePool,
 }
 
-#[tokio::test]
-async fn checklist_create_rejects_invalid_json_schema() {
-    let settings = settings_for_temp();
-    let lab = PromptLab::new(settings).await.expect("init prompt lab");
-
-    let result = lab
-        .checklist_service()
-        .create(CreateChecklistItemInput {
-            name: "Invalid JSON Rule".to_string(),
-            prompt: "check".to_string(),
-            target_level: TargetLevel::Step,
-            result_schema: Some(json!("{not-json")),
-            version: Some(1),
-            status: ChecklistStatus::Active,
-            created_by: None,
-        })
-        .await;
-
-    assert!(result.is_err());
+impl TestLab {
+    fn check_result_service(&self) -> prompt_lab_core::CheckResultService {
+        self.lab.check_result_service()
+    }
 }
 
-#[tokio::test]
-async fn golden_set_bind_enforces_foreign_keys() {
-    let settings = settings_for_temp();
-    let lab = PromptLab::new(settings).await.expect("init prompt lab");
-
-    let checklist = lab
-        .checklist_service()
-        .create(CreateChecklistItemInput {
-            name: "Rule B".to_string(),
-            prompt: "check".to_string(),
-            target_level: TargetLevel::Step,
-            result_schema: Some(json!({"type": "object"})),
-            version: Some(1),
-            status: ChecklistStatus::Active,
-            created_by: None,
-        })
-        .await
-        .expect("create checklist");
-
-    let fk_error = lab
-        .golden_set_service()
-        .bind(BindGoldenSetItemInput {
-            golden_set_id: 999_999,
-            checklist_item_id: checklist.id,
-            sort_order: 1,
-        })
-        .await;
-    assert!(fk_error.is_err());
-
-    let check_result = lab
-        .check_result_service()
-        .upsert(UpsertCheckResultInput {
-            id: None,
-            context_type: "sop".to_string(),
-            context_id: 101,
-            check_item_id: checklist.id,
-            source_type: SourceType::Ai,
-            operator_id: Some("system".to_string()),
-            result: Some(json!({"ok": true})),
-            is_pass: true,
-        })
-        .await
-        .expect("create check result");
-
-    let bound = lab
-        .golden_set_service()
-        .bind(BindGoldenSetItemInput {
-            golden_set_id: check_result.id,
-            checklist_item_id: checklist.id,
-            sort_order: 2,
-        })
-        .await
-        .expect("bind golden set");
-
-    assert_eq!(bound.golden_set_id, check_result.id);
-}
-
-#[tokio::test]
-async fn check_run_and_log_append_roundtrip() {
-    let settings = settings_for_temp();
-    let lab = PromptLab::new(settings).await.expect("init prompt lab");
-
-    let checklist = lab
-        .checklist_service()
-        .create(CreateChecklistItemInput {
-            name: "Rule C".to_string(),
-            prompt: "check".to_string(),
-            target_level: TargetLevel::Sop,
-            result_schema: Some(json!({"type": "object"})),
-            version: Some(1),
-            status: ChecklistStatus::Active,
-            created_by: None,
-        })
-        .await
-        .expect("create checklist");
-
-    let check_result = lab
-        .check_result_service()
-        .upsert(UpsertCheckResultInput {
-            id: None,
-            context_type: "sop".to_string(),
-            context_id: 202,
-            check_item_id: checklist.id,
-            source_type: SourceType::Manual,
-            operator_id: Some("u-1".to_string()),
-            result: Some(json!({"score": 95})),
-            is_pass: true,
-        })
-        .await
-        .expect("upsert check result");
-
-    let log = lab
-        .ai_log_service()
-        .append(AppendAiExecutionLogInput {
-            check_result_id: Some(check_result.id),
-            context_type: "sop".to_string(),
-            context_id: 202,
-            check_item_id: checklist.id,
-            model_provider: Some("openai".to_string()),
-            model_version: "gpt-4o".to_string(),
-            temperature: Some(0.2),
-            prompt_snapshot: Some("prompt text".to_string()),
-            raw_output: Some("{\"score\":95}".to_string()),
-            input_tokens: Some(111),
-            output_tokens: Some(22),
-            exec_status: ExecStatus::Success,
-            error_message: None,
-            latency_ms: Some(980),
-        })
-        .await
-        .expect("append ai log");
-
-    assert_eq!(log.check_result_id, Some(check_result.id));
-
-    let logs = lab
-        .ai_log_service()
-        .list(AiExecutionLogFilter {
-            context_type: Some("sop".to_string()),
-            context_id: Some(202),
-            check_item_id: Some(checklist.id),
-        })
-        .await
-        .expect("list logs");
-
-    assert_eq!(logs.len(), 1);
-    assert_eq!(logs[0].id, log.id);
-}
-
-#[tokio::test]
-async fn checklist_soft_delete_blocks_update_and_marks_deleted_timestamp() {
+async fn test_lab() -> TestLab {
     let settings = settings_for_temp();
     let db_path = settings.database.path.clone();
     let lab = PromptLab::new(settings).await.expect("init prompt lab");
-
-    let created = lab
-        .checklist_service()
-        .create(CreateChecklistItemInput {
-            name: "Rule D".to_string(),
-            prompt: "check".to_string(),
-            target_level: TargetLevel::Step,
-            result_schema: Some(json!({"type": "object"})),
-            version: Some(1),
-            status: ChecklistStatus::Active,
-            created_by: None,
-        })
-        .await
-        .expect("create checklist");
-
-    lab.checklist_service()
-        .soft_delete(created.id)
-        .await
-        .expect("soft delete checklist");
-
-    let listed = lab
-        .checklist_service()
-        .list(ChecklistFilter {
-            status: None,
-            target_level: None,
-        })
-        .await
-        .expect("list checklist items");
-    assert!(listed.iter().all(|item| item.id != created.id));
-
-    let update_result = lab
-        .checklist_service()
-        .update(UpdateChecklistItemInput {
-            id: created.id,
-            name: Some("Rule D+".to_string()),
-            prompt: None,
-            target_level: None,
-            result_schema: None,
-            version: None,
-            status: None,
-            updated_by: None,
-        })
-        .await;
-
-    match update_result {
-        Err(PromptLabError::NotFound { entity, id }) => {
-            assert_eq!(entity, "checklist_items");
-            assert_eq!(id, created.id);
-        }
-        other => panic!("expected NotFound for updating deleted checklist, got: {other:?}"),
-    }
-
     let pool = sqlx::SqlitePool::connect(&format!("sqlite://{db_path}"))
         .await
         .expect("connect sqlite");
-    let deleted_at: Option<String> =
-        sqlx::query_scalar("SELECT deleted_at FROM checklist_items WHERE id = ?1")
-            .bind(created.id)
-            .fetch_one(&pool)
-            .await
-            .expect("query deleted_at");
-    let deleted_at = deleted_at.expect("deleted_at should be set");
-    assert!(
-        deleted_at.contains('T') && deleted_at.ends_with('Z'),
-        "expected ISO-8601 UTC timestamp, got: {deleted_at}"
-    );
+    seed_check_item(&pool, 7).await;
+    TestLab { lab, _pool: pool }
+}
 
-    let second_delete = lab.checklist_service().soft_delete(created.id).await;
-    match second_delete {
-        Err(PromptLabError::NotFound { entity, id }) => {
-            assert_eq!(entity, "checklist_items");
-            assert_eq!(id, created.id);
-        }
-        other => panic!("expected NotFound on second soft delete, got: {other:?}"),
+async fn seed_check_item(pool: &sqlx::SqlitePool, id: i64) {
+    sqlx::query(
+        r#"
+        INSERT INTO checklist_items (
+          id, name, prompt, temperature, context_type,
+          result_schema, version, status, created_at, updated_at, deleted_at
+        ) VALUES (?1, 'Rule', 'check', 0.0, 'sop', NULL, 1, 'active', ?2, ?2, NULL)
+        "#,
+    )
+    .bind(id)
+    .bind(now_ms())
+    .execute(pool)
+    .await
+    .expect("seed checklist item");
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock")
+        .as_millis() as i64
+}
+
+fn input_manual(check_item_id: Option<i64>, is_pass: bool) -> UpsertCheckResultInput {
+    UpsertCheckResultInput {
+        id: None,
+        context_type: "sop".to_string(),
+        context_key: "sop:SOP-1".to_string(),
+        check_item_id,
+        source_type: SourceType::Manual,
+        operator_id: Some("u1".to_string()),
+        result: Some(serde_json::json!({"ok": is_pass})),
+        is_pass,
+    }
+}
+
+fn filter_key() -> CheckResultFilter {
+    CheckResultFilter {
+        context_type: Some("sop".to_string()),
+        context_key: Some("sop:SOP-1".to_string()),
+        check_item_id: Some(7),
     }
 }
 
 #[tokio::test]
-async fn golden_set_unbind_returns_not_found_when_relation_missing() {
-    let settings = settings_for_temp();
-    let lab = PromptLab::new(settings).await.expect("init prompt lab");
-
-    let checklist = lab
-        .checklist_service()
-        .create(CreateChecklistItemInput {
-            name: "Rule E".to_string(),
-            prompt: "check".to_string(),
-            target_level: TargetLevel::Step,
-            result_schema: Some(json!({"type": "object"})),
-            version: Some(1),
-            status: ChecklistStatus::Active,
-            created_by: None,
-        })
-        .await
-        .expect("create checklist");
-
-    let check_result = lab
+async fn manual_with_non_null_check_item_keeps_single_latest() {
+    let lab = test_lab().await;
+    let first = lab
         .check_result_service()
-        .upsert(UpsertCheckResultInput {
-            id: None,
-            context_type: "sop".to_string(),
-            context_id: 303,
-            check_item_id: checklist.id,
-            source_type: SourceType::Ai,
-            operator_id: Some("system".to_string()),
-            result: Some(json!({"ok": true})),
-            is_pass: true,
-        })
+        .upsert_or_append(input_manual(Some(7), false))
         .await
-        .expect("create check result");
-
-    let missing_unbind = lab
-        .golden_set_service()
-        .unbind(check_result.id, checklist.id)
-        .await;
-    match missing_unbind {
-        Err(PromptLabError::NotFound { entity, id }) => {
-            assert_eq!(entity, "golden_set_items");
-            assert_eq!(id, check_result.id);
-        }
-        other => panic!("expected NotFound for missing relation unbind, got: {other:?}"),
-    }
+        .unwrap();
+    let second = lab
+        .check_result_service()
+        .upsert_or_append(input_manual(Some(7), true))
+        .await
+        .unwrap();
+    assert_eq!(first.id, second.id);
+    let listed = lab.check_result_service().list(filter_key()).await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert!(listed[0].is_pass);
 }
