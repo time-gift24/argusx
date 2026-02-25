@@ -675,7 +675,7 @@ impl TryFrom<CheckResultRow> for CheckResult {
             id: row.id,
             context_type: row.context_type,
             context_id: row.context_id,
-            check_item_id: row.check_item_id,
+            check_item_id: Some(row.check_item_id),
             source_type: SourceType::from_i64(row.source_type)?,
             operator_id: row.operator_id,
             result: parse_json_option(row.result)?,
