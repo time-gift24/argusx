@@ -93,29 +93,30 @@ export interface BindGoldenSetItemInput {
 export interface CheckResult {
   id: number;
   context_type: string;
-  context_id: number;
+  context_key: string;
   check_item_id: number;
+  context_id?: number;
   source_type: SourceType;
   operator_id: string | null;
   result: Record<string, unknown> | null;
   is_pass: boolean;
-  created_at: string;
+  created_at: number;
 }
 
 export interface UpsertCheckResultInput {
   id?: number;
   context_type: string;
-  context_id: number;
-  check_item_id: number;
+  context_key: string;
+  check_item_id: number | null;
   source_type: SourceType;
   operator_id?: string;
   result?: Record<string, unknown>;
-  is_pass: boolean;
+  is_pass?: boolean;
 }
 
 export interface CheckResultFilter {
   context_type?: string;
-  context_id?: number;
+  context_key?: string;
   check_item_id?: number;
 }
 
@@ -127,7 +128,8 @@ export interface AiExecutionLog {
   id: number;
   check_result_id: number | null;
   context_type: string;
-  context_id: number;
+  context_key: string;
+  context_id?: number;
   check_item_id: number;
   model_provider: string | null;
   model_version: string;
@@ -139,13 +141,13 @@ export interface AiExecutionLog {
   exec_status: ExecStatus;
   error_message: string | null;
   latency_ms: number;
-  created_at: string;
+  created_at: number;
 }
 
 export interface AppendAiExecutionLogInput {
   check_result_id?: number;
   context_type: string;
-  context_id: number;
+  context_key: string;
   check_item_id: number;
   model_provider?: string;
   model_version: string;
@@ -161,7 +163,7 @@ export interface AppendAiExecutionLogInput {
 
 export interface AiExecutionLogFilter {
   context_type?: string;
-  context_id?: number;
+  context_key?: string;
   check_item_id?: number;
 }
 
@@ -224,10 +226,16 @@ export async function unbindGoldenSetItem(
 }
 
 // CheckResult API
+export async function upsertOrAppendCheckResult(
+  input: UpsertCheckResultInput
+): Promise<CheckResult> {
+  return invoke<CheckResult>("upsert_or_append_check_result", { input });
+}
+
 export async function upsertCheckResult(
   input: UpsertCheckResultInput
 ): Promise<CheckResult> {
-  return invoke<CheckResult>("upsert_check_result", { input });
+  return upsertOrAppendCheckResult(input);
 }
 
 export async function listCheckResults(
@@ -335,6 +343,14 @@ export interface SopStepFilter {
   sop_id?: string;
 }
 
+export interface SopAggregate {
+  sop: Sop;
+  detect_steps: SopStep[];
+  handle_steps: SopStep[];
+  verification_steps: SopStep[];
+  rollback_steps: SopStep[];
+}
+
 // ============== SOP API Functions ==============
 
 export async function createSop(input: CreateSopInput): Promise<Sop> {
@@ -349,8 +365,14 @@ export async function listSops(filter: SopFilter = {}): Promise<Sop[]> {
   return invoke("list_sops", { filter });
 }
 
-export async function getSop(id: number): Promise<Sop> {
-  return invoke("get_sop", { id });
+export async function getSopAggregate(sop_id: string): Promise<SopAggregate> {
+  return invoke("get_sop", { sop_id });
+}
+
+export async function getSop(id: number | string): Promise<Sop> {
+  const sopId = typeof id === "number" ? `SOP-${id}` : id;
+  const aggregate = await getSopAggregate(sopId);
+  return aggregate.sop;
 }
 
 export async function deleteSop(id: number): Promise<void> {

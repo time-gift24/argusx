@@ -83,6 +83,68 @@ impl FromStr for ChecklistStatus {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ChecklistContextType {
+    Sop,
+    SopProcedureDetect,
+    SopProcedureHandle,
+    SopProcedureVerification,
+    SopProcedureRollback,
+    SopStepOperation,
+    SopStepVerification,
+    SopStepImpactAnalysis,
+    SopStepRollback,
+    SopStepCommon,
+}
+
+impl ChecklistContextType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Sop => "sop",
+            Self::SopProcedureDetect => "sop_procedure_detect",
+            Self::SopProcedureHandle => "sop_procedure_handle",
+            Self::SopProcedureVerification => "sop_procedure_verification",
+            Self::SopProcedureRollback => "sop_procedure_rollback",
+            Self::SopStepOperation => "sop_step_operation",
+            Self::SopStepVerification => "sop_step_verification",
+            Self::SopStepImpactAnalysis => "sop_step_impact_analysis",
+            Self::SopStepRollback => "sop_step_rollback",
+            Self::SopStepCommon => "sop_step_common",
+        }
+    }
+}
+
+impl fmt::Display for ChecklistContextType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for ChecklistContextType {
+    type Err = PromptLabError;
+
+    fn from_str(value: &str) -> Result<Self> {
+        match value {
+            "sop" => Ok(Self::Sop),
+            "sop_procedure_detect" => Ok(Self::SopProcedureDetect),
+            "sop_procedure_handle" => Ok(Self::SopProcedureHandle),
+            "sop_procedure_verification" => Ok(Self::SopProcedureVerification),
+            "sop_procedure_rollback" => Ok(Self::SopProcedureRollback),
+            "sop_step_operation" => Ok(Self::SopStepOperation),
+            "sop_step_verification" => Ok(Self::SopStepVerification),
+            "sop_step_impact_analysis" => Ok(Self::SopStepImpactAnalysis),
+            "sop_step_rollback" => Ok(Self::SopStepRollback),
+            "sop_step_common" => Ok(Self::SopStepCommon),
+            _ => Err(PromptLabError::InvalidEnum {
+                field: "context_type",
+                value: value.to_string(),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum SourceType {
     Ai,
     Manual,
@@ -204,31 +266,31 @@ pub struct BindGoldenSetItemInput {
 pub struct CheckResult {
     pub id: i64,
     pub context_type: String,
-    pub context_id: i64,
-    pub check_item_id: i64,
+    pub context_key: String,
+    pub check_item_id: Option<i64>,
     pub source_type: SourceType,
     pub operator_id: Option<String>,
     pub result: Option<Value>,
     pub is_pass: bool,
-    pub created_at: String,
+    pub created_at: i64,
 }
 
 #[derive(Debug, Clone)]
 pub struct UpsertCheckResultInput {
     pub id: Option<i64>,
     pub context_type: String,
-    pub context_id: i64,
-    pub check_item_id: i64,
+    pub context_key: String,
+    pub check_item_id: Option<i64>,
     pub source_type: SourceType,
     pub operator_id: Option<String>,
     pub result: Option<Value>,
-    pub is_pass: bool,
+    pub is_pass: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
 pub struct CheckResultFilter {
     pub context_type: Option<String>,
-    pub context_id: Option<i64>,
+    pub context_key: Option<String>,
     pub check_item_id: Option<i64>,
 }
 
@@ -237,7 +299,7 @@ pub struct AiExecutionLog {
     pub id: i64,
     pub check_result_id: Option<i64>,
     pub context_type: String,
-    pub context_id: i64,
+    pub context_key: String,
     pub check_item_id: i64,
     pub model_provider: Option<String>,
     pub model_version: String,
@@ -249,14 +311,14 @@ pub struct AiExecutionLog {
     pub exec_status: ExecStatus,
     pub error_message: Option<String>,
     pub latency_ms: i64,
-    pub created_at: String,
+    pub created_at: i64,
 }
 
 #[derive(Debug, Clone)]
 pub struct AppendAiExecutionLogInput {
     pub check_result_id: Option<i64>,
     pub context_type: String,
-    pub context_id: i64,
+    pub context_key: String,
     pub check_item_id: i64,
     pub model_provider: Option<String>,
     pub model_version: String,
@@ -273,7 +335,7 @@ pub struct AppendAiExecutionLogInput {
 #[derive(Debug, Clone)]
 pub struct AiExecutionLogFilter {
     pub context_type: Option<String>,
-    pub context_id: Option<i64>,
+    pub context_key: Option<String>,
     pub check_item_id: Option<i64>,
 }
 
@@ -378,6 +440,21 @@ pub struct SopStep {
     pub rollback: Option<Value>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SopStepRef {
+    pub sop_step_id: i64,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SopAggregate {
+    pub sop: Sop,
+    pub detect_steps: Vec<SopStep>,
+    pub handle_steps: Vec<SopStep>,
+    pub verification_steps: Vec<SopStep>,
+    pub rollback_steps: Vec<SopStep>,
 }
 
 #[derive(Debug, Clone)]

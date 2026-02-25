@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::{collections::HashMap, fmt::Display};
 
 use serde_json::Value;
 
@@ -83,8 +84,22 @@ impl CheckResultService {
     }
 
     pub async fn upsert(&self, input: UpsertCheckResultInput) -> Result<CheckResult> {
+        self.upsert_or_append(input).await
+    }
+
+    pub async fn upsert_or_append(&self, input: UpsertCheckResultInput) -> Result<CheckResult> {
         validate_non_empty("context_type", &input.context_type)?;
-        self.repo.upsert_check_result(input).await
+        validate_non_empty("context_key", &input.context_key)?;
+        let is_pass = match input.source_type {
+            SourceType::Manual => input.is_pass.unwrap_or(true),
+            SourceType::Ai => input.is_pass.unwrap_or(false),
+        };
+        self.repo
+            .upsert_or_append_check_result(UpsertCheckResultInput {
+                is_pass: Some(is_pass),
+                ..input
+            })
+            .await
     }
 
     pub async fn list(&self, filter: CheckResultFilter) -> Result<Vec<CheckResult>> {
@@ -104,6 +119,7 @@ impl AiLogService {
 
     pub async fn append(&self, input: AppendAiExecutionLogInput) -> Result<AiExecutionLog> {
         validate_non_empty("context_type", &input.context_type)?;
+        validate_non_empty("context_key", &input.context_key)?;
         validate_non_empty("model_version", &input.model_version)?;
         self.repo.append_ai_execution_log(input).await
     }
@@ -163,6 +179,30 @@ impl SopService {
         self.repo.get_sop_by_sop_id(sop_id).await
     }
 
+    pub async fn get_sop_aggregate_by_sop_id(&self, sop_id: &str) -> Result<SopAggregate> {
+        let sop = self.repo.get_sop_by_sop_id(sop_id).await?;
+        let steps = self
+            .repo
+            .list_sop_steps(SopStepFilter {
+                sop_id: Some(sop.sop_id.clone()),
+            })
+            .await?;
+        let step_map: HashMap<i64, SopStep> = steps.into_iter().map(|step| (step.id, step)).collect();
+
+        let detect_steps = collect_stage_steps(&sop.detect, &step_map, "detect")?;
+        let handle_steps = collect_stage_steps(&sop.handle, &step_map, "handle")?;
+        let verification_steps = collect_stage_steps(&sop.verification, &step_map, "verification")?;
+        let rollback_steps = collect_stage_steps(&sop.rollback, &step_map, "rollback")?;
+
+        Ok(SopAggregate {
+            sop,
+            detect_steps,
+            handle_steps,
+            verification_steps,
+            rollback_steps,
+        })
+    }
+
     pub async fn delete_sop(&self, id: i64) -> Result<()> {
         self.repo.delete_sop(id).await
     }
@@ -186,4 +226,32 @@ impl SopService {
     pub async fn delete_sop_step(&self, id: i64) -> Result<()> {
         self.repo.delete_sop_step(id).await
     }
+}
+
+fn collect_stage_steps(
+    snapshot: &Option<Value>,
+    step_map: &HashMap<i64, SopStep>,
+    stage: impl Display,
+) -> Result<Vec<SopStep>> {
+    let Some(snapshot) = snapshot else {
+        return Ok(Vec::new());
+    };
+    let step_refs: Vec<SopStepRef> = serde_json::from_value(snapshot.clone())?;
+    let mut ordered = Vec::with_capacity(step_refs.len());
+    for step_ref in step_refs {
+        let step = step_map
+            .get(&step_ref.sop_step_id)
+            .ok_or(PromptLabError::NotFound {
+                entity: "sop_steps",
+                id: step_ref.sop_step_id,
+            })?
+            .clone();
+        ordered.push(step);
+    }
+    if ordered.is_empty() && !snapshot.is_null() {
+        return Err(PromptLabError::InvalidInput(format!(
+            "invalid {stage} snapshot references"
+        )));
+    }
+    Ok(ordered)
 }

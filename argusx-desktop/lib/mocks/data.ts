@@ -45,13 +45,13 @@ export const mockCheckResults: CheckResult[] = [
   {
     id: 1,
     context_type: "prompt",
-    context_id: 1,
+    context_key: "sop:SOP-1",
     check_item_id: 1,
     source_type: "ai",
     operator_id: "user123",
     result: { valid: true },
     is_pass: true,
-    created_at: "2024-01-01T00:00:00Z",
+    created_at: 1704067200000,
   },
 ];
 
@@ -60,7 +60,7 @@ export const mockAiExecutionLogs: AiExecutionLog[] = [
     id: 1,
     check_result_id: 1,
     context_type: "prompt",
-    context_id: 1,
+    context_key: "sop:SOP-1",
     check_item_id: 1,
     model_provider: "openai",
     model_version: "gpt-4",
@@ -72,6 +72,6 @@ export const mockAiExecutionLogs: AiExecutionLog[] = [
     exec_status: "success",
     error_message: null,
     latency_ms: 1500,
-    created_at: "2024-01-01T00:00:00Z",
+    created_at: 1704067200000,
   },
 ];

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use argusx_common::config::Settings;
 
 pub use domain::*;
-pub use error::{PromptLabError, Result};
+pub use error::{PromptLabError, PromptLabErrorCode, Result};
 pub use service::{AiLogService, CheckResultService, ChecklistService, GoldenSetService, SopService};
 pub use sqlite::{DbConfig, PragmaStatus};
 
