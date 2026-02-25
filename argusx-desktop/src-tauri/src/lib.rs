@@ -515,6 +515,29 @@ impl From<SopStepFilterInternal> for SopStepFilter {
 }
 
 // ============================================================================
+// Chat Types
+// ============================================================================
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ChatSession {
+    pub id: String,
+    pub title: String,
+    pub color: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub status: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ChatMessage {
+    pub id: String,
+    pub session_id: String,
+    pub role: String,
+    pub content: String,
+    pub created_at: i64,
+}
+
+// ============================================================================
 // Response Types
 // ============================================================================
 
@@ -708,6 +731,35 @@ impl From<SopStep> for SopStepResponse {
             updated_at: v.updated_at,
         }
     }
+}
+
+// ============================================================================
+// Chat Commands
+// ============================================================================
+
+#[tauri::command]
+async fn create_chat_session(title: Option<String>) -> Result<ChatSession, String> {
+    let session = ChatSession {
+        id: format!("s-{}", uuid::Uuid::new_v4()),
+        title: title.unwrap_or_else(|| "New Chat".to_string()),
+        color: "blue".to_string(),
+        created_at: chrono::Utc::now().timestamp_millis(),
+        updated_at: chrono::Utc::now().timestamp_millis(),
+        status: "active".to_string(),
+    };
+    Ok(session)
+}
+
+#[tauri::command]
+async fn list_chat_sessions() -> Result<Vec<ChatSession>, String> {
+    // TODO: 后续从数据库加载
+    Ok(vec![])
+}
+
+#[tauri::command]
+async fn delete_chat_session(_id: String) -> Result<(), String> {
+    // TODO: 后续实现
+    Ok(())
 }
 
 // ============================================================================
@@ -1080,6 +1132,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             list_sop_steps,
             get_sop_step,
             delete_sop_step,
+            create_chat_session,
+            list_chat_sessions,
+            delete_chat_session,
         ])
         .run(tauri::generate_context!())?;
     Ok(())

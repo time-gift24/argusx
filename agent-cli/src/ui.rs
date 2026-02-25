@@ -9,7 +9,11 @@ use crate::app::AppState;
 pub fn draw(frame: &mut Frame<'_>, app: &AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(3), Constraint::Length(3)])
+        .constraints([
+            Constraint::Min(3),
+            Constraint::Length(1),
+            Constraint::Length(3),
+        ])
         .split(frame.area());
 
     // Build history lines from messages
@@ -32,9 +36,18 @@ pub fn draw(frame: &mut Frame<'_>, app: &AppState) {
         .wrap(Wrap { trim: false });
     frame.render_widget(history, chunks[0]);
 
+    let status_text = if let Some(warning) = app.last_warning.as_deref() {
+        format!("status: {warning}")
+    } else if app.active_turn.is_some() {
+        "status: running".to_string()
+    } else {
+        format!("status: ready (session: {})", app.session_id)
+    };
+    frame.render_widget(Paragraph::new(status_text), chunks[1]);
+
     let input = Paragraph::new(app.input.clone())
         .block(Block::default().title("Input").borders(Borders::ALL));
-    frame.render_widget(input, chunks[1]);
+    frame.render_widget(input, chunks[2]);
 }
 
 #[cfg(test)]
@@ -124,6 +137,23 @@ mod tests {
         assert!(
             content.contains("running"),
             "buffer should contain status, got: {}",
+            content
+        );
+    }
+
+    #[test]
+    fn warning_status_is_visible_when_present() {
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = AppState::new("s-1".into());
+        app.last_warning = Some("error: chat error: timeout".into());
+
+        terminal.draw(|frame| draw(frame, &app)).unwrap();
+        let buf = terminal.backend().buffer();
+        let content = buffer_to_string(buf);
+        assert!(
+            content.contains("timeout"),
+            "buffer should contain warning text, got: {}",
             content
         );
     }
