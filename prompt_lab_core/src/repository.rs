@@ -26,16 +26,16 @@ impl PromptLabRepository {
         let row = sqlx::query_as::<_, ChecklistItemRow>(
             r#"
             INSERT INTO checklist_items (
-              name, prompt, target_level, result_schema, version, status, created_by
+              name, prompt, context_type, result_schema, version, status, created_by
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             RETURNING
-              id, name, prompt, target_level, result_schema, version, status,
+              id, name, prompt, context_type, result_schema, version, status,
               created_at, updated_at, created_by, updated_by, deleted_at
             "#,
         )
         .bind(input.name)
         .bind(input.prompt)
-        .bind(input.target_level.as_str())
+        .bind(input.context_type.as_str())
         .bind(result_schema)
         .bind(input.version.unwrap_or(1))
         .bind(input.status.as_str())
@@ -57,21 +57,21 @@ impl PromptLabRepository {
             SET
               name = COALESCE(?2, name),
               prompt = COALESCE(?3, prompt),
-              target_level = COALESCE(?4, target_level),
+              context_type = COALESCE(?4, context_type),
               result_schema = COALESCE(?5, result_schema),
               version = COALESCE(?6, version),
               status = COALESCE(?7, status),
               updated_by = COALESCE(?8, updated_by)
             WHERE id = ?1 AND deleted_at IS NULL
             RETURNING
-              id, name, prompt, target_level, result_schema, version, status,
+              id, name, prompt, context_type, result_schema, version, status,
               created_at, updated_at, created_by, updated_by, deleted_at
             "#,
         )
         .bind(input.id)
         .bind(input.name)
         .bind(input.prompt)
-        .bind(input.target_level.map(|v| v.as_str().to_string()))
+        .bind(input.context_type.map(|v| v.as_str().to_string()))
         .bind(result_schema)
         .bind(input.version)
         .bind(input.status.map(|v| v.as_str().to_string()))
@@ -92,22 +92,22 @@ impl PromptLabRepository {
         filter: ChecklistFilter,
     ) -> Result<Vec<ChecklistItem>> {
         let status = filter.status.map(|v| v.as_str().to_string());
-        let target_level = filter.target_level.map(|v| v.as_str().to_string());
+        let context_type = filter.context_type.map(|v| v.as_str().to_string());
 
         let rows = sqlx::query_as::<_, ChecklistItemRow>(
             r#"
             SELECT
-              id, name, prompt, target_level, result_schema, version, status,
+              id, name, prompt, context_type, result_schema, version, status,
               created_at, updated_at, created_by, updated_by, deleted_at
             FROM checklist_items
             WHERE deleted_at IS NULL
               AND status = COALESCE(?1, status)
-              AND target_level = COALESCE(?2, target_level)
+              AND context_type = COALESCE(?2, context_type)
             ORDER BY id DESC
             "#,
         )
         .bind(status)
-        .bind(target_level)
+        .bind(context_type)
         .fetch_all(&self.pool)
         .await?;
 
@@ -118,7 +118,7 @@ impl PromptLabRepository {
         let row = sqlx::query_as::<_, ChecklistItemRow>(
             r#"
         SELECT
-          id, name, prompt, target_level, result_schema, version, status,
+          id, name, prompt, context_type, result_schema, version, status,
           created_at, updated_at, created_by, updated_by, deleted_at
         FROM checklist_items
         WHERE id = ?1 AND deleted_at IS NULL
@@ -784,7 +784,7 @@ struct ChecklistItemRow {
     id: i64,
     name: String,
     prompt: String,
-    target_level: String,
+    context_type: String,
     result_schema: Option<String>,
     version: i64,
     status: String,
@@ -803,7 +803,7 @@ impl TryFrom<ChecklistItemRow> for ChecklistItem {
             id: row.id,
             name: row.name,
             prompt: row.prompt,
-            target_level: row.target_level.parse()?,
+            context_type: row.context_type.parse()?,
             result_schema: parse_json_option(row.result_schema)?,
             version: row.version,
             status: row.status.parse()?,

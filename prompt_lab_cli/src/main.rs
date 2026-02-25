@@ -3,8 +3,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use prompt_lab_core::{
     AiExecutionLog, AiExecutionLogFilter, AppendAiExecutionLogInput, CheckResult,
-    CheckResultFilter, ChecklistFilter, ChecklistItem, ChecklistStatus, ExecStatus, PromptLab,
-    SopAggregate, SourceType, TargetLevel, UpsertCheckResultInput,
+    CheckResultFilter, ChecklistContextType, ChecklistFilter, ChecklistItem, ChecklistStatus,
+    ExecStatus, PromptLab, SopAggregate, SourceType, UpsertCheckResultInput,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -62,7 +62,7 @@ enum ChecklistCommands {
         #[arg(long, value_enum)]
         status: Option<CliChecklistStatus>,
         #[arg(long, value_enum)]
-        target_level: Option<CliTargetLevel>,
+        context_type: Option<CliChecklistContextType>,
     },
 }
 
@@ -139,16 +139,40 @@ enum SopCommands {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
-enum CliTargetLevel {
-    Step,
+enum CliChecklistContextType {
     Sop,
+    SopProcedureDetect,
+    SopProcedureHandle,
+    SopProcedureVerification,
+    SopProcedureRollback,
+    SopStepOperation,
+    SopStepVerification,
+    SopStepImpactAnalysis,
+    SopStepRollback,
+    SopStepCommon,
 }
 
-impl From<CliTargetLevel> for TargetLevel {
-    fn from(value: CliTargetLevel) -> Self {
+impl From<CliChecklistContextType> for ChecklistContextType {
+    fn from(value: CliChecklistContextType) -> Self {
         match value {
-            CliTargetLevel::Step => TargetLevel::Step,
-            CliTargetLevel::Sop => TargetLevel::Sop,
+            CliChecklistContextType::Sop => ChecklistContextType::Sop,
+            CliChecklistContextType::SopProcedureDetect => ChecklistContextType::SopProcedureDetect,
+            CliChecklistContextType::SopProcedureHandle => ChecklistContextType::SopProcedureHandle,
+            CliChecklistContextType::SopProcedureVerification => {
+                ChecklistContextType::SopProcedureVerification
+            }
+            CliChecklistContextType::SopProcedureRollback => {
+                ChecklistContextType::SopProcedureRollback
+            }
+            CliChecklistContextType::SopStepOperation => ChecklistContextType::SopStepOperation,
+            CliChecklistContextType::SopStepVerification => {
+                ChecklistContextType::SopStepVerification
+            }
+            CliChecklistContextType::SopStepImpactAnalysis => {
+                ChecklistContextType::SopStepImpactAnalysis
+            }
+            CliChecklistContextType::SopStepRollback => ChecklistContextType::SopStepRollback,
+            CliChecklistContextType::SopStepCommon => ChecklistContextType::SopStepCommon,
         }
     }
 }
@@ -245,13 +269,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Checklist { command } => match command {
             ChecklistCommands::List {
                 status,
-                target_level,
+                context_type,
             } => {
                 let items = lab
                     .checklist_service()
                     .list(ChecklistFilter {
                         status: status.map(Into::into),
-                        target_level: target_level.map(Into::into),
+                        context_type: context_type.map(Into::into),
                     })
                     .await?;
                 print_checklist_items(cli.json, &items)?;
@@ -444,7 +468,7 @@ fn print_checklist_items(
     table.set_header([
         "id",
         "name",
-        "target_level",
+        "context_type",
         "status",
         "version",
         "updated_at",
@@ -453,7 +477,7 @@ fn print_checklist_items(
         table.add_row([
             Cell::new(item.id),
             Cell::new(&item.name),
-            Cell::new(item.target_level),
+            Cell::new(item.context_type),
             Cell::new(item.status),
             Cell::new(item.version),
             Cell::new(&item.updated_at),

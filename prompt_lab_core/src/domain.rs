@@ -7,43 +7,6 @@ use crate::error::{PromptLabError, Result};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum TargetLevel {
-    Step,
-    Sop,
-}
-
-impl TargetLevel {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Step => "step",
-            Self::Sop => "sop",
-        }
-    }
-}
-
-impl fmt::Display for TargetLevel {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for TargetLevel {
-    type Err = PromptLabError;
-
-    fn from_str(value: &str) -> Result<Self> {
-        match value {
-            "step" => Ok(Self::Step),
-            "sop" => Ok(Self::Sop),
-            _ => Err(PromptLabError::InvalidEnum {
-                field: "target_level",
-                value: value.to_string(),
-            }),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
 pub enum ChecklistStatus {
     Active,
     Inactive,
@@ -207,7 +170,7 @@ pub struct ChecklistItem {
     pub id: i64,
     pub name: String,
     pub prompt: String,
-    pub target_level: TargetLevel,
+    pub context_type: ChecklistContextType,
     pub result_schema: Option<Value>,
     pub version: i64,
     pub status: ChecklistStatus,
@@ -222,7 +185,7 @@ pub struct ChecklistItem {
 pub struct CreateChecklistItemInput {
     pub name: String,
     pub prompt: String,
-    pub target_level: TargetLevel,
+    pub context_type: ChecklistContextType,
     pub result_schema: Option<Value>,
     pub version: Option<i64>,
     pub status: ChecklistStatus,
@@ -234,7 +197,7 @@ pub struct UpdateChecklistItemInput {
     pub id: i64,
     pub name: Option<String>,
     pub prompt: Option<String>,
-    pub target_level: Option<TargetLevel>,
+    pub context_type: Option<ChecklistContextType>,
     pub result_schema: Option<Value>,
     pub version: Option<i64>,
     pub status: Option<ChecklistStatus>,
@@ -244,7 +207,7 @@ pub struct UpdateChecklistItemInput {
 #[derive(Debug, Clone)]
 pub struct ChecklistFilter {
     pub status: Option<ChecklistStatus>,
-    pub target_level: Option<TargetLevel>,
+    pub context_type: Option<ChecklistContextType>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
