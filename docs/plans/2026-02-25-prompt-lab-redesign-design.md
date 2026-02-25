@@ -379,3 +379,8 @@ struct GoldenSetItem {
 4. API 层：
    - Tauri DTO 与前端类型完全对齐；
    - `get_sop` 返回聚合结构，前端无需二次拼装步骤内容。
+
+## 11. 实施备注（2026-02-25）
+
+1. 前端 SDK 为平滑过渡保留 `getSop` 兼容包装，同时新增 `getSopAggregate` 作为 v2 聚合接口入口。
+2. 新命令 `upsert_or_append_check_result` 已作为默认写入入口，旧 `upsert` 名称仅保留函数级兼容别名。
