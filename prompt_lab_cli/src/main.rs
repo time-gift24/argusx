@@ -276,6 +276,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .list(ChecklistFilter {
                         status: status.map(Into::into),
                         context_type: context_type.map(Into::into),
+                        sop_step_id: None,
                     })
                     .await?;
                 print_checklist_items(cli.json, &items)?;
