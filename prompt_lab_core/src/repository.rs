@@ -93,6 +93,7 @@ impl PromptLabRepository {
     ) -> Result<Vec<ChecklistItem>> {
         let status = filter.status.map(|v| v.as_str().to_string());
         let context_type = filter.context_type.map(|v| v.as_str().to_string());
+        let sop_step_id = filter.sop_step_id;
 
         let rows = sqlx::query_as::<_, ChecklistItemRow>(
             r#"
@@ -103,11 +104,13 @@ impl PromptLabRepository {
             WHERE deleted_at IS NULL
               AND status = COALESCE(?1, status)
               AND context_type = COALESCE(?2, context_type)
+              AND (?3::text IS NULL OR result_schema->>'sop_step_id' = ?3)
             ORDER BY id DESC
             "#,
         )
         .bind(status)
         .bind(context_type)
+        .bind(sop_step_id)
         .fetch_all(&self.pool)
         .await?;
 

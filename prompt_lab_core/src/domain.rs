@@ -208,6 +208,7 @@ pub struct UpdateChecklistItemInput {
 pub struct ChecklistFilter {
     pub status: Option<ChecklistStatus>,
     pub context_type: Option<ChecklistContextType>,
+    pub sop_step_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
