@@ -1,5 +1,8 @@
 use argusx_common::config::Settings;
-use prompt_lab_core::{CheckResultFilter, PromptLab, SourceType, UpsertCheckResultInput};
+use prompt_lab_core::{
+    CheckResultFilter, CreateSopInput, CreateSopStepInput, PromptLab, SopStatus, SourceType,
+    UpdateSopInput, UpsertCheckResultInput,
+};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -34,6 +37,10 @@ struct TestLab {
 impl TestLab {
     fn check_result_service(&self) -> prompt_lab_core::CheckResultService {
         self.lab.check_result_service()
+    }
+
+    fn sop_service(&self) -> prompt_lab_core::SopService {
+        self.lab.sop_service()
     }
 }
 
@@ -92,6 +99,63 @@ fn filter_key() -> CheckResultFilter {
     }
 }
 
+async fn ensure_sop_exists(lab: &TestLab) -> prompt_lab_core::Sop {
+    match lab.sop_service().get_sop_by_sop_id("SOP-1").await {
+        Ok(sop) => sop,
+        Err(_) => {
+            lab.sop_service()
+                .create_sop(CreateSopInput {
+                    sop_id: "SOP-1".to_string(),
+                    name: "SOP-1".to_string(),
+                    ticket_id: None,
+                    version: Some(1),
+                    detect: None,
+                    handle: None,
+                    verification: None,
+                    rollback: None,
+                    status: SopStatus::Active,
+                })
+                .await
+                .unwrap()
+        }
+    }
+}
+
+async fn create_step_named(lab: &TestLab, name: &str) -> prompt_lab_core::SopStep {
+    let _ = ensure_sop_exists(lab).await;
+    lab.sop_service()
+        .create_sop_step(CreateSopStepInput {
+            sop_id: "SOP-1".to_string(),
+            name: name.to_string(),
+            version: Some(1),
+            operation: None,
+            verification: None,
+            impact_analysis: None,
+            rollback: None,
+        })
+        .await
+        .unwrap()
+}
+
+async fn create_sop_with_detect_refs(lab: &TestLab, detect_refs: Vec<serde_json::Value>) {
+    let sop = ensure_sop_exists(lab).await;
+    lab.sop_service()
+        .update_sop(UpdateSopInput {
+            id: sop.id,
+            sop_id: None,
+            name: Some("SOP-1".to_string()),
+            ticket_id: None,
+            version: Some(1),
+            detect: Some(serde_json::json!(detect_refs)),
+            handle: None,
+            verification: None,
+            rollback: None,
+            status: Some(SopStatus::Active),
+        })
+        .await
+        .unwrap();
+}
+
 #[tokio::test]
 async fn manual_with_non_null_check_item_keeps_single_latest() {
     let lab = test_lab().await;
@@ -109,4 +173,21 @@ async fn manual_with_non_null_check_item_keeps_single_latest() {
     let listed = lab.check_result_service().list(filter_key()).await.unwrap();
     assert_eq!(listed.len(), 1);
     assert!(listed[0].is_pass);
+}
+
+#[tokio::test]
+async fn get_sop_returns_aggregate_and_normalizes_snapshot_names() {
+    let lab = test_lab().await;
+    let step = create_step_named(&lab, "真实名称").await;
+    create_sop_with_detect_refs(
+        &lab,
+        vec![serde_json::json!({"sop_step_id": step.id, "name": "旧名称"})],
+    )
+    .await;
+    let agg = lab
+        .sop_service()
+        .get_sop_aggregate_by_sop_id("SOP-1")
+        .await
+        .unwrap();
+    assert_eq!(agg.detect_steps[0].name, "真实名称");
 }

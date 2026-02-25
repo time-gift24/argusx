@@ -440,16 +440,29 @@ impl PromptLabRepository {
     // ============== SOP Repository ==============
 
     pub async fn create_sop(&self, input: CreateSopInput) -> Result<Sop> {
-        let detect = input.detect.map(|v| v.to_string());
-        let handle = input.handle.map(|v| v.to_string());
-        let verification = input.verification.map(|v| v.to_string());
-        let rollback = input.rollback.map(|v| v.to_string());
+        let created_at = now_ms();
+        let detect = self
+            .normalize_step_refs_for_sop(&input.sop_id, input.detect)
+            .await?;
+        let handle = self
+            .normalize_step_refs_for_sop(&input.sop_id, input.handle)
+            .await?;
+        let verification = self
+            .normalize_step_refs_for_sop(&input.sop_id, input.verification)
+            .await?;
+        let rollback = self
+            .normalize_step_refs_for_sop(&input.sop_id, input.rollback)
+            .await?;
 
         let row = sqlx::query_as::<_, SopRow>(
             r#"
-            INSERT INTO sops (sop_id, name, ticket_id, version, detect, handle, verification, rollback, status)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-            RETURNING id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status, created_at, updated_at
+            INSERT INTO sops (
+              sop_id, name, ticket_id, version, detect, handle, verification, rollback, status, created_at, updated_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            RETURNING id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status,
+                      CAST(created_at AS TEXT) AS created_at,
+                      CAST(updated_at AS TEXT) AS updated_at
             "#,
         )
         .bind(input.sop_id)
@@ -461,6 +474,8 @@ impl PromptLabRepository {
         .bind(verification)
         .bind(rollback)
         .bind(input.status.as_str())
+        .bind(created_at)
+        .bind(created_at)
         .fetch_one(&self.pool)
         .await?;
 
@@ -468,10 +483,31 @@ impl PromptLabRepository {
     }
 
     pub async fn update_sop(&self, input: UpdateSopInput) -> Result<Sop> {
-        let detect = input.detect.map(|v| v.to_string());
-        let handle = input.handle.map(|v| v.to_string());
-        let verification = input.verification.map(|v| v.to_string());
-        let rollback = input.rollback.map(|v| v.to_string());
+        let current_sop_id: Option<String> = sqlx::query_scalar("SELECT sop_id FROM sops WHERE id = ?1")
+            .bind(input.id)
+            .fetch_optional(&self.pool)
+            .await?;
+        let current_sop_id = current_sop_id.ok_or(PromptLabError::NotFound {
+            entity: "sops",
+            id: input.id,
+        })?;
+        let effective_sop_id = input
+            .sop_id
+            .clone()
+            .unwrap_or_else(|| current_sop_id.clone());
+
+        let detect = self
+            .normalize_step_refs_for_sop(&effective_sop_id, input.detect)
+            .await?;
+        let handle = self
+            .normalize_step_refs_for_sop(&effective_sop_id, input.handle)
+            .await?;
+        let verification = self
+            .normalize_step_refs_for_sop(&effective_sop_id, input.verification)
+            .await?;
+        let rollback = self
+            .normalize_step_refs_for_sop(&effective_sop_id, input.rollback)
+            .await?;
 
         let row = sqlx::query_as::<_, SopRow>(
             r#"
@@ -485,9 +521,12 @@ impl PromptLabRepository {
               handle = COALESCE(?7, handle),
               verification = COALESCE(?8, verification),
               rollback = COALESCE(?9, rollback),
-              status = COALESCE(?10, status)
+              status = COALESCE(?10, status),
+              updated_at = ?11
             WHERE id = ?1
-            RETURNING id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status, created_at, updated_at
+            RETURNING id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status,
+                      CAST(created_at AS TEXT) AS created_at,
+                      CAST(updated_at AS TEXT) AS updated_at
             "#,
         )
         .bind(input.id)
@@ -500,6 +539,7 @@ impl PromptLabRepository {
         .bind(verification)
         .bind(rollback)
         .bind(input.status.map(|v| v.as_str().to_string()))
+        .bind(now_ms())
         .fetch_optional(&self.pool)
         .await?;
 
@@ -512,7 +552,9 @@ impl PromptLabRepository {
 
         let rows = sqlx::query_as::<_, SopRow>(
             r#"
-            SELECT id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status, created_at, updated_at
+            SELECT id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status,
+                   CAST(created_at AS TEXT) AS created_at,
+                   CAST(updated_at AS TEXT) AS updated_at
             FROM sops
             WHERE status = COALESCE(?1, status)
               AND ticket_id = COALESCE(?2, ticket_id)
@@ -530,7 +572,9 @@ impl PromptLabRepository {
     pub async fn get_sop(&self, id: i64) -> Result<Sop> {
         let row = sqlx::query_as::<_, SopRow>(
             r#"
-            SELECT id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status, created_at, updated_at
+            SELECT id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status,
+                   CAST(created_at AS TEXT) AS created_at,
+                   CAST(updated_at AS TEXT) AS updated_at
             FROM sops
             WHERE id = ?1
             "#,
@@ -546,7 +590,9 @@ impl PromptLabRepository {
     pub async fn get_sop_by_sop_id(&self, sop_id: &str) -> Result<Sop> {
         let row = sqlx::query_as::<_, SopRow>(
             r#"
-            SELECT id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status, created_at, updated_at
+            SELECT id, sop_id, name, ticket_id, version, detect, handle, verification, rollback, status,
+                   CAST(created_at AS TEXT) AS created_at,
+                   CAST(updated_at AS TEXT) AS updated_at
             FROM sops
             WHERE sop_id = ?1
             "#,
@@ -570,17 +616,60 @@ impl PromptLabRepository {
         Ok(())
     }
 
+    async fn normalize_step_refs_for_sop(
+        &self,
+        sop_id: &str,
+        refs: Option<Value>,
+    ) -> Result<Option<String>> {
+        let Some(refs) = refs else {
+            return Ok(None);
+        };
+        if refs.is_null() {
+            return Ok(None);
+        }
+        let mut step_refs: Vec<SopStepRef> = serde_json::from_value(refs)?;
+
+        for step_ref in &mut step_refs {
+            let row = sqlx::query_as::<_, SopStepRefLookup>(
+                "SELECT id, sop_id, name FROM sop_steps WHERE id = ?1",
+            )
+            .bind(step_ref.sop_step_id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or(PromptLabError::NotFound {
+                entity: "sop_steps",
+                id: step_ref.sop_step_id,
+            })?;
+
+            if row.sop_id != sop_id {
+                return Err(PromptLabError::InvalidInput(format!(
+                    "sop_step_id {} does not belong to sop_id {}",
+                    row.id, sop_id
+                )));
+            }
+
+            step_ref.name = row.name;
+        }
+
+        Ok(Some(serde_json::to_string(&step_refs)?))
+    }
+
     pub async fn create_sop_step(&self, input: CreateSopStepInput) -> Result<SopStep> {
         let operation = input.operation.map(|v| v.to_string());
         let verification = input.verification.map(|v| v.to_string());
         let impact_analysis = input.impact_analysis.map(|v| v.to_string());
         let rollback = input.rollback.map(|v| v.to_string());
+        let created_at = now_ms();
 
         let row = sqlx::query_as::<_, SopStepRow>(
             r#"
-            INSERT INTO sop_steps (sop_id, name, version, operation, verification, impact_analysis, rollback)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-            RETURNING id, sop_id, name, version, operation, verification, impact_analysis, rollback, created_at, updated_at
+            INSERT INTO sop_steps (
+              sop_id, name, version, operation, verification, impact_analysis, rollback, created_at, updated_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            RETURNING id, sop_id, name, version, operation, verification, impact_analysis, rollback,
+                      CAST(created_at AS TEXT) AS created_at,
+                      CAST(updated_at AS TEXT) AS updated_at
             "#,
         )
         .bind(input.sop_id)
@@ -590,6 +679,8 @@ impl PromptLabRepository {
         .bind(verification)
         .bind(impact_analysis)
         .bind(rollback)
+        .bind(created_at)
+        .bind(created_at)
         .fetch_one(&self.pool)
         .await?;
 
@@ -611,9 +702,12 @@ impl PromptLabRepository {
               operation = COALESCE(?4, operation),
               verification = COALESCE(?5, verification),
               impact_analysis = COALESCE(?6, impact_analysis),
-              rollback = COALESCE(?7, rollback)
+              rollback = COALESCE(?7, rollback),
+              updated_at = ?8
             WHERE id = ?1
-            RETURNING id, sop_id, name, version, operation, verification, impact_analysis, rollback, created_at, updated_at
+            RETURNING id, sop_id, name, version, operation, verification, impact_analysis, rollback,
+                      CAST(created_at AS TEXT) AS created_at,
+                      CAST(updated_at AS TEXT) AS updated_at
             "#,
         )
         .bind(input.id)
@@ -623,6 +717,7 @@ impl PromptLabRepository {
         .bind(verification)
         .bind(impact_analysis)
         .bind(rollback)
+        .bind(now_ms())
         .fetch_optional(&self.pool)
         .await?;
 
@@ -633,7 +728,9 @@ impl PromptLabRepository {
     pub async fn list_sop_steps(&self, filter: SopStepFilter) -> Result<Vec<SopStep>> {
         let rows = sqlx::query_as::<_, SopStepRow>(
             r#"
-            SELECT id, sop_id, name, version, operation, verification, impact_analysis, rollback, created_at, updated_at
+            SELECT id, sop_id, name, version, operation, verification, impact_analysis, rollback,
+                   CAST(created_at AS TEXT) AS created_at,
+                   CAST(updated_at AS TEXT) AS updated_at
             FROM sop_steps
             WHERE sop_id = COALESCE(?1, sop_id)
             ORDER BY id ASC
@@ -649,7 +746,9 @@ impl PromptLabRepository {
     pub async fn get_sop_step(&self, id: i64) -> Result<SopStep> {
         let row = sqlx::query_as::<_, SopStepRow>(
             r#"
-            SELECT id, sop_id, name, version, operation, verification, impact_analysis, rollback, created_at, updated_at
+            SELECT id, sop_id, name, version, operation, verification, impact_analysis, rollback,
+                   CAST(created_at AS TEXT) AS created_at,
+                   CAST(updated_at AS TEXT) AS updated_at
             FROM sop_steps
             WHERE id = ?1
             "#,
@@ -820,6 +919,13 @@ fn now_ms() -> i64 {
 }
 
 // ============== Row Types ==============
+
+#[derive(Debug, FromRow)]
+struct SopStepRefLookup {
+    id: i64,
+    sop_id: String,
+    name: String,
+}
 
 #[derive(Debug, FromRow)]
 struct SopRow {
