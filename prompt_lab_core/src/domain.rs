@@ -386,10 +386,10 @@ pub struct Sop {
     pub name: String,
     pub ticket_id: Option<String>,
     pub version: i64,
-    pub detect: Option<Value>,
-    pub handle: Option<Value>,
-    pub verification: Option<Value>,
-    pub rollback: Option<Value>,
+    pub detect: Vec<SopStage>,
+    pub handle: Vec<SopStage>,
+    pub verification: Vec<SopStage>,
+    pub rollback: Vec<SopStage>,
     pub status: SopStatus,
     pub created_at: String,
     pub updated_at: String,
@@ -401,10 +401,10 @@ pub struct CreateSopInput {
     pub name: String,
     pub ticket_id: Option<String>,
     pub version: Option<i64>,
-    pub detect: Option<Value>,
-    pub handle: Option<Value>,
-    pub verification: Option<Value>,
-    pub rollback: Option<Value>,
+    pub detect: Vec<SopStage>,
+    pub handle: Vec<SopStage>,
+    pub verification: Vec<SopStage>,
+    pub rollback: Vec<SopStage>,
     pub status: SopStatus,
 }
 
@@ -446,6 +446,12 @@ pub struct SopStep {
 pub struct SopStepRef {
     pub sop_step_id: i64,
     pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SopStage {
+    pub name: String,
+    pub steps: Vec<SopStepRef>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
