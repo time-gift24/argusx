@@ -30,12 +30,12 @@ pnpm lint                   # Run ESLint
 The app uses **Tauri IPC** for frontend-backend communication:
 
 1. **Rust backend** (`src-tauri/src/lib.rs`): Exposes `#[tauri::command]` functions
-2. **TypeScript API client** (`lib/api/prompt-lab.ts`): Wraps `invoke()` calls with typed interfaces
+2. **TypeScript frontend** (`app/**`, `components/**`): Calls `invoke()` directly or via feature API wrappers
 
 When adding new Tauri commands:
 1. Add the command in `src-tauri/src/lib.rs` with `#[tauri::command]`
 2. Register it in `invoke_handler(tauri::generate_handler![...])`
-3. Create corresponding types and wrapper function in `lib/api/prompt-lab.ts`
+3. Add corresponding frontend typing and caller
 
 ### Workspace Structure
 
@@ -45,8 +45,6 @@ When adding new Tauri commands:
 ├── argusx-common/           # Shared config and utilities
 ├── bigmodel-api/            # API integrations
 ├── llm-sdk/                 # LLM SDK
-├── prompt_lab_core/         # PromptLab business logic (used by desktop app)
-├── prompt_lab_cli/          # CLI for PromptLab
 ├── llm-cli/                 # LLM CLI tool
 └── argusx-desktop/          # This project (Tauri + Next.js)
 ```
@@ -61,16 +59,11 @@ components/
   features/                  # Feature-specific components
 lib/
   utils.ts                   # cn() helper for Tailwind
-  api/prompt-lab.ts          # Tauri IPC API client
 hooks/                       # Custom React hooks
 src-tauri/                   # Rust backend
   src/lib.rs                 # Tauri commands and app setup
   tauri.conf.json            # Tauri configuration
 ```
-
-### Database
-
-The app stores data in SQLite at `{app_data_dir}/prompt_lab/data.db`. The database is initialized automatically on first run via `prompt_lab_core`.
 
 ### UI Conventions
 
@@ -85,4 +78,3 @@ The app stores data in SQLite at `{app_data_dir}/prompt_lab/data.db`. The databa
 - **使用 shadcn/ui 组件**: 当需要 UI 组件时，使用 shadcn 组件库，禁止引入其他前端库
 - **禁止新建组件**: 未经用户明确允许，禁止在 `components/` 目录下创建新组件
 - **路径别名**: 使用 `@/components`、`@/lib`、`@/hooks` 等路径别名
-

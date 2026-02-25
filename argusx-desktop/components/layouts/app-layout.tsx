@@ -10,7 +10,6 @@ import { AppSidebar } from "./sidebar/app-sidebar";
 import { ChatSidebar } from "./sidebar/chat-sidebar";
 import { SidebarTrigger } from "./sidebar/sidebar-trigger";
 import { ThemeToggle } from "./theme-toggle";
-import { PromptLabBreadcrumb } from "./prompt-lab-breadcrumb";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -24,7 +23,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 className="-ml-1"
                 side="left"
               />
-              <PromptLabBreadcrumb />
+              <span className="text-sm text-muted-foreground">ArgusX</span>
             </div>
             <div className="flex items-center gap-2">
               <ThemeToggle />
