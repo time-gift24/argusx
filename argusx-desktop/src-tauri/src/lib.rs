@@ -161,6 +161,17 @@ async fn update_sop_step(
 }
 
 #[tauri::command]
+async fn get_sop_step_details(step_id: i64) -> Result<SopStep, String> {
+    let prompt_lab = create_prompt_lab().await?;
+    let step = prompt_lab
+        .sop_service()
+        .get_sop_step(step_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(step)
+}
+
+#[tauri::command]
 async fn create_chat_session(title: Option<String>) -> Result<ChatSession, String> {
     let now = chrono::Utc::now().timestamp_millis();
     Ok(ChatSession {
@@ -194,6 +205,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             get_sop_with_steps,
             get_checklist_items_by_step,
             update_sop_step,
+            get_sop_step_details,
         ])
         .run(tauri::generate_context!())?;
     Ok(())
