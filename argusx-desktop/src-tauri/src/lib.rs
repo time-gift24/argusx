@@ -3,7 +3,7 @@ use prompt_lab_core::PromptLab;
 use prompt_lab_core::{
     AiExecutionLog, CheckResult as CheckResultModel, ChecklistItem, ChecklistStatus, ExecStatus,
     GoldenSetItem, SourceType, TargetLevel, CreateSopInput, UpdateSopInput, SopFilter, Sop,
-    SopStep, CreateSopStepInput, UpdateSopStepInput, SopStepFilter,
+    SopAggregate, SopStep, CreateSopStepInput, UpdateSopStepInput, SopStepFilter,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -22,17 +22,8 @@ pub struct ApiError {
 
 impl From<prompt_lab_core::PromptLabError> for ApiError {
     fn from(e: prompt_lab_core::PromptLabError) -> Self {
-        let code = match &e {
-            prompt_lab_core::PromptLabError::Database(_) => "DATABASE_ERROR",
-            prompt_lab_core::PromptLabError::Migration(_) => "MIGRATION_ERROR",
-            prompt_lab_core::PromptLabError::Json(_) => "JSON_ERROR",
-            prompt_lab_core::PromptLabError::Io(_) => "IO_ERROR",
-            prompt_lab_core::PromptLabError::InvalidEnum { .. } => "INVALID_ENUM",
-            prompt_lab_core::PromptLabError::InvalidInput(_) => "INVALID_INPUT",
-            prompt_lab_core::PromptLabError::NotFound { .. } => "NOT_FOUND",
-        };
         ApiError {
-            code: code.to_string(),
+            code: e.code().as_str().to_string(),
             message: e.to_string(),
         }
     }
@@ -217,12 +208,12 @@ impl From<SourceType> for SourceTypeInput {
 pub struct UpsertCheckResultInput {
     pub id: Option<i64>,
     pub context_type: String,
-    pub context_id: i64,
-    pub check_item_id: i64,
+    pub context_key: String,
+    pub check_item_id: Option<i64>,
     pub source_type: SourceTypeInput,
     pub operator_id: Option<String>,
     pub result: Option<Value>,
-    pub is_pass: bool,
+    pub is_pass: Option<bool>,
 }
 
 impl From<UpsertCheckResultInput> for prompt_lab_core::UpsertCheckResultInput {
@@ -230,7 +221,7 @@ impl From<UpsertCheckResultInput> for prompt_lab_core::UpsertCheckResultInput {
         prompt_lab_core::UpsertCheckResultInput {
             id: v.id,
             context_type: v.context_type,
-            context_id: v.context_id,
+            context_key: v.context_key,
             check_item_id: v.check_item_id,
             source_type: v.source_type.into(),
             operator_id: v.operator_id,
@@ -243,7 +234,7 @@ impl From<UpsertCheckResultInput> for prompt_lab_core::UpsertCheckResultInput {
 #[derive(Debug, Default, Deserialize)]
 pub struct CheckResultFilter {
     pub context_type: Option<String>,
-    pub context_id: Option<i64>,
+    pub context_key: Option<String>,
     pub check_item_id: Option<i64>,
 }
 
@@ -251,7 +242,7 @@ impl From<CheckResultFilter> for prompt_lab_core::CheckResultFilter {
     fn from(v: CheckResultFilter) -> Self {
         prompt_lab_core::CheckResultFilter {
             context_type: v.context_type,
-            context_id: v.context_id,
+            context_key: v.context_key,
             check_item_id: v.check_item_id,
         }
     }
@@ -293,7 +284,7 @@ impl From<ExecStatus> for ExecStatusInput {
 pub struct AppendAiExecutionLogInput {
     pub check_result_id: Option<i64>,
     pub context_type: String,
-    pub context_id: i64,
+    pub context_key: String,
     pub check_item_id: i64,
     pub model_provider: Option<String>,
     pub model_version: String,
@@ -312,7 +303,7 @@ impl From<AppendAiExecutionLogInput> for prompt_lab_core::AppendAiExecutionLogIn
         prompt_lab_core::AppendAiExecutionLogInput {
             check_result_id: v.check_result_id,
             context_type: v.context_type,
-            context_id: v.context_id,
+            context_key: v.context_key,
             check_item_id: v.check_item_id,
             model_provider: v.model_provider,
             model_version: v.model_version,
@@ -331,7 +322,7 @@ impl From<AppendAiExecutionLogInput> for prompt_lab_core::AppendAiExecutionLogIn
 #[derive(Debug, Default, Deserialize)]
 pub struct AiExecutionLogFilter {
     pub context_type: Option<String>,
-    pub context_id: Option<i64>,
+    pub context_key: Option<String>,
     pub check_item_id: Option<i64>,
 }
 
@@ -339,7 +330,7 @@ impl From<AiExecutionLogFilter> for prompt_lab_core::AiExecutionLogFilter {
     fn from(v: AiExecutionLogFilter) -> Self {
         prompt_lab_core::AiExecutionLogFilter {
             context_type: v.context_type,
-            context_id: v.context_id,
+            context_key: v.context_key,
             check_item_id: v.check_item_id,
         }
     }
@@ -599,13 +590,13 @@ impl From<GoldenSetItem> for GoldenSetItemResponse {
 pub struct CheckResultResponse {
     pub id: i64,
     pub context_type: String,
-    pub context_id: i64,
-    pub check_item_id: i64,
+    pub context_key: String,
+    pub check_item_id: Option<i64>,
     pub source_type: SourceTypeInput,
     pub operator_id: Option<String>,
     pub result: Option<Value>,
     pub is_pass: bool,
-    pub created_at: String,
+    pub created_at: i64,
 }
 
 impl From<CheckResultModel> for CheckResultResponse {
@@ -613,7 +604,7 @@ impl From<CheckResultModel> for CheckResultResponse {
         CheckResultResponse {
             id: v.id,
             context_type: v.context_type,
-            context_id: v.context_id,
+            context_key: v.context_key,
             check_item_id: v.check_item_id,
             source_type: v.source_type.into(),
             operator_id: v.operator_id,
@@ -629,7 +620,7 @@ pub struct AiExecutionLogResponse {
     pub id: i64,
     pub check_result_id: Option<i64>,
     pub context_type: String,
-    pub context_id: i64,
+    pub context_key: String,
     pub check_item_id: i64,
     pub model_provider: Option<String>,
     pub model_version: String,
@@ -641,7 +632,7 @@ pub struct AiExecutionLogResponse {
     pub exec_status: ExecStatusInput,
     pub error_message: Option<String>,
     pub latency_ms: i64,
-    pub created_at: String,
+    pub created_at: i64,
 }
 
 impl From<AiExecutionLog> for AiExecutionLogResponse {
@@ -650,7 +641,7 @@ impl From<AiExecutionLog> for AiExecutionLogResponse {
             id: v.id,
             check_result_id: v.check_result_id,
             context_type: v.context_type,
-            context_id: v.context_id,
+            context_key: v.context_key,
             check_item_id: v.check_item_id,
             model_provider: v.model_provider,
             model_version: v.model_version,
@@ -729,6 +720,27 @@ impl From<SopStep> for SopStepResponse {
             rollback: v.rollback,
             created_at: v.created_at,
             updated_at: v.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct SopAggregateResponse {
+    pub sop: SopResponse,
+    pub detect_steps: Vec<SopStepResponse>,
+    pub handle_steps: Vec<SopStepResponse>,
+    pub verification_steps: Vec<SopStepResponse>,
+    pub rollback_steps: Vec<SopStepResponse>,
+}
+
+impl From<SopAggregate> for SopAggregateResponse {
+    fn from(v: SopAggregate) -> Self {
+        SopAggregateResponse {
+            sop: v.sop.into(),
+            detect_steps: v.detect_steps.into_iter().map(Into::into).collect(),
+            handle_steps: v.handle_steps.into_iter().map(Into::into).collect(),
+            verification_steps: v.verification_steps.into_iter().map(Into::into).collect(),
+            rollback_steps: v.rollback_steps.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -876,13 +888,13 @@ async fn list_golden_set_items(
 // ============================================================================
 
 #[tauri::command]
-async fn upsert_check_result(
+async fn upsert_or_append_check_result(
     state: State<'_, Arc<PromptLab>>,
     input: UpsertCheckResultInput,
 ) -> Result<CheckResultResponse, ApiError> {
     let result = state
         .check_result_service()
-        .upsert(input.into())
+        .upsert_or_append(input.into())
         .await
         .map_err(ApiError::from)?;
     Ok(result.into())
@@ -977,11 +989,11 @@ async fn list_sops(
 #[tauri::command]
 async fn get_sop(
     state: State<'_, Arc<PromptLab>>,
-    id: i64,
-) -> Result<SopResponse, ApiError> {
+    sop_id: String,
+) -> Result<SopAggregateResponse, ApiError> {
     let result = state
         .sop_service()
-        .get_sop(id)
+        .get_sop_aggregate_by_sop_id(&sop_id)
         .await
         .map_err(ApiError::from)?;
     Ok(result.into())
@@ -1118,7 +1130,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             bind_golden_set_item,
             unbind_golden_set_item,
             list_golden_set_items,
-            upsert_check_result,
+            upsert_or_append_check_result,
             list_check_results,
             append_ai_execution_log,
             list_ai_execution_logs,
