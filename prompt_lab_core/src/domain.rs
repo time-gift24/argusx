@@ -434,10 +434,10 @@ pub struct SopStep {
     pub sop_id: String,
     pub name: String,
     pub version: i64,
-    pub operation: Option<Value>,
-    pub verification: Option<Value>,
-    pub impact_analysis: Option<Value>,
-    pub rollback: Option<Value>,
+    pub operation: Option<String>,
+    pub verification: Option<String>,
+    pub impact_analysis: Option<String>,
+    pub rollback: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -462,10 +462,10 @@ pub struct CreateSopStepInput {
     pub sop_id: String,
     pub name: String,
     pub version: Option<i64>,
-    pub operation: Option<Value>,
-    pub verification: Option<Value>,
-    pub impact_analysis: Option<Value>,
-    pub rollback: Option<Value>,
+    pub operation: Option<String>,
+    pub verification: Option<String>,
+    pub impact_analysis: Option<String>,
+    pub rollback: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -473,10 +473,10 @@ pub struct UpdateSopStepInput {
     pub id: i64,
     pub name: Option<String>,
     pub version: Option<i64>,
-    pub operation: Option<Value>,
-    pub verification: Option<Value>,
-    pub impact_analysis: Option<Value>,
-    pub rollback: Option<Value>,
+    pub operation: Option<String>,
+    pub verification: Option<String>,
+    pub impact_analysis: Option<String>,
+    pub rollback: Option<String>,
 }
 
 #[derive(Debug, Clone)]
