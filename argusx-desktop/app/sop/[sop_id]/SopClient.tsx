@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronRight, ChevronDown, Square, Loader2 } from "lucide-react";
+import { ChevronRight, ChevronDown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Types matching Rust types
@@ -80,6 +80,9 @@ export default function SopClient({ sopId }: SopClientProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
   const [loading, setLoading] = useState(true);
+  const [isLoadingStepDetails, setIsLoadingStepDetails] = useState(false);
+  const [isLoadingChecklist, setIsLoadingChecklist] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [expandedPhases, setExpandedPhases] = useState<Record<string, boolean>>({});
 
   // Load SOP data on mount
@@ -88,6 +91,7 @@ export default function SopClient({ sopId }: SopClientProps) {
 
     const loadSopData = async () => {
       try {
+        setError(null);
         const data = await invoke<SopData>("get_sop_with_steps", { sopId });
         setSopData(data);
 
@@ -99,6 +103,7 @@ export default function SopClient({ sopId }: SopClientProps) {
         setExpandedPhases(expanded);
       } catch (error) {
         console.error("Failed to load SOP data:", error);
+        setError(error instanceof Error ? error.message : String(error));
       } finally {
         setLoading(false);
       }
@@ -115,6 +120,7 @@ export default function SopClient({ sopId }: SopClientProps) {
     }
 
     const loadChecklistItems = async () => {
+      setIsLoadingChecklist(true);
       try {
         const items = await invoke<ChecklistItem[]>("get_checklist_items_by_step", {
           stepId: selectedStep,
@@ -123,6 +129,8 @@ export default function SopClient({ sopId }: SopClientProps) {
       } catch (error) {
         console.error("Failed to load checklist items:", error);
         setChecklistItems([]);
+      } finally {
+        setIsLoadingChecklist(false);
       }
     };
 
@@ -137,6 +145,7 @@ export default function SopClient({ sopId }: SopClientProps) {
     }
 
     const loadStepDetails = async () => {
+      setIsLoadingStepDetails(true);
       try {
         const step = await invoke<SopStep>("get_sop_step_details", {
           stepId: selectedStep,
@@ -146,6 +155,8 @@ export default function SopClient({ sopId }: SopClientProps) {
       } catch (error) {
         console.error("Failed to load step details:", error);
         setSelectedStepData(null);
+      } finally {
+        setIsLoadingStepDetails(false);
       }
     };
 
@@ -188,6 +199,17 @@ export default function SopClient({ sopId }: SopClientProps) {
     return (
       <div className="flex h-full items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-500 font-medium">Error loading SOP</p>
+          <p className="text-muted-foreground text-sm mt-1">{error}</p>
+        </div>
       </div>
     );
   }
@@ -261,7 +283,11 @@ export default function SopClient({ sopId }: SopClientProps) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {selectedStepData ? (
+          {isLoadingStepDetails ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : selectedStepData ? (
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium">Operation</label>
@@ -344,22 +370,21 @@ export default function SopClient({ sopId }: SopClientProps) {
           <CardTitle className="text-base">Checklist</CardTitle>
         </CardHeader>
         <CardContent className="pt-0">
-          {checklistItems.length > 0 ? (
+          {isLoadingChecklist ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : checklistItems.length > 0 ? (
             <div className="space-y-2">
               {checklistItems.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-start gap-2 rounded p-2 hover:bg-accent/50"
+                  className="rounded p-2 hover:bg-accent/50"
                 >
-                  <button className="mt-0.5 flex-shrink-0">
-                    <Square className="h-4 w-4 text-muted-foreground" />
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{item.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {item.prompt}
-                    </p>
-                  </div>
+                  <p className="text-sm font-medium">{item.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {item.prompt}
+                  </p>
                 </div>
               ))}
             </div>
