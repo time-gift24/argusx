@@ -90,7 +90,16 @@ impl CheckResultService {
     pub async fn upsert_or_append(&self, input: UpsertCheckResultInput) -> Result<CheckResult> {
         validate_non_empty("context_type", &input.context_type)?;
         validate_non_empty("context_key", &input.context_key)?;
-        self.repo.upsert_or_append_check_result(input).await
+        let is_pass = match input.source_type {
+            SourceType::Manual => input.is_pass.unwrap_or(true),
+            SourceType::Ai => input.is_pass.unwrap_or(false),
+        };
+        self.repo
+            .upsert_or_append_check_result(UpsertCheckResultInput {
+                is_pass: Some(is_pass),
+                ..input
+            })
+            .await
     }
 
     pub async fn list(&self, filter: CheckResultFilter) -> Result<Vec<CheckResult>> {

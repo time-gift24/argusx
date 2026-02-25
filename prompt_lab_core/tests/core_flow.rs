@@ -87,7 +87,20 @@ fn input_manual(check_item_id: Option<i64>, is_pass: bool) -> UpsertCheckResultI
         source_type: SourceType::Manual,
         operator_id: Some("u1".to_string()),
         result: Some(serde_json::json!({"ok": is_pass})),
-        is_pass,
+        is_pass: Some(is_pass),
+    }
+}
+
+fn input_manual_default_pass() -> UpsertCheckResultInput {
+    UpsertCheckResultInput {
+        id: None,
+        context_type: "sop".to_string(),
+        context_key: "sop:SOP-default-pass".to_string(),
+        check_item_id: Some(7),
+        source_type: SourceType::Manual,
+        operator_id: Some("u1".to_string()),
+        result: Some(serde_json::json!({"ok": true})),
+        is_pass: None,
     }
 }
 
@@ -190,4 +203,15 @@ async fn get_sop_returns_aggregate_and_normalizes_snapshot_names() {
         .await
         .unwrap();
     assert_eq!(agg.detect_steps[0].name, "真实名称");
+}
+
+#[tokio::test]
+async fn manual_without_is_pass_defaults_to_true() {
+    let lab = test_lab().await;
+    let r = lab
+        .check_result_service()
+        .upsert_or_append(input_manual_default_pass())
+        .await
+        .unwrap();
+    assert!(r.is_pass);
 }

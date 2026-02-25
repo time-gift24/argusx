@@ -238,6 +238,7 @@ impl PromptLabRepository {
         } = input;
         let result = result.map(|v| v.to_string());
         let source_type_i64 = source_type.as_i64();
+        let is_pass = is_pass.unwrap_or(matches!(source_type, SourceType::Manual));
         let is_pass_i64 = if is_pass { 1_i64 } else { 0_i64 };
         let created_at = now_ms();
         let operator_id = operator_id.as_deref();

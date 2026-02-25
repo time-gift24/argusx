@@ -284,7 +284,7 @@ pub struct UpsertCheckResultInput {
     pub source_type: SourceType,
     pub operator_id: Option<String>,
     pub result: Option<Value>,
-    pub is_pass: bool,
+    pub is_pass: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
