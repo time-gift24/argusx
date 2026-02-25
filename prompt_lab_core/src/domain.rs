@@ -415,10 +415,10 @@ pub struct UpdateSopInput {
     pub name: Option<String>,
     pub ticket_id: Option<String>,
     pub version: Option<i64>,
-    pub detect: Option<Value>,
-    pub handle: Option<Value>,
-    pub verification: Option<Value>,
-    pub rollback: Option<Value>,
+    pub detect: Vec<SopStage>,
+    pub handle: Vec<SopStage>,
+    pub verification: Vec<SopStage>,
+    pub rollback: Vec<SopStage>,
     pub status: Option<SopStatus>,
 }
 

@@ -229,28 +229,26 @@ impl SopService {
 }
 
 fn collect_stage_steps(
-    snapshot: &Option<Value>,
+    stages: &Vec<SopStage>,
     step_map: &HashMap<i64, SopStep>,
-    stage: impl Display,
+    stage_name: impl Display,
 ) -> Result<Vec<SopStep>> {
-    let Some(snapshot) = snapshot else {
-        return Ok(Vec::new());
-    };
-    let step_refs: Vec<SopStepRef> = serde_json::from_value(snapshot.clone())?;
-    let mut ordered = Vec::with_capacity(step_refs.len());
-    for step_ref in step_refs {
-        let step = step_map
-            .get(&step_ref.sop_step_id)
-            .ok_or(PromptLabError::NotFound {
-                entity: "sop_steps",
-                id: step_ref.sop_step_id,
-            })?
-            .clone();
-        ordered.push(step);
+    let mut ordered = Vec::new();
+    for stage in stages {
+        for step_ref in &stage.steps {
+            let step = step_map
+                .get(&step_ref.sop_step_id)
+                .ok_or(PromptLabError::NotFound {
+                    entity: "sop_steps",
+                    id: step_ref.sop_step_id,
+                })?
+                .clone();
+            ordered.push(step);
+        }
     }
-    if ordered.is_empty() && !snapshot.is_null() {
+    if ordered.is_empty() && !stages.is_empty() {
         return Err(PromptLabError::InvalidInput(format!(
-            "invalid {stage} snapshot references"
+            "invalid {stage_name} snapshot references"
         )));
     }
     Ok(ordered)

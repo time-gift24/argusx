@@ -445,15 +445,19 @@ impl PromptLabRepository {
         let detect = self
             .normalize_step_refs_for_sop(&input.sop_id, input.detect)
             .await?;
+        let detect = serde_json::to_value(detect)?;
         let handle = self
             .normalize_step_refs_for_sop(&input.sop_id, input.handle)
             .await?;
+        let handle = serde_json::to_value(handle)?;
         let verification = self
             .normalize_step_refs_for_sop(&input.sop_id, input.verification)
             .await?;
+        let verification = serde_json::to_value(verification)?;
         let rollback = self
             .normalize_step_refs_for_sop(&input.sop_id, input.rollback)
             .await?;
+        let rollback = serde_json::to_value(rollback)?;
 
         let row = sqlx::query_as::<_, SopRow>(
             r#"
@@ -500,15 +504,19 @@ impl PromptLabRepository {
         let detect = self
             .normalize_step_refs_for_sop(&effective_sop_id, input.detect)
             .await?;
+        let detect = serde_json::to_value(detect)?;
         let handle = self
             .normalize_step_refs_for_sop(&effective_sop_id, input.handle)
             .await?;
+        let handle = serde_json::to_value(handle)?;
         let verification = self
             .normalize_step_refs_for_sop(&effective_sop_id, input.verification)
             .await?;
+        let verification = serde_json::to_value(verification)?;
         let rollback = self
             .normalize_step_refs_for_sop(&effective_sop_id, input.rollback)
             .await?;
+        let rollback = serde_json::to_value(rollback)?;
 
         let row = sqlx::query_as::<_, SopRow>(
             r#"
@@ -620,39 +628,36 @@ impl PromptLabRepository {
     async fn normalize_step_refs_for_sop(
         &self,
         sop_id: &str,
-        refs: Option<Value>,
-    ) -> Result<Option<String>> {
-        let Some(refs) = refs else {
-            return Ok(None);
-        };
-        if refs.is_null() {
-            return Ok(None);
-        }
-        let mut step_refs: Vec<SopStepRef> = serde_json::from_value(refs)?;
+        stages: Vec<SopStage>,
+    ) -> Result<Vec<SopStage>> {
+        let mut normalized_stages = Vec::new();
 
-        for step_ref in &mut step_refs {
-            let row = sqlx::query_as::<_, SopStepRefLookup>(
-                "SELECT id, sop_id, name FROM sop_steps WHERE id = ?1",
-            )
-            .bind(step_ref.sop_step_id)
-            .fetch_optional(&self.pool)
-            .await?
-            .ok_or(PromptLabError::NotFound {
-                entity: "sop_steps",
-                id: step_ref.sop_step_id,
-            })?;
+        for mut stage in stages {
+            for step_ref in &mut stage.steps {
+                let row = sqlx::query_as::<_, SopStepRefLookup>(
+                    "SELECT id, sop_id, name FROM sop_steps WHERE id = ?1",
+                )
+                .bind(step_ref.sop_step_id)
+                .fetch_optional(&self.pool)
+                .await?
+                .ok_or(PromptLabError::NotFound {
+                    entity: "sop_steps",
+                    id: step_ref.sop_step_id,
+                })?;
 
-            if row.sop_id != sop_id {
-                return Err(PromptLabError::InvalidInput(format!(
-                    "sop_step_id {} does not belong to sop_id {}",
-                    row.id, sop_id
-                )));
+                if row.sop_id != sop_id {
+                    return Err(PromptLabError::InvalidInput(format!(
+                        "sop_step_id {} does not belong to sop_id {}",
+                        row.id, sop_id
+                    )));
+                }
+
+                step_ref.name = row.name;
             }
-
-            step_ref.name = row.name;
+            normalized_stages.push(stage);
         }
 
-        Ok(Some(serde_json::to_string(&step_refs)?))
+        Ok(normalized_stages)
     }
 
     pub async fn create_sop_step(&self, input: CreateSopStepInput) -> Result<SopStep> {
@@ -912,6 +917,19 @@ fn parse_json_option(value: Option<String>) -> Result<Option<Value>> {
         .transpose()
 }
 
+fn parse_json_to_vec(value: Option<String>) -> Result<Vec<SopStage>> {
+    match value {
+        Some(raw) => {
+            if raw.is_empty() {
+                Ok(Vec::new())
+            } else {
+                serde_json::from_str::<Vec<SopStage>>(&raw).map_err(PromptLabError::from)
+            }
+        }
+        None => Ok(Vec::new()),
+    }
+}
+
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -954,10 +972,10 @@ impl TryFrom<SopRow> for Sop {
             name: row.name,
             ticket_id: row.ticket_id,
             version: row.version,
-            detect: parse_json_option(row.detect)?,
-            handle: parse_json_option(row.handle)?,
-            verification: parse_json_option(row.verification)?,
-            rollback: parse_json_option(row.rollback)?,
+            detect: parse_json_to_vec(row.detect)?,
+            handle: parse_json_to_vec(row.handle)?,
+            verification: parse_json_to_vec(row.verification)?,
+            rollback: parse_json_to_vec(row.rollback)?,
             status: row.status.parse()?,
             created_at: row.created_at,
             updated_at: row.updated_at,
