@@ -2,18 +2,19 @@ use argusx_common::config::Settings;
 use clap::{Parser, Subcommand, ValueEnum};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use prompt_lab_core::{
-    AiExecutionLogFilter, AppendAiExecutionLogInput, BindGoldenSetItemInput, ChecklistFilter,
-    ChecklistStatus, CreateChecklistItemInput, ExecStatus, PromptLab, SourceType, TargetLevel,
-    UpdateChecklistItemInput, UpsertCheckResultInput,
+    AiExecutionLog, AiExecutionLogFilter, AppendAiExecutionLogInput, CheckResult,
+    CheckResultFilter, ChecklistFilter, ChecklistItem, ChecklistStatus, ExecStatus, PromptLab,
+    SopAggregate, SourceType, TargetLevel, UpsertCheckResultInput,
 };
+use serde::Serialize;
 use serde_json::Value;
 use std::path::PathBuf;
 
-const DEFAULT_DB_PATH: &str = "/Users/wanyaozhong/projects/argusx/argusx/prompt_lab/dev.db";
+const DEFAULT_DB_PATH: &str = "./prompt_lab/dev.db";
 
 #[derive(Parser, Debug)]
 #[command(name = "prompt-lab")]
-#[command(about = "Prompt Lab management CLI", long_about = None)]
+#[command(about = "Prompt Lab CLI (v2 prompt_lab_core)", long_about = None)]
 struct Cli {
     #[arg(long, default_value = DEFAULT_DB_PATH)]
     db: PathBuf,
@@ -35,10 +36,6 @@ enum Commands {
         #[command(subcommand)]
         command: ChecklistCommands,
     },
-    GoldenSet {
-        #[command(subcommand)]
-        command: GoldenSetCommands,
-    },
     Check {
         #[command(subcommand)]
         command: CheckCommands,
@@ -47,66 +44,25 @@ enum Commands {
         #[command(subcommand)]
         command: LogCommands,
     },
+    Sop {
+        #[command(subcommand)]
+        command: SopCommands,
+    },
 }
 
 #[derive(Subcommand, Debug)]
 enum DbCommands {
     Init,
+    Status,
 }
 
 #[derive(Subcommand, Debug)]
 enum ChecklistCommands {
-    Create {
-        #[arg(long)]
-        name: String,
-        #[arg(long)]
-        prompt: String,
-        #[arg(long, value_enum, default_value_t = CliTargetLevel::Step)]
-        target_level: CliTargetLevel,
-        #[arg(long)]
-        result_schema: Option<String>,
-        #[arg(long)]
-        version: Option<i64>,
-        #[arg(long, value_enum, default_value_t = CliChecklistStatus::Active)]
-        status: CliChecklistStatus,
-        #[arg(long)]
-        created_by: Option<i64>,
-    },
-    Update {
-        #[arg(long)]
-        id: i64,
-        #[arg(long)]
-        name: Option<String>,
-        #[arg(long)]
-        prompt: Option<String>,
-        #[arg(long, value_enum)]
-        target_level: Option<CliTargetLevel>,
-        #[arg(long)]
-        result_schema: Option<String>,
-        #[arg(long)]
-        version: Option<i64>,
-        #[arg(long, value_enum)]
-        status: Option<CliChecklistStatus>,
-        #[arg(long)]
-        updated_by: Option<i64>,
-    },
     List {
         #[arg(long, value_enum)]
         status: Option<CliChecklistStatus>,
         #[arg(long, value_enum)]
         target_level: Option<CliTargetLevel>,
-    },
-}
-
-#[derive(Subcommand, Debug)]
-enum GoldenSetCommands {
-    Bind {
-        #[arg(long)]
-        golden_set_id: i64,
-        #[arg(long)]
-        checklist_item_id: i64,
-        #[arg(long, default_value_t = 0)]
-        sort_order: i64,
     },
 }
 
@@ -118,17 +74,17 @@ enum CheckCommands {
         #[arg(long, default_value = "sop")]
         context_type: String,
         #[arg(long)]
-        context_id: i64,
+        context_key: String,
         #[arg(long)]
-        check_item_id: i64,
+        check_item_id: Option<i64>,
         #[arg(long, value_enum, default_value_t = CliSourceType::Ai)]
         source_type: CliSourceType,
         #[arg(long)]
         operator_id: Option<String>,
         #[arg(long)]
         result: Option<String>,
-        #[arg(long, default_value_t = false)]
-        is_pass: bool,
+        #[arg(long)]
+        is_pass: Option<bool>,
         #[arg(long, default_value_t = false)]
         append_log: bool,
         #[arg(long)]
@@ -152,6 +108,14 @@ enum CheckCommands {
         #[arg(long)]
         log_latency_ms: Option<i64>,
     },
+    List {
+        #[arg(long)]
+        context_type: Option<String>,
+        #[arg(long)]
+        context_key: Option<String>,
+        #[arg(long)]
+        check_item_id: Option<i64>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -160,9 +124,17 @@ enum LogCommands {
         #[arg(long)]
         context_type: Option<String>,
         #[arg(long)]
-        context_id: Option<i64>,
+        context_key: Option<String>,
         #[arg(long)]
         check_item_id: Option<i64>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum SopCommands {
+    Get {
+        #[arg(long)]
+        sop_id: String,
     },
 }
 
@@ -254,10 +226,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Db { command } => match command {
-            DbCommands::Init => {
+            DbCommands::Init | DbCommands::Status => {
                 let status = lab.pragma_status().await?;
                 if cli.json {
-                    println!("{}", serde_json::to_string_pretty(&status)?);
+                    print_json(&status)?;
                 } else {
                     let mut table = default_table();
                     table.set_header(["foreign_keys", "journal_mode", "busy_timeout"]);
@@ -271,60 +243,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         },
         Commands::Checklist { command } => match command {
-            ChecklistCommands::Create {
-                name,
-                prompt,
-                target_level,
-                result_schema,
-                version,
-                status,
-                created_by,
-            } => {
-                let item = lab
-                    .checklist_service()
-                    .create(CreateChecklistItemInput {
-                        name,
-                        prompt,
-                        target_level: target_level.into(),
-                        result_schema: parse_optional_json(
-                            result_schema.as_deref(),
-                            "result_schema",
-                        )?,
-                        version,
-                        status: status.into(),
-                        created_by,
-                    })
-                    .await?;
-                print_checklist_items(cli.json, &[item])?;
-            }
-            ChecklistCommands::Update {
-                id,
-                name,
-                prompt,
-                target_level,
-                result_schema,
-                version,
-                status,
-                updated_by,
-            } => {
-                let item = lab
-                    .checklist_service()
-                    .update(UpdateChecklistItemInput {
-                        id,
-                        name,
-                        prompt,
-                        target_level: target_level.map(Into::into),
-                        result_schema: parse_optional_json(
-                            result_schema.as_deref(),
-                            "result_schema",
-                        )?,
-                        version,
-                        status: status.map(Into::into),
-                        updated_by,
-                    })
-                    .await?;
-                print_checklist_items(cli.json, &[item])?;
-            }
             ChecklistCommands::List {
                 status,
                 target_level,
@@ -339,46 +257,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 print_checklist_items(cli.json, &items)?;
             }
         },
-        Commands::GoldenSet { command } => match command {
-            GoldenSetCommands::Bind {
-                golden_set_id,
-                checklist_item_id,
-                sort_order,
-            } => {
-                let item = lab
-                    .golden_set_service()
-                    .bind(BindGoldenSetItemInput {
-                        golden_set_id,
-                        checklist_item_id,
-                        sort_order,
-                    })
-                    .await?;
-
-                if cli.json {
-                    println!("{}", serde_json::to_string_pretty(&item)?);
-                } else {
-                    let mut table = default_table();
-                    table.set_header([
-                        "golden_set_id",
-                        "checklist_item_id",
-                        "sort_order",
-                        "created_at",
-                    ]);
-                    table.add_row([
-                        Cell::new(item.golden_set_id),
-                        Cell::new(item.checklist_item_id),
-                        Cell::new(item.sort_order),
-                        Cell::new(item.created_at),
-                    ]);
-                    println!("{table}");
-                }
-            }
-        },
         Commands::Check { command } => match command {
             CheckCommands::Run {
                 id,
                 context_type,
-                context_id,
+                context_key,
                 check_item_id,
                 source_type,
                 operator_id,
@@ -396,16 +279,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 log_error_message,
                 log_latency_ms,
             } => {
+                let result_json = parse_optional_json(result.as_deref(), "result")?;
+                let context_type_for_log = context_type.clone();
+                let context_key_for_log = context_key.clone();
+
                 let check_result = lab
                     .check_result_service()
-                    .upsert(UpsertCheckResultInput {
+                    .upsert_or_append(UpsertCheckResultInput {
                         id,
-                        context_type: context_type.clone(),
-                        context_id,
+                        context_type,
+                        context_key,
                         check_item_id,
                         source_type: source_type.into(),
                         operator_id,
-                        result: parse_optional_json(result.as_deref(), "result")?,
+                        result: result_json,
                         is_pass,
                     })
                     .await?;
@@ -424,14 +311,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let mut appended_log_id: Option<i64> = None;
 
                 if should_append_log {
+                    let item_id = check_result.check_item_id.ok_or_else(|| {
+                        "check_item_id is required when appending ai log".to_string()
+                    })?;
                     let model_version = log_model_version.unwrap_or_else(|| "unknown".to_string());
                     let log = lab
                         .ai_log_service()
                         .append(AppendAiExecutionLogInput {
                             check_result_id: Some(check_result.id),
-                            context_type,
-                            context_id,
-                            check_item_id,
+                            context_type: context_type_for_log,
+                            context_key: context_key_for_log,
+                            check_item_id: item_id,
                             model_provider: log_model_provider,
                             model_version,
                             temperature: log_temperature,
@@ -448,81 +338,74 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 if cli.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "check_result": check_result,
-                            "appended_log_id": appended_log_id,
-                        }))?
-                    );
+                    print_json(&serde_json::json!({
+                        "check_result": check_result,
+                        "appended_log_id": appended_log_id,
+                    }))?;
                 } else {
                     let mut table = default_table();
                     table.set_header([
                         "check_result_id",
                         "context_type",
-                        "context_id",
+                        "context_key",
                         "check_item_id",
+                        "source_type",
                         "is_pass",
                         "appended_log_id",
                     ]);
                     table.add_row([
                         Cell::new(check_result.id),
                         Cell::new(check_result.context_type),
-                        Cell::new(check_result.context_id),
-                        Cell::new(check_result.check_item_id),
+                        Cell::new(check_result.context_key),
+                        Cell::new(
+                            check_result
+                                .check_item_id
+                                .map_or("-".to_string(), |v| v.to_string()),
+                        ),
+                        Cell::new(format!("{:?}", check_result.source_type)),
                         Cell::new(check_result.is_pass),
                         Cell::new(appended_log_id.map_or("-".to_string(), |v| v.to_string())),
                     ]);
                     println!("{table}");
                 }
             }
+            CheckCommands::List {
+                context_type,
+                context_key,
+                check_item_id,
+            } => {
+                let rows = lab
+                    .check_result_service()
+                    .list(CheckResultFilter {
+                        context_type,
+                        context_key,
+                        check_item_id,
+                    })
+                    .await?;
+                print_check_results(cli.json, &rows)?;
+            }
         },
         Commands::Log { command } => match command {
             LogCommands::List {
                 context_type,
-                context_id,
+                context_key,
                 check_item_id,
             } => {
                 let logs = lab
                     .ai_log_service()
                     .list(AiExecutionLogFilter {
                         context_type,
-                        context_id,
+                        context_key,
                         check_item_id,
                     })
                     .await?;
-
-                if cli.json {
-                    println!("{}", serde_json::to_string_pretty(&logs)?);
-                } else {
-                    let mut table = default_table();
-                    table.set_header([
-                        "id",
-                        "check_result_id",
-                        "context_type",
-                        "context_id",
-                        "check_item_id",
-                        "model_version",
-                        "exec_status",
-                        "created_at",
-                    ]);
-                    for log in logs {
-                        table.add_row([
-                            Cell::new(log.id),
-                            Cell::new(
-                                log.check_result_id
-                                    .map_or("-".to_string(), |v| v.to_string()),
-                            ),
-                            Cell::new(log.context_type),
-                            Cell::new(log.context_id),
-                            Cell::new(log.check_item_id),
-                            Cell::new(log.model_version),
-                            Cell::new(format!("{:?}", log.exec_status)),
-                            Cell::new(log.created_at),
-                        ]);
-                    }
-                    println!("{table}");
-                }
+                print_ai_logs(cli.json, &logs)?;
+            }
+        },
+        Commands::Sop { command } => match command {
+            SopCommands::Get { sop_id } => {
+                let agg = lab.sop_service().get_sop_aggregate_by_sop_id(&sop_id).await?;
+                print_sop_aggregate(cli.json, &agg)?;
             }
         },
     }
@@ -544,13 +427,17 @@ fn parse_optional_json(
     }
 }
 
+fn print_json<T: Serialize>(value: &T) -> Result<(), Box<dyn std::error::Error>> {
+    println!("{}", serde_json::to_string_pretty(value)?);
+    Ok(())
+}
+
 fn print_checklist_items(
     json: bool,
-    items: &[prompt_lab_core::ChecklistItem],
+    items: &[ChecklistItem],
 ) -> Result<(), Box<dyn std::error::Error>> {
     if json {
-        println!("{}", serde_json::to_string_pretty(items)?);
-        return Ok(());
+        return print_json(&items);
     }
 
     let mut table = default_table();
@@ -576,6 +463,83 @@ fn print_checklist_items(
     Ok(())
 }
 
+fn print_check_results(json: bool, rows: &[CheckResult]) -> Result<(), Box<dyn std::error::Error>> {
+    if json {
+        return print_json(&rows);
+    }
+
+    let mut table = default_table();
+    table.set_header([
+        "id",
+        "context_type",
+        "context_key",
+        "check_item_id",
+        "source_type",
+        "is_pass",
+        "created_at",
+    ]);
+    for row in rows {
+        table.add_row([
+            Cell::new(row.id),
+            Cell::new(&row.context_type),
+            Cell::new(&row.context_key),
+            Cell::new(row.check_item_id.map_or("-".to_string(), |v| v.to_string())),
+            Cell::new(format!("{:?}", row.source_type)),
+            Cell::new(row.is_pass),
+            Cell::new(row.created_at),
+        ]);
+    }
+    println!("{table}");
+    Ok(())
+}
+
+fn print_ai_logs(json: bool, logs: &[AiExecutionLog]) -> Result<(), Box<dyn std::error::Error>> {
+    if json {
+        return print_json(&logs);
+    }
+
+    let mut table = default_table();
+    table.set_header([
+        "id",
+        "check_result_id",
+        "context_type",
+        "context_key",
+        "check_item_id",
+        "model_version",
+        "exec_status",
+        "created_at",
+    ]);
+    for log in logs {
+        table.add_row([
+            Cell::new(log.id),
+            Cell::new(log.check_result_id.map_or("-".to_string(), |v| v.to_string())),
+            Cell::new(&log.context_type),
+            Cell::new(&log.context_key),
+            Cell::new(log.check_item_id),
+            Cell::new(&log.model_version),
+            Cell::new(format!("{:?}", log.exec_status)),
+            Cell::new(log.created_at),
+        ]);
+    }
+    println!("{table}");
+    Ok(())
+}
+
+fn print_sop_aggregate(json: bool, agg: &SopAggregate) -> Result<(), Box<dyn std::error::Error>> {
+    if json {
+        return print_json(agg);
+    }
+
+    println!("sop_id: {}", agg.sop.sop_id);
+    println!("name: {}", agg.sop.name);
+    println!("status: {:?}", agg.sop.status);
+    println!("detect_steps: {}", agg.detect_steps.len());
+    println!("handle_steps: {}", agg.handle_steps.len());
+    println!("verification_steps: {}", agg.verification_steps.len());
+    println!("rollback_steps: {}", agg.rollback_steps.len());
+    Ok(())
+}
+
 fn default_table() -> Table {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL);
@@ -584,7 +548,7 @@ fn default_table() -> Table {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChecklistCommands, Cli, Commands};
+    use super::{CheckCommands, ChecklistCommands, Cli, Commands};
     use clap::Parser;
 
     #[test]
@@ -594,6 +558,35 @@ mod tests {
             Commands::Checklist {
                 command: ChecklistCommands::List { .. },
             } => {}
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn parse_check_run_with_context_key() {
+        let cli = Cli::try_parse_from([
+            "prompt-lab",
+            "check",
+            "run",
+            "--context-key",
+            "sop:SOP-1",
+            "--check-item-id",
+            "7",
+        ])
+        .expect("parse");
+
+        match cli.command {
+            Commands::Check {
+                command:
+                    CheckCommands::Run {
+                        context_key,
+                        check_item_id,
+                        ..
+                    },
+            } => {
+                assert_eq!(context_key, "sop:SOP-1");
+                assert_eq!(check_item_id, Some(7));
+            }
             _ => panic!("unexpected command"),
         }
     }
