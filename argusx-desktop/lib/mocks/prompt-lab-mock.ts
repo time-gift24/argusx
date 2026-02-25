@@ -103,18 +103,44 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
     }
 
     // CheckResult mocks
+    case "upsert_or_append_check_result":
     case "upsert_check_result": {
       const input = args?.input as UpsertCheckResultInput;
+      const isPass =
+        input.source_type === "manual"
+          ? (input.is_pass ?? true)
+          : (input.is_pass ?? false);
+
+      if (input.source_type === "manual" && input.check_item_id != null) {
+        const existingIndex = checkResults.findIndex(
+          (r) =>
+            r.source_type === "manual" &&
+            r.context_type === input.context_type &&
+            r.context_key === input.context_key &&
+            r.check_item_id === input.check_item_id
+        );
+        if (existingIndex >= 0) {
+          checkResults[existingIndex] = {
+            ...checkResults[existingIndex],
+            operator_id: input.operator_id ?? null,
+            result: input.result ?? null,
+            is_pass: isPass,
+            created_at: Date.now(),
+          };
+          return checkResults[existingIndex] as T;
+        }
+      }
+
       const item: CheckResult = {
         id: input.id ?? checkResults.length + 1,
         context_type: input.context_type,
-        context_id: input.context_id,
-        check_item_id: input.check_item_id,
+        context_key: input.context_key,
+        check_item_id: input.check_item_id ?? -1,
         source_type: input.source_type,
         operator_id: input.operator_id ?? null,
         result: input.result ?? null,
-        is_pass: input.is_pass,
-        created_at: new Date().toISOString(),
+        is_pass: isPass,
+        created_at: Date.now(),
       };
       checkResults.push(item);
       return item as T;
@@ -126,8 +152,8 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
       if (filter?.context_type) {
         results = results.filter((r) => r.context_type === filter.context_type);
       }
-      if (filter?.context_id) {
-        results = results.filter((r) => r.context_id === filter.context_id);
+      if (filter?.context_key) {
+        results = results.filter((r) => r.context_key === filter.context_key);
       }
       if (filter?.check_item_id) {
         results = results.filter((r) => r.check_item_id === filter.check_item_id);
@@ -142,7 +168,7 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
         id: aiExecutionLogs.length + 1,
         check_result_id: input.check_result_id ?? null,
         context_type: input.context_type,
-        context_id: input.context_id,
+        context_key: input.context_key,
         check_item_id: input.check_item_id,
         model_provider: input.model_provider ?? null,
         model_version: input.model_version,
@@ -154,7 +180,7 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
         exec_status: input.exec_status,
         error_message: input.error_message ?? null,
         latency_ms: input.latency_ms ?? 0,
-        created_at: new Date().toISOString(),
+        created_at: Date.now(),
       };
       aiExecutionLogs.push(item);
       return item as T;
@@ -166,8 +192,8 @@ export async function mockInvoke<T>(cmd: string, args?: Record<string, unknown>)
       if (filter?.context_type) {
         logs = logs.filter((l) => l.context_type === filter.context_type);
       }
-      if (filter?.context_id) {
-        logs = logs.filter((l) => l.context_id === filter.context_id);
+      if (filter?.context_key) {
+        logs = logs.filter((l) => l.context_key === filter.context_key);
       }
       if (filter?.check_item_id) {
         logs = logs.filter((l) => l.check_item_id === filter.check_item_id);
