@@ -1,7 +1,7 @@
 use argusx_common::config::Settings;
 use prompt_lab_core::{
-    CheckResultFilter, CreateSopInput, CreateSopStepInput, PromptLab, SopStatus, SourceType,
-    UpdateSopInput, UpsertCheckResultInput,
+    CheckResultFilter, CreateSopInput, CreateSopStepInput, PromptLab, SopStage, SopStatus,
+    SopStepRef, SourceType, UpdateSopInput, UpsertCheckResultInput,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -122,10 +122,10 @@ async fn ensure_sop_exists(lab: &TestLab) -> prompt_lab_core::Sop {
                     name: "SOP-1".to_string(),
                     ticket_id: None,
                     version: Some(1),
-                    detect: None,
-                    handle: None,
-                    verification: None,
-                    rollback: None,
+                    detect: vec![],
+                    handle: vec![],
+                    verification: vec![],
+                    rollback: vec![],
                     status: SopStatus::Active,
                 })
                 .await
@@ -150,7 +150,7 @@ async fn create_step_named(lab: &TestLab, name: &str) -> prompt_lab_core::SopSte
         .unwrap()
 }
 
-async fn create_sop_with_detect_refs(lab: &TestLab, detect_refs: Vec<serde_json::Value>) {
+async fn create_sop_with_detect_refs(lab: &TestLab, detect_refs: Vec<SopStage>) {
     let sop = ensure_sop_exists(lab).await;
     lab.sop_service()
         .update_sop(UpdateSopInput {
@@ -159,10 +159,10 @@ async fn create_sop_with_detect_refs(lab: &TestLab, detect_refs: Vec<serde_json:
             name: Some("SOP-1".to_string()),
             ticket_id: None,
             version: Some(1),
-            detect: Some(serde_json::json!(detect_refs)),
-            handle: None,
-            verification: None,
-            rollback: None,
+            detect: detect_refs,
+            handle: vec![],
+            verification: vec![],
+            rollback: vec![],
             status: Some(SopStatus::Active),
         })
         .await
@@ -194,7 +194,13 @@ async fn get_sop_returns_aggregate_and_normalizes_snapshot_names() {
     let step = create_step_named(&lab, "真实名称").await;
     create_sop_with_detect_refs(
         &lab,
-        vec![serde_json::json!({"sop_step_id": step.id, "name": "旧名称"})],
+        vec![SopStage {
+            name: "旧名称".to_string(),
+            steps: vec![SopStepRef {
+                sop_step_id: step.id,
+                name: "旧名称".to_string(),
+            }],
+        }],
     )
     .await;
     let agg = lab
