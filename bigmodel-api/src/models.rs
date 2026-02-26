@@ -5,6 +5,8 @@ pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<Message>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub do_sample: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f32>,
@@ -13,9 +15,19 @@ pub struct ChatRequest {
     #[serde(default)]
     pub stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_stream: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<Tool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<ResponseFormat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<Thinking>,
 }
@@ -42,21 +54,40 @@ pub enum Role {
 pub enum Content {
     Text(String),
     Multimodal(Vec<ContentPart>),
+    Json(serde_json::Value),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ContentPart {
-    pub text: Option<String>,
-    pub image_url: Option<ImageUrl>,
-    pub video_url: Option<String>,
-    pub file_url: Option<String>,
-    pub input_audio: Option<String>,
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ContentPart {
+    Text { text: String },
+    ImageUrl { image_url: ImageUrl },
+    VideoUrl { video_url: UrlResource },
+    FileUrl { file_url: UrlResource },
+    InputAudio { input_audio: InputAudio },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageUrl {
     pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UrlResource {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InputAudio {
+    pub data: String,
+    pub format: AudioFormat,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioFormat {
+    Wav,
+    Mp3,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,7 +104,6 @@ pub enum Tool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct FunctionTool {
     pub function: FunctionDefinition,
 }
@@ -86,50 +116,75 @@ pub struct FunctionDefinition {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct RetrievalTool {
+    pub retrieval: RetrievalObject,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrievalObject {
     pub knowledge_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_template: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct WebSearchTool {
-    pub enable: bool,
+    pub web_search: WebSearchObject,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebSearchObject {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_engine: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_query: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_intent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub count: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_domain_filter: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_recency_filter: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_size: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_sequence: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_result: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub require_search: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct McpTool {
+    pub mcp: McpObject,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpObject {
     pub server_label: String,
-    pub server_url: String,
-    #[serde(rename = "transportType")]
-    pub transport_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transport_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allowed_tools: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(rename_all = "lowercase")]
 pub enum ToolChoice {
     Auto,
-    None,
-    Specific { function: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Thinking {
     #[serde(rename = "type")]
     pub type_field: String,
@@ -137,16 +192,35 @@ pub struct Thinking {
     pub clear_thinking: Option<bool>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResponseFormat {
+    #[serde(rename = "type")]
+    pub type_field: ResponseFormatType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResponseFormatType {
+    Text,
+    JsonObject,
+}
+
 // Response types
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ChatResponse {
     pub id: String,
+    #[serde(default)]
+    pub request_id: Option<String>,
     pub created: i64,
     pub model: String,
     pub choices: Vec<Choice>,
     #[serde(default)]
     pub usage: Option<Usage>,
+    #[serde(default)]
+    pub web_search: Vec<WebSearchResult>,
+    #[serde(default)]
+    pub video_result: Vec<VideoResult>,
     #[serde(default)]
     pub content_filter: Vec<serde_json::Value>,
 }
@@ -167,6 +241,23 @@ pub struct Usage {
     pub completion_tokens: i32,
     #[serde(rename = "total_tokens")]
     pub total_tokens: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WebSearchResult {
+    pub icon: Option<String>,
+    pub title: Option<String>,
+    pub link: Option<String>,
+    pub media: Option<String>,
+    pub publish_date: Option<String>,
+    pub content: Option<String>,
+    pub refer: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct VideoResult {
+    pub url: Option<String>,
+    pub cover_image_url: Option<String>,
 }
 
 // Streaming response
@@ -220,14 +311,25 @@ impl ChatRequest {
         Self {
             model: model.into(),
             messages,
+            do_sample: None,
             temperature: None,
             top_p: None,
             max_tokens: None,
             stream: false,
+            tool_stream: None,
             tools: None,
             tool_choice: None,
+            stop: None,
+            response_format: None,
+            request_id: None,
+            user_id: None,
             thinking: None,
         }
+    }
+
+    pub fn do_sample(mut self, value: bool) -> Self {
+        self.do_sample = Some(value);
+        self
     }
 
     pub fn temperature(mut self, value: f32) -> Self {
@@ -245,6 +347,11 @@ impl ChatRequest {
         self
     }
 
+    pub fn tool_stream(mut self, value: bool) -> Self {
+        self.tool_stream = Some(value);
+        self
+    }
+
     pub fn tools(mut self, tools: Vec<Tool>) -> Self {
         self.tools = Some(tools);
         self
@@ -257,6 +364,26 @@ impl ChatRequest {
 
     pub fn tool_choice(mut self, choice: ToolChoice) -> Self {
         self.tool_choice = Some(choice);
+        self
+    }
+
+    pub fn stop(mut self, stop: Vec<String>) -> Self {
+        self.stop = Some(stop);
+        self
+    }
+
+    pub fn response_format(mut self, response_format: ResponseFormat) -> Self {
+        self.response_format = Some(response_format);
+        self
+    }
+
+    pub fn request_id(mut self, request_id: impl Into<String>) -> Self {
+        self.request_id = Some(request_id.into());
+        self
+    }
+
+    pub fn user_id(mut self, user_id: impl Into<String>) -> Self {
+        self.user_id = Some(user_id.into());
         self
     }
 

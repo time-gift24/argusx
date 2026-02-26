@@ -455,7 +455,7 @@ mod tests {
     fn message_text(message: &Message) -> &str {
         match &message.content {
             Content::Text(text) => text,
-            Content::Multimodal(_) => "",
+            _ => "",
         }
     }
 

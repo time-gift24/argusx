@@ -7,21 +7,10 @@ async fn test_client_chat() {
     let config = bigmodel_api::Config::new("test-key");
     let client = bigmodel_api::BigModelClient::new(config);
 
-    let request = bigmodel_api::ChatRequest {
-        model: "glm-4".to_string(),
-        messages: vec![bigmodel_api::Message {
-            role: bigmodel_api::Role::User,
-            content: bigmodel_api::Content::Text("Hello".to_string()),
-            reasoning_content: None,
-        }],
-        temperature: Some(0.7),
-        top_p: None,
-        max_tokens: Some(100),
-        stream: false,
-        tools: None,
-        tool_choice: None,
-        thinking: None,
-    };
+    let request =
+        bigmodel_api::ChatRequest::new("glm-4", vec![bigmodel_api::Message::user("Hello")])
+            .temperature(0.7)
+            .max_tokens(100);
 
     // This will fail with network error since no real API
     // But verifies the request structure is correct
@@ -42,11 +31,9 @@ async fn test_client_chat_stream_maps_http_400_to_invalid_request_with_body() {
 
     let config = bigmodel_api::Config::new("test-key").with_base_url(server.uri());
     let client = bigmodel_api::BigModelClient::new(config);
-    let request = bigmodel_api::ChatRequest::new(
-        "glm-4.5",
-        vec![bigmodel_api::Message::user("hello")],
-    )
-    .stream();
+    let request =
+        bigmodel_api::ChatRequest::new("glm-4.5", vec![bigmodel_api::Message::user("hello")])
+            .stream();
 
     let mut stream = client.chat_stream(request);
     let first = stream.next().await;

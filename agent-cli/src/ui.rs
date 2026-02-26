@@ -1,5 +1,6 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout},
+    style::{Color, Style},
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
@@ -7,6 +8,12 @@ use ratatui::{
 use crate::app::AppState;
 
 pub fn draw(frame: &mut Frame<'_>, app: &AppState) {
+    // Paint a full-screen background first to avoid terminal transparency bleed-through.
+    let panel_style = Style::default()
+        .bg(Color::Rgb(16, 18, 22))
+        .fg(Color::Rgb(230, 230, 230));
+    frame.render_widget(Block::default().style(panel_style), frame.area());
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -32,7 +39,13 @@ pub fn draw(frame: &mut Frame<'_>, app: &AppState) {
     let history_text = history_lines.join("\n");
 
     let history = Paragraph::new(history_text)
-        .block(Block::default().title("Chat").borders(Borders::ALL))
+        .style(panel_style)
+        .block(
+            Block::default()
+                .title("Chat")
+                .borders(Borders::ALL)
+                .style(panel_style),
+        )
         .wrap(Wrap { trim: false });
     frame.render_widget(history, chunks[0]);
 
@@ -43,10 +56,16 @@ pub fn draw(frame: &mut Frame<'_>, app: &AppState) {
     } else {
         format!("status: ready (session: {})", app.session_id)
     };
-    frame.render_widget(Paragraph::new(status_text), chunks[1]);
+    frame.render_widget(Paragraph::new(status_text).style(panel_style), chunks[1]);
 
     let input = Paragraph::new(app.input.clone())
-        .block(Block::default().title("Input").borders(Borders::ALL));
+        .style(panel_style)
+        .block(
+            Block::default()
+                .title("Input")
+                .borders(Borders::ALL)
+                .style(panel_style),
+        );
     frame.render_widget(input, chunks[2]);
 }
 
@@ -156,5 +175,17 @@ mod tests {
             "buffer should contain warning text, got: {}",
             content
         );
+    }
+
+    #[test]
+    fn render_sets_non_reset_background() {
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let app = AppState::new("s-1".into());
+
+        terminal.draw(|frame| draw(frame, &app)).unwrap();
+        let buf = terminal.backend().buffer();
+        let first = &buf.content[0];
+        assert_ne!(first.bg, Color::Reset, "background color should be set");
     }
 }
