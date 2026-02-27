@@ -27,3 +27,4 @@ Cargo.lock
 .env.*
 !.env.example
 !.env.*.example
+.agent
