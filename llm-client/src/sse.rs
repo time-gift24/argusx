@@ -24,12 +24,17 @@ pub fn parse_sse_line(line: &str) -> Option<SseEvent> {
         return None;
     }
 
-    // Parse data lines
-    if let Some(data) = line.strip_prefix("data: ") {
+    // Parse data lines - support both "data: " (with space) and "data:" (without space)
+    if let Some(data) = line.strip_prefix("data:") {
+        // Handle "data:" (no space) or "data: " (with space)
+        let data = data.trim_start();
         if data == "[DONE]" {
             return Some(SseEvent::Done);
         }
-        return Some(SseEvent::Data(data.to_string()));
+        if !data.is_empty() {
+            return Some(SseEvent::Data(data.to_string()));
+        }
+        return None;
     }
 
     // Skip other SSE fields (event:, id:, retry:)
@@ -131,5 +136,21 @@ mod tests {
         assert!(parse_sse_line(": comment").is_none());
         assert!(parse_sse_line("").is_none());
         assert!(parse_sse_line("event: foo").is_none());
+    }
+
+    #[test]
+    fn parse_data_without_space() {
+        // Test "data:" without space
+        let line = "data:{\"content\":\"test\"}";
+        let event = parse_sse_line(line);
+        assert!(matches!(event, Some(SseEvent::Data(ref s)) if s == "{\"content\":\"test\"}"));
+    }
+
+    #[test]
+    fn parse_data_without_space_done() {
+        // Test "data:[DONE]" without space
+        let line = "data:[DONE]";
+        let event = parse_sse_line(line);
+        assert!(matches!(event, Some(SseEvent::Done)));
     }
 }

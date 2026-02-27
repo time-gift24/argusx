@@ -6,7 +6,6 @@ use bigmodel_api::{ChatRequest, ChatResponse, ChatResponseChunk};
 use futures::{Stream, StreamExt};
 use std::pin::Pin;
 use tokio::time::timeout;
-use tracing::debug;
 
 /// Configuration for BigModel API.
 #[derive(Debug, Clone)]
@@ -148,8 +147,10 @@ impl BigModelHttpClient {
                                             match serde_json::from_str::<ChatResponseChunk>(&json) {
                                                 Ok(chunk) => yield chunk,
                                                 Err(e) => {
-                                                    debug!(error = %e, json = %json, "Failed to parse SSE chunk");
-                                                    // Continue on parse errors for resilience
+                                                    // Return parse error instead of silently ignoring
+                                                    Err(LlmError::ParseError {
+                                                        message: format!("Failed to parse SSE chunk: {}", e),
+                                                    })?;
                                                 }
                                             }
                                         }
@@ -163,8 +164,10 @@ impl BigModelHttpClient {
                         }
                     }
                     Ok(Some(Err(e))) => {
-                        debug!(error = %e, "Error reading byte stream");
-                        // Continue on network errors for resilience
+                        // Return network error instead of swallowing it
+                        Err(LlmError::NetworkError {
+                            message: format!("Stream read error: {}", e),
+                        })?;
                     }
                     Ok(None) => break, // Stream ended
                     Err(_) => {

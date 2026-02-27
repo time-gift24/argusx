@@ -84,10 +84,11 @@ impl LlmError {
 
     /// Maps HTTP status code to appropriate error type.
     pub fn from_http_status(status: u16, body: String, headers: &reqwest::header::HeaderMap) -> Self {
+        // Try to parse retry-after header (supports both seconds and HTTP-date format)
         let retry_after = headers
             .get(reqwest::header::RETRY_AFTER)
             .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u64>().ok())
+            .and_then(|s| s.parse::<u64>().ok()) // Try parsing as seconds first
             .map(Duration::from_secs);
 
         match status {
@@ -101,6 +102,7 @@ impl LlmError {
             }
             401 | 403 => Self::AuthError { message: body },
             402 => Self::QuotaExceeded { message: body },
+            404 | 409 | 422 => Self::InvalidRequest { message: body }, // Not Found, Conflict, Unprocessable
             429 => Self::RateLimit {
                 message: body,
                 retry_after,
@@ -109,9 +111,8 @@ impl LlmError {
                 status,
                 message: body,
             },
-            _ => Self::ServerError {
-                status,
-                message: format!("Unknown HTTP error: {}", body),
+            _ => Self::InvalidRequest {
+                message: format!("HTTP {}: {}", status, body),
             },
         }
     }
