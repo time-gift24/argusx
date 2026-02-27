@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use crate::app::{AppState, Role};
 use crate::runtime::{pump_stream, AppEvent};
+use crate::skills::SkillCatalog;
 use crate::ui::draw;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,6 +113,7 @@ impl Drop for RawModeGuard {
 pub async fn run_tui_loop<L>(
     agent: std::sync::Arc<agent::Agent<L>>,
     app: &mut AppState,
+    skills: std::sync::Arc<SkillCatalog>,
     debug_events: bool,
 ) -> anyhow::Result<()>
 where
@@ -164,7 +166,16 @@ where
                             // Start a new chat stream
                             let agent = agent.clone();
                             let session_id = cmd.session_id;
-                            let message = cmd.message;
+                            let injected = skills.inject_user_message(&cmd.message);
+                            if !injected.applied.is_empty() {
+                                app.last_warning = Some(format!(
+                                    "applied skills: {}",
+                                    injected.applied.join(", ")
+                                ));
+                            } else if !injected.warnings.is_empty() {
+                                app.last_warning = Some(injected.warnings.join("; "));
+                            }
+                            let message = injected.message;
                             let tx = tx.clone();
 
                             // Spawn task to pump agent stream

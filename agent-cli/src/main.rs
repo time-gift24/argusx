@@ -1,12 +1,16 @@
 use agent_cli::app::AppState;
 use agent_cli::cli::CliArgs;
 use agent_cli::event_loop::run_tui_loop;
+use agent_cli::skills::SkillCatalog;
 use clap::Parser;
 use llm_client::providers::{BigModelConfig, BigModelHttpClient};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
+    let cwd = std::env::current_dir()?;
+    let skills = std::sync::Arc::new(SkillCatalog::discover(&cwd));
+    let system_prompt = skills.compose_system_prompt(args.system_prompt.clone());
 
     let config = BigModelConfig {
         base_url: args.base_url.clone(),
@@ -16,7 +20,7 @@ async fn main() -> anyhow::Result<()> {
 
     let model_cfg = agent_turn::adapters::bigmodel::BigModelAdapterConfig {
         model: args.model.clone(),
-        system_prompt: args.system_prompt.clone(),
+        system_prompt,
         max_tokens: args.max_tokens,
         temperature: args.temperature,
         top_p: args.top_p,
@@ -38,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
         agent_cli::session::resolve_session_id(&gateway, args.session.as_deref()).await?;
 
     let mut app = AppState::new(session_id);
-    run_tui_loop(agent, &mut app, args.debug_events).await?;
+    run_tui_loop(agent, &mut app, skills, args.debug_events).await?;
 
     Ok(())
 }
