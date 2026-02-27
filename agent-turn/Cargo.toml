@@ -7,6 +7,7 @@ description = "Turn loop runtime implementation built on agent-core"
 [dependencies]
 agent-core = { path = "../agent-core" }
 bigmodel-api = { path = "../bigmodel-api" }
+llm-client = { path = "../llm-client" }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }

@@ -6,10 +6,12 @@ use agent_core::{
 };
 use async_trait::async_trait;
 use bigmodel_api::{
-    BigModelClient, BigModelError, ChatRequest, ChatResponseChunk, Content, FunctionDefinition,
-    FunctionTool, Message, Role, Tool as BigModelTool, Usage as BigModelUsage,
+    ChatRequest, ChatResponseChunk, Content, FunctionDefinition, FunctionTool, Message, Role,
+    Tool as BigModelTool, Usage as BigModelUsage,
 };
 use futures::StreamExt;
+use llm_client::providers::BigModelHttpClient;
+use llm_client::LlmError;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -35,12 +37,12 @@ impl Default for BigModelAdapterConfig {
 }
 
 pub struct BigModelModelAdapter {
-    client: Arc<BigModelClient>,
+    client: Arc<BigModelHttpClient>,
     config: BigModelAdapterConfig,
 }
 
 impl BigModelModelAdapter {
-    pub fn new(client: Arc<BigModelClient>) -> Self {
+    pub fn new(client: Arc<BigModelHttpClient>) -> Self {
         Self {
             client,
             config: BigModelAdapterConfig::default(),
@@ -74,7 +76,7 @@ impl LanguageModel for BigModelModelAdapter {
                         emit_chunk(chunk, &tx);
                     }
                     Err(err) => {
-                        let _ = tx.send(Err(map_bigmodel_error(err)));
+                        let _ = tx.send(Err(map_llm_error(err)));
                         return;
                     }
                 }
@@ -261,30 +263,39 @@ fn format_input_parts(parts: Vec<InputPart>) -> String {
     text_parts.join("\n")
 }
 
-fn map_bigmodel_error(err: BigModelError) -> AgentError {
+fn map_llm_error(err: LlmError) -> AgentError {
     match err {
-        BigModelError::RateLimitError(message) => {
+        LlmError::RateLimit { message, retry_after } => {
             AgentError::Transient(TransientError::RateLimit {
+                message,
+                retry_after_ms: retry_after.map(|d| d.as_millis() as u64),
+            })
+        }
+        LlmError::NetworkError { message } => {
+            AgentError::Transient(TransientError::Network {
                 message,
                 retry_after_ms: None,
             })
         }
-        BigModelError::NetworkError(err) => AgentError::Transient(TransientError::Network {
-            message: err.to_string(),
-            retry_after_ms: None,
-        }),
-        BigModelError::ServerError(message) => {
+        LlmError::ServerError { message, .. } => {
             AgentError::Transient(TransientError::ServiceUnavailable {
                 message,
                 retry_after_ms: None,
             })
         }
-        BigModelError::InvalidRequest(message) | BigModelError::AuthenticationError(message) => {
+        LlmError::Timeout | LlmError::StreamIdleTimeout => {
+            AgentError::Transient(TransientError::Network {
+                message: "request timeout".to_string(),
+                retry_after_ms: None,
+            })
+        }
+        LlmError::AuthError { message } | LlmError::InvalidRequest { message } => {
             AgentError::Model { message }
         }
-        BigModelError::ParseError(err) => AgentError::Model {
-            message: err.to_string(),
-        },
+        LlmError::ContextOverflow { message } => AgentError::Model { message },
+        LlmError::QuotaExceeded { message } => AgentError::Model { message },
+        LlmError::StreamError { message } => AgentError::Model { message },
+        LlmError::ParseError { message } => AgentError::Model { message },
     }
 }
 
@@ -411,10 +422,15 @@ mod tests {
 
     #[test]
     fn map_errors_to_agent_error_classes() {
-        let retryable = map_bigmodel_error(BigModelError::RateLimitError("busy".to_string()));
+        let retryable = map_llm_error(LlmError::RateLimit {
+            message: "busy".to_string(),
+            retry_after: None,
+        });
         assert!(matches!(retryable, AgentError::Transient(_)));
 
-        let fatal = map_bigmodel_error(BigModelError::InvalidRequest("bad".to_string()));
+        let fatal = map_llm_error(LlmError::InvalidRequest {
+            message: "bad".to_string(),
+        });
         assert!(matches!(fatal, AgentError::Model { .. }));
     }
 
