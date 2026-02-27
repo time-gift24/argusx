@@ -1,0 +1,29 @@
+[package]
+name = "llm-client"
+version = "0.1.0"
+edition = "2021"
+description = "Robust LLM HTTP client with retry and SSE support"
+
+[dependencies]
+reqwest.workspace = true
+bytes.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+futures.workspace = true
+async-stream.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+bigmodel-api = { path = "../bigmodel-api" }
+
+# For retry jitter
+rand = "0.8"
+
+# For SSE parsing
+eventsource-stream = "0.2"
+tokio-stream = "0.1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }
+wiremock = "0.6"
