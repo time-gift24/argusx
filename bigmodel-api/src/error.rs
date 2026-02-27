@@ -15,7 +15,7 @@ pub enum BigModelError {
     ServerError(String),
 
     #[error("Network error: {0}")]
-    NetworkError(#[from] reqwest::Error),
+    NetworkError(String),
 
     #[error("Parse error: {0}")]
     ParseError(#[from] serde_json::Error),

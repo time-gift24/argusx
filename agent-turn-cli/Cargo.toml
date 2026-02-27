@@ -9,7 +9,7 @@ description = "Manual test CLI for agent-turn runtime"
 agent = { path = "../agent" }
 agent-core = { path = "../agent-core" }
 agent-turn = { path = "../agent-turn" }
-bigmodel-api = { path = "../bigmodel-api" }
+llm-client = { path = "../llm-client" }
 anyhow.workspace = true
 clap.workspace = true
 futures.workspace = true

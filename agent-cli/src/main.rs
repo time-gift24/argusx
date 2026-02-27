@@ -2,14 +2,17 @@ use agent_cli::app::AppState;
 use agent_cli::cli::CliArgs;
 use agent_cli::event_loop::run_tui_loop;
 use clap::Parser;
+use llm_client::providers::{BigModelConfig, BigModelHttpClient};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
 
-    let client = std::sync::Arc::new(bigmodel_api::BigModelClient::new(
-        bigmodel_api::Config::new(args.api_key.clone()).with_base_url(args.base_url.clone()),
-    ));
+    let config = BigModelConfig {
+        base_url: args.base_url.clone(),
+        api_key: args.api_key.clone(),
+    };
+    let client = std::sync::Arc::new(BigModelHttpClient::new(config));
 
     let model_cfg = agent_turn::adapters::bigmodel::BigModelAdapterConfig {
         model: args.model.clone(),
