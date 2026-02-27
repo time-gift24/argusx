@@ -20,8 +20,7 @@ bigmodel-api = { path = "../bigmodel-api" }
 # For retry jitter
 rand = "0.8"
 
-# For SSE parsing
-eventsource-stream = "0.2"
+# For SSE parsing and stream utilities
 tokio-stream = "0.1"
 
 [dev-dependencies]
