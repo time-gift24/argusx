@@ -27,7 +27,10 @@ impl Default for BigModelConfig {
 
 /// HTTP client for BigModel API with retry and timeout support.
 pub struct BigModelHttpClient {
+    /// Client for non-streaming requests (with request timeout)
     http: reqwest::Client,
+    /// Client for streaming requests (without request timeout, relies on idle timeout)
+    http_stream: reqwest::Client,
     config: BigModelConfig,
     retry: RetryPolicy,
     timeout: TimeoutConfig,
@@ -45,14 +48,22 @@ impl BigModelHttpClient {
         retry: RetryPolicy,
         timeout: TimeoutConfig,
     ) -> Self {
+        // Client for non-streaming requests - has request timeout
         let http = reqwest::Client::builder()
             .connect_timeout(timeout.connect_timeout)
             .timeout(timeout.request_timeout)
             .build()
             .expect("Failed to build HTTP client");
 
+        // Client for streaming requests - no request timeout, uses idle timeout instead
+        let http_stream = reqwest::Client::builder()
+            .connect_timeout(timeout.connect_timeout)
+            .build()
+            .expect("Failed to build streaming HTTP client");
+
         Self {
             http,
+            http_stream,
             config,
             retry,
             timeout,
@@ -103,7 +114,7 @@ impl BigModelHttpClient {
     ) -> Pin<Box<dyn Stream<Item = Result<ChatResponseChunk, LlmError>> + Send>> {
         let url = format!("{}/chat/completions", self.config.base_url);
         let api_key = self.config.api_key.clone();
-        let http = self.http.clone();
+        let http = self.http_stream.clone(); // Use streaming client without request timeout
         let idle_timeout = self.timeout.stream_idle_timeout;
 
         Box::pin(async_stream::try_stream! {
