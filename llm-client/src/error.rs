@@ -121,10 +121,6 @@ impl From<reqwest::Error> for LlmError {
     fn from(err: reqwest::Error) -> Self {
         if err.is_timeout() {
             Self::Timeout
-        } else if err.is_connect() {
-            Self::NetworkError {
-                message: err.to_string(),
-            }
         } else {
             Self::NetworkError {
                 message: err.to_string(),
