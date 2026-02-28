@@ -115,22 +115,21 @@ fn filter_key() -> CheckResultFilter {
 async fn ensure_sop_exists(lab: &TestLab) -> prompt_lab_core::Sop {
     match lab.sop_service().get_sop_by_sop_id("SOP-1").await {
         Ok(sop) => sop,
-        Err(_) => {
-            lab.sop_service()
-                .create_sop(CreateSopInput {
-                    sop_id: "SOP-1".to_string(),
-                    name: "SOP-1".to_string(),
-                    ticket_id: None,
-                    version: Some(1),
-                    detect: vec![],
-                    handle: vec![],
-                    verification: vec![],
-                    rollback: vec![],
-                    status: SopStatus::Active,
-                })
-                .await
-                .unwrap()
-        }
+        Err(_) => lab
+            .sop_service()
+            .create_sop(CreateSopInput {
+                sop_id: "SOP-1".to_string(),
+                name: "SOP-1".to_string(),
+                ticket_id: None,
+                version: Some(1),
+                detect: vec![],
+                handle: vec![],
+                verification: vec![],
+                rollback: vec![],
+                status: SopStatus::Active,
+            })
+            .await
+            .unwrap(),
     }
 }
 

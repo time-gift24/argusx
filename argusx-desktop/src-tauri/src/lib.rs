@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
 use prompt_lab_core::{
     ChecklistFilter, ChecklistItem, PromptLab, Sop, SopStage, SopStep, UpdateSopStepInput,
 };
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ChatSession {
@@ -102,9 +102,7 @@ async fn create_prompt_lab() -> Result<PromptLab, String> {
         logging: argusx_common::config::LoggingConfig::default(),
     };
 
-    PromptLab::new(settings)
-        .await
-        .map_err(|e| e.to_string())
+    PromptLab::new(settings).await.map_err(|e| e.to_string())
 }
 
 // SOP Commands

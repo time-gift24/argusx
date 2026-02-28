@@ -187,7 +187,8 @@ impl SopService {
                 sop_id: Some(sop.sop_id.clone()),
             })
             .await?;
-        let step_map: HashMap<i64, SopStep> = steps.into_iter().map(|step| (step.id, step)).collect();
+        let step_map: HashMap<i64, SopStep> =
+            steps.into_iter().map(|step| (step.id, step)).collect();
 
         let detect_steps = collect_stage_steps(&sop.detect, &step_map, "detect")?;
         let handle_steps = collect_stage_steps(&sop.handle, &step_map, "handle")?;

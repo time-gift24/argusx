@@ -491,10 +491,11 @@ impl PromptLabRepository {
     }
 
     pub async fn update_sop(&self, input: UpdateSopInput) -> Result<Sop> {
-        let current_sop_id: Option<String> = sqlx::query_scalar("SELECT sop_id FROM sops WHERE id = ?1")
-            .bind(input.id)
-            .fetch_optional(&self.pool)
-            .await?;
+        let current_sop_id: Option<String> =
+            sqlx::query_scalar("SELECT sop_id FROM sops WHERE id = ?1")
+                .bind(input.id)
+                .fetch_optional(&self.pool)
+                .await?;
         let current_sop_id = current_sop_id.ok_or(PromptLabError::NotFound {
             entity: "sops",
             id: input.id,
@@ -555,7 +556,10 @@ impl PromptLabRepository {
         .fetch_optional(&self.pool)
         .await?;
 
-        let row = row.ok_or(PromptLabError::NotFound { entity: "sops", id: input.id })?;
+        let row = row.ok_or(PromptLabError::NotFound {
+            entity: "sops",
+            id: input.id,
+        })?;
         row.try_into()
     }
 
@@ -613,7 +617,10 @@ impl PromptLabRepository {
         .fetch_optional(&self.pool)
         .await?;
 
-        let row = row.ok_or(PromptLabError::NotFound { entity: "sops", id: 0 })?;
+        let row = row.ok_or(PromptLabError::NotFound {
+            entity: "sops",
+            id: 0,
+        })?;
         row.try_into()
     }
 
@@ -730,7 +737,10 @@ impl PromptLabRepository {
         .fetch_optional(&self.pool)
         .await?;
 
-        let row = row.ok_or(PromptLabError::NotFound { entity: "sop_steps", id: input.id })?;
+        let row = row.ok_or(PromptLabError::NotFound {
+            entity: "sop_steps",
+            id: input.id,
+        })?;
         row.try_into()
     }
 
@@ -766,7 +776,10 @@ impl PromptLabRepository {
         .fetch_optional(&self.pool)
         .await?;
 
-        let row = row.ok_or(PromptLabError::NotFound { entity: "sop_steps", id })?;
+        let row = row.ok_or(PromptLabError::NotFound {
+            entity: "sop_steps",
+            id,
+        })?;
         row.try_into()
     }
 
@@ -776,7 +789,10 @@ impl PromptLabRepository {
             .execute(&self.pool)
             .await?;
         if result.rows_affected() == 0 {
-            return Err(PromptLabError::NotFound { entity: "sop_steps", id });
+            return Err(PromptLabError::NotFound {
+                entity: "sop_steps",
+                id,
+            });
         }
         Ok(())
     }

@@ -10,7 +10,9 @@ use argusx_common::config::Settings;
 
 pub use domain::*;
 pub use error::{PromptLabError, PromptLabErrorCode, Result};
-pub use service::{AiLogService, CheckResultService, ChecklistService, GoldenSetService, SopService};
+pub use service::{
+    AiLogService, CheckResultService, ChecklistService, GoldenSetService, SopService,
+};
 pub use sqlite::{DbConfig, PragmaStatus};
 
 use repository::PromptLabRepository;

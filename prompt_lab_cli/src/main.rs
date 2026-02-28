@@ -429,7 +429,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         },
         Commands::Sop { command } => match command {
             SopCommands::Get { sop_id } => {
-                let agg = lab.sop_service().get_sop_aggregate_by_sop_id(&sop_id).await?;
+                let agg = lab
+                    .sop_service()
+                    .get_sop_aggregate_by_sop_id(&sop_id)
+                    .await?;
                 print_sop_aggregate(cli.json, &agg)?;
             }
         },
@@ -537,7 +540,10 @@ fn print_ai_logs(json: bool, logs: &[AiExecutionLog]) -> Result<(), Box<dyn std:
     for log in logs {
         table.add_row([
             Cell::new(log.id),
-            Cell::new(log.check_result_id.map_or("-".to_string(), |v| v.to_string())),
+            Cell::new(
+                log.check_result_id
+                    .map_or("-".to_string(), |v| v.to_string()),
+            ),
             Cell::new(&log.context_type),
             Cell::new(&log.context_key),
             Cell::new(log.check_item_id),

@@ -58,14 +58,12 @@ pub fn draw(frame: &mut Frame<'_>, app: &AppState) {
     };
     frame.render_widget(Paragraph::new(status_text).style(panel_style), chunks[1]);
 
-    let input = Paragraph::new(app.input.clone())
-        .style(panel_style)
-        .block(
-            Block::default()
-                .title("Input")
-                .borders(Borders::ALL)
-                .style(panel_style),
-        );
+    let input = Paragraph::new(app.input.clone()).style(panel_style).block(
+        Block::default()
+            .title("Input")
+            .borders(Borders::ALL)
+            .style(panel_style),
+    );
     frame.render_widget(input, chunks[2]);
 }
 

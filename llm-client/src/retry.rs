@@ -53,12 +53,7 @@ fn should_retry(err: &LlmError, policy: &RetryPolicy, attempt: u64) -> bool {
 }
 
 /// Calculate backoff duration with exponential increase and jitter.
-pub fn backoff(
-    base: Duration,
-    attempt: u64,
-    err: &LlmError,
-    max_delay: Duration,
-) -> Duration {
+pub fn backoff(base: Duration, attempt: u64, err: &LlmError, max_delay: Duration) -> Duration {
     // Prefer retry-after header if available
     if let Some(retry_after) = err.retry_after() {
         return retry_after.min(max_delay);
@@ -67,9 +62,7 @@ pub fn backoff(
     // Exponential backoff: base * 2^(attempt-1) * jitter
     let exp = 2u64.saturating_pow(attempt.saturating_sub(1) as u32);
     let jitter = rand::thread_rng().gen_range(0.9..1.1);
-    let delay = Duration::from_millis(
-        (base.as_millis() as f64 * exp as f64 * jitter) as u64
-    );
+    let delay = Duration::from_millis((base.as_millis() as f64 * exp as f64 * jitter) as u64);
 
     delay.min(max_delay)
 }
@@ -77,8 +70,8 @@ pub fn backoff(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::LlmError;
     use crate::config::RetryPolicy;
+    use crate::error::LlmError;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
