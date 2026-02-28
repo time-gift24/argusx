@@ -19,6 +19,7 @@ bigmodel-api = { path = "../bigmodel-api" }
 
 # For retry jitter
 rand = "0.8"
+httpdate = "1.0"
 
 # For SSE parsing and stream utilities
 tokio-stream = "0.1"

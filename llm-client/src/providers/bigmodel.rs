@@ -1,7 +1,7 @@
 use crate::config::{RetryPolicy, TimeoutConfig};
 use crate::error::LlmError;
 use crate::retry::run_with_retry;
-use crate::sse::SseEvent;
+use crate::sse::{parse_sse_stream_result, SseEvent};
 use bigmodel_api::{ChatRequest, ChatResponse, ChatResponseChunk};
 use futures::{Stream, StreamExt};
 use std::pin::Pin;
@@ -115,78 +115,82 @@ impl BigModelHttpClient {
         let url = format!("{}/chat/completions", self.config.base_url);
         let api_key = self.config.api_key.clone();
         let http = self.http_stream.clone(); // Use streaming client without request timeout
+        let retry = self.retry.clone();
         let idle_timeout = self.timeout.stream_idle_timeout;
 
         Box::pin(async_stream::try_stream! {
-            let response = http
-                .post(&url)
-                .header("Authorization", format!("Bearer {}", api_key))
-                .header("Content-Type", "application/json")
-                .header("Accept", "text/event-stream")
-                .json(&request)
-                .send()
-                .await?;
+            // Retry only the request bootstrap phase (before stream consumption starts).
+            let response = run_with_retry(retry, || {
+                let http = http.clone();
+                let url = url.clone();
+                let api_key = api_key.clone();
+                let request = request.clone();
 
-            let status = response.status();
-            if !status.is_success() {
-                let headers = response.headers().clone();
-                let body = response.text().await.unwrap_or_default();
-                Err(LlmError::from_http_status(status.as_u16(), body, &headers))?;
-                return;
-            }
+                Box::pin(async move {
+                    let response = http
+                        .post(&url)
+                        .header("Authorization", format!("Bearer {}", api_key))
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "text/event-stream")
+                        .json(&request)
+                        .send()
+                        .await?;
 
-            // Process the byte stream with idle timeout
-            let mut byte_stream = std::pin::pin!(response.bytes_stream());
-            let mut buffer = String::new();
+                    let status = response.status();
+                    if status.is_success() {
+                        Ok(response)
+                    } else {
+                        let headers = response.headers().clone();
+                        let body = response.text().await.unwrap_or_default();
+                        Err(LlmError::from_http_status(status.as_u16(), body, &headers))
+                    }
+                })
+            })
+            .await?;
+
+            let byte_stream = response
+                .bytes_stream()
+                .map(|item| item.map_err(LlmError::from));
+            let mut sse_events = std::pin::pin!(parse_sse_stream_result(byte_stream));
 
             loop {
-                let next_bytes = timeout(idle_timeout, byte_stream.next()).await;
-
-                match next_bytes {
-                    Ok(Some(Ok(bytes))) => {
-                        if let Ok(text) = String::from_utf8(bytes.to_vec()) {
-                            buffer.push_str(&text);
-
-                            // Process complete lines
-                            while let Some(pos) = buffer.find('\n') {
-                                let line = buffer[..pos].to_string();
-                                buffer = buffer[pos + 1..].to_string();
-
-                                if let Some(event) = crate::sse::parse_sse_line(&line) {
-                                    match event {
-                                        SseEvent::Data(json) => {
-                                            match serde_json::from_str::<ChatResponseChunk>(&json) {
-                                                Ok(chunk) => yield chunk,
-                                                Err(e) => {
-                                                    // Return parse error instead of silently ignoring
-                                                    Err(LlmError::ParseError {
-                                                        message: format!("Failed to parse SSE chunk: {}", e),
-                                                    })?;
-                                                }
-                                            }
-                                        }
-                                        SseEvent::Done => return,
-                                        SseEvent::Error(msg) => {
-                                            Err(LlmError::StreamError { message: msg })?;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                match timeout(idle_timeout, sse_events.next()).await {
+                    Ok(Some(Ok(SseEvent::Data(json)))) => {
+                        let chunk = parse_chunk(&json)?;
+                        yield chunk;
                     }
-                    Ok(Some(Err(e))) => {
-                        // Return network error instead of swallowing it
-                        Err(LlmError::NetworkError {
-                            message: format!("Stream read error: {}", e),
-                        })?;
+                    Ok(Some(Ok(SseEvent::Done))) => return,
+                    Ok(Some(Ok(SseEvent::Error(message)))) => {
+                        Err(LlmError::StreamError { message })?;
                     }
-                    Ok(None) => break, // Stream ended
-                    Err(_) => {
-                        Err(LlmError::StreamIdleTimeout)?;
+                    Ok(Some(Err(err))) => {
+                        Err(err)?;
                     }
+                    Ok(None) => break,
+                    Err(_) => Err(LlmError::StreamIdleTimeout)?,
                 }
             }
         })
+    }
+}
+
+fn parse_chunk(payload: &str) -> Result<ChatResponseChunk, LlmError> {
+    serde_json::from_str(payload).map_err(|err| LlmError::ParseError {
+        message: format!(
+            "failed to parse SSE chunk: {}; payload={}",
+            err,
+            truncate_payload(payload, 200),
+        ),
+    })
+}
+
+fn truncate_payload(payload: &str, max_len: usize) -> String {
+    let mut chars = payload.chars();
+    let truncated: String = chars.by_ref().take(max_len).collect();
+    if chars.next().is_some() {
+        format!("{}...", truncated)
+    } else {
+        truncated
     }
 }
 
@@ -194,8 +198,9 @@ impl BigModelHttpClient {
 mod tests {
     use super::*;
     use bigmodel_api::{ChatRequest, Message};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use futures::StreamExt;
     use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
     async fn chat_sends_request_correctly() {
@@ -296,6 +301,99 @@ mod tests {
         let request = ChatRequest::new("glm-5", vec![Message::user("Hi")]);
         let result = client.chat(request).await;
 
-        assert!(matches!(result, Err(crate::error::LlmError::AuthError { .. })));
+        assert!(matches!(
+            result,
+            Err(crate::error::LlmError::AuthError { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn chat_stream_returns_parse_error_for_invalid_chunk() {
+        let mock_server = MockServer::start().await;
+        let sse_body = "data: not-json\n\ndata: [DONE]\n\n";
+
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .append_header("content-type", "text/event-stream")
+                    .set_body_string(sse_body),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = BigModelHttpClient::new(BigModelConfig {
+            base_url: mock_server.uri(),
+            api_key: "test-key".to_string(),
+        });
+
+        let request = ChatRequest::new("glm-5", vec![Message::user("Hi")]).stream();
+        let mut stream = client.chat_stream(request);
+        let first = stream.next().await.expect("first stream item");
+
+        assert!(matches!(first, Err(LlmError::ParseError { .. })));
+    }
+
+    #[tokio::test]
+    async fn chat_stream_accepts_done_without_space() {
+        let mock_server = MockServer::start().await;
+        let sse_body = "data:[DONE]\n\n";
+
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .append_header("content-type", "text/event-stream")
+                    .set_body_string(sse_body),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = BigModelHttpClient::new(BigModelConfig {
+            base_url: mock_server.uri(),
+            api_key: "test-key".to_string(),
+        });
+
+        let request = ChatRequest::new("glm-5", vec![Message::user("Hi")]).stream();
+        let mut stream = client.chat_stream(request);
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn chat_stream_retries_on_bootstrap_500() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("temporary error"))
+            .up_to_n_times(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .append_header("content-type", "text/event-stream")
+                    .set_body_string("data: [DONE]\n\n"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let retry = crate::config::RetryPolicy::default()
+            .max_attempts(3)
+            .base_delay(std::time::Duration::from_millis(10));
+        let client = BigModelHttpClient::with_options(
+            BigModelConfig {
+                base_url: mock_server.uri(),
+                api_key: "test-key".to_string(),
+            },
+            retry,
+            crate::config::TimeoutConfig::default(),
+        );
+
+        let request = ChatRequest::new("glm-5", vec![Message::user("Hi")]).stream();
+        let mut stream = client.chat_stream(request);
+        assert!(stream.next().await.is_none());
     }
 }
