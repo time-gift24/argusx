@@ -35,6 +35,7 @@ pub mod adapter;
 pub mod client;
 pub mod config;
 pub mod error;
+pub mod mapping;
 pub mod providers;
 pub mod retry;
 pub mod sse;

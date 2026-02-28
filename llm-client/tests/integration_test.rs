@@ -1,12 +1,8 @@
-use bigmodel_api::{ChatRequest, Message};
-use llm_client::providers::{BigModelConfig, BigModelHttpClient};
-use llm_client::{RetryPolicy, TimeoutConfig};
-use std::time::Duration;
-use wiremock::{Mock, MockServer, ResponseTemplate};
 use wiremock::matchers::method;
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
-async fn full_flow_with_retries() {
+async fn facade_can_chat_via_bigmodel_adapter() {
     let mock_server = MockServer::start().await;
 
     // First two requests fail with 500
@@ -31,20 +27,25 @@ async fn full_flow_with_retries() {
         .mount(&mock_server)
         .await;
 
-    let config = BigModelConfig {
-        base_url: mock_server.uri(),
-        api_key: "test".to_string(),
+    let client = llm_client::LlmClient::builder()
+        .with_default_bigmodel(mock_server.uri(), "test-key")
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let req = llm_client::LlmRequest {
+        model: "glm-5".to_string(),
+        messages: vec![llm_client::LlmMessage {
+            role: llm_client::LlmRole::User,
+            content: "hello".to_string(),
+        }],
+        stream: false,
+        max_tokens: None,
+        temperature: None,
+        top_p: None,
     };
 
-    let retry = RetryPolicy::default()
-        .max_attempts(3)
-        .base_delay(Duration::from_millis(10));
-
-    let client = BigModelHttpClient::with_options(config, retry, TimeoutConfig::default());
-
-    let request = ChatRequest::new("glm-5", vec![Message::user("hi")]);
-    let result = client.chat(request).await;
-
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap().id, "test");
+    let res = client.chat(req).await.unwrap();
+    assert_eq!(res.model, "glm-5");
+    assert_eq!(res.output_text, "OK");
 }
