@@ -207,7 +207,7 @@ pub enum ResponseFormatType {
 
 // Response types
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatResponse {
     pub id: String,
     #[serde(default)]
@@ -225,7 +225,7 @@ pub struct ChatResponse {
     pub content_filter: Vec<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Choice {
     pub index: i32,
     pub message: Message,
@@ -233,7 +233,7 @@ pub struct Choice {
     pub finish_reason: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Usage {
     #[serde(rename = "prompt_tokens")]
     pub prompt_tokens: i32,
@@ -243,7 +243,7 @@ pub struct Usage {
     pub total_tokens: i32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebSearchResult {
     pub icon: Option<String>,
     pub title: Option<String>,
@@ -254,7 +254,7 @@ pub struct WebSearchResult {
     pub refer: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoResult {
     pub url: Option<String>,
     pub cover_image_url: Option<String>,
@@ -262,7 +262,7 @@ pub struct VideoResult {
 
 // Streaming response
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatResponseChunk {
     pub id: String,
     pub created: i64,
@@ -272,7 +272,7 @@ pub struct ChatResponseChunk {
     pub usage: Option<Usage>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChoiceChunk {
     pub index: i32,
     #[serde(rename = "delta")]
@@ -281,7 +281,7 @@ pub struct ChoiceChunk {
     pub finish_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Delta {
     pub role: Option<String>,
     pub content: Option<String>,
@@ -289,7 +289,7 @@ pub struct Delta {
     pub tool_calls: Option<Vec<DeltaToolCall>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeltaToolCall {
     pub id: Option<String>,
     #[serde(rename = "type")]
@@ -298,7 +298,7 @@ pub struct DeltaToolCall {
     pub index: Option<i32>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeltaToolFunction {
     pub name: Option<String>,
     pub arguments: Option<String>,
