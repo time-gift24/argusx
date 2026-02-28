@@ -33,10 +33,15 @@
 
 pub mod config;
 pub mod error;
+pub mod providers;
 pub mod retry;
 pub mod sse;
-pub mod providers;
+pub mod types;
 
-pub use config::{RetryPolicy, RetryOn, TimeoutConfig};
+pub use config::{RetryOn, RetryPolicy, TimeoutConfig};
 pub use error::LlmError;
 pub use retry::run_with_retry;
+
+pub use types::{
+    LlmChunk, LlmChunkStream, LlmMessage, LlmRequest, LlmResponse, LlmRole, LlmUsage,
+};
