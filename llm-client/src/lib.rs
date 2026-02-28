@@ -31,12 +31,17 @@
 //! }
 //! ```
 
+pub mod adapter;
+pub mod client;
 pub mod config;
 pub mod error;
 pub mod providers;
 pub mod retry;
 pub mod sse;
 pub mod types;
+
+pub use adapter::{AdapterId, ProviderAdapter};
+pub use client::{LlmClient, LlmClientBuilder};
 
 pub use config::{RetryOn, RetryPolicy, TimeoutConfig};
 pub use error::LlmError;
