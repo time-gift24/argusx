@@ -77,6 +77,9 @@ pub fn to_llm_chunk(chunk: ChatResponseChunk) -> LlmChunk {
     });
 
     LlmChunk {
+        id: chunk.id,
+        created: chunk.created,
+        model: chunk.model,
         delta_text,
         delta_reasoning,
         finish_reason,

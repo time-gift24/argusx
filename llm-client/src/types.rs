@@ -49,6 +49,9 @@ pub struct LlmResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmChunk {
+    pub id: String,
+    pub created: i64,
+    pub model: String,
     pub delta_text: Option<String>,
     pub delta_reasoning: Option<String>,
     pub finish_reason: Option<String>,

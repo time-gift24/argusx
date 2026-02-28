@@ -7,18 +7,16 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use bigmodel_api::ChatRequest;
 use futures::StreamExt;
-use llm_client::LlmError;
-use llm_client::providers::BigModelHttpClient;
+use llm_client::{LlmClient, LlmError, LlmMessage, LlmRequest, LlmRole};
 
 #[derive(Clone)]
 pub struct GatewayState {
-    pub client: Arc<BigModelHttpClient>,
+    pub client: Arc<LlmClient>,
 }
 
 impl GatewayState {
-    pub fn new(client: BigModelHttpClient) -> Self {
+    pub fn new(client: LlmClient) -> Self {
         Self {
             client: Arc::new(client),
         }
@@ -36,19 +34,102 @@ async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ok"}))
 }
 
+/// Convert bigmodel_api::ChatRequest to llm_client::LlmRequest
+fn to_llm_request(req: bigmodel_api::ChatRequest) -> LlmRequest {
+    let messages: Vec<LlmMessage> = req.messages.into_iter().map(|m| {
+        let role = match m.role {
+            bigmodel_api::Role::System => LlmRole::System,
+            bigmodel_api::Role::User => LlmRole::User,
+            bigmodel_api::Role::Assistant => LlmRole::Assistant,
+            bigmodel_api::Role::Tool => LlmRole::Tool,
+        };
+        let content = match m.content {
+            bigmodel_api::Content::Text(s) => s,
+            _ => String::new(), // Handle other content types as empty for now
+        };
+        LlmMessage { role, content }
+    }).collect();
+
+    LlmRequest {
+        model: req.model,
+        messages,
+        stream: req.stream,
+        max_tokens: req.max_tokens,
+        temperature: req.temperature,
+        top_p: req.top_p,
+    }
+}
+
+/// Convert llm_client::LlmResponse to bigmodel_api::ChatResponse for backwards compatibility
+fn to_chat_response(resp: llm_client::LlmResponse) -> bigmodel_api::ChatResponse {
+    bigmodel_api::ChatResponse {
+        id: resp.id,
+        request_id: None,
+        created: 0,
+        model: resp.model,
+        choices: vec![bigmodel_api::Choice {
+            index: 0,
+            message: bigmodel_api::Message {
+                role: bigmodel_api::Role::Assistant,
+                content: resp.output_text.into(),
+                reasoning_content: None,
+            },
+            finish_reason: "stop".to_string(),
+        }],
+        usage: resp.usage.map(|u| bigmodel_api::Usage {
+            prompt_tokens: u.input_tokens as i32,
+            completion_tokens: u.output_tokens as i32,
+            total_tokens: u.total_tokens as i32,
+        }),
+        web_search: vec![],
+        video_result: vec![],
+        content_filter: vec![],
+    }
+}
+
+/// Convert llm_client::LlmChunk to bigmodel_api::ChatResponseChunk for backwards compatibility
+fn to_chunk_response(chunk: llm_client::LlmChunk) -> bigmodel_api::ChatResponseChunk {
+    bigmodel_api::ChatResponseChunk {
+        id: chunk.id,
+        created: chunk.created,
+        model: chunk.model,
+        choices: vec![bigmodel_api::ChoiceChunk {
+            index: 0,
+            delta: bigmodel_api::Delta {
+                role: None,
+                content: chunk.delta_text,
+                reasoning_content: chunk.delta_reasoning,
+                tool_calls: None,
+            },
+            finish_reason: chunk.finish_reason,
+        }],
+        usage: chunk.usage.map(|u| bigmodel_api::Usage {
+            prompt_tokens: u.input_tokens as i32,
+            completion_tokens: u.output_tokens as i32,
+            total_tokens: u.total_tokens as i32,
+        }),
+    }
+}
+
 async fn chat_completions(
     State(state): State<GatewayState>,
-    Json(request): Json<ChatRequest>,
+    Json(request): Json<bigmodel_api::ChatRequest>,
 ) -> Response {
-    if request.stream {
-        let upstream = state.client.chat_stream(request);
+    let llm_request = to_llm_request(request);
+
+    if llm_request.stream {
+        let upstream = match state.client.chat_stream(llm_request) {
+            Ok(stream) => stream,
+            Err(err) => return map_error(err).into_response(),
+        };
 
         let stream = async_stream::stream! {
             let mut upstream = std::pin::pin!(upstream);
             while let Some(item) = upstream.next().await {
                 match item {
                     Ok(chunk) => {
-                        match serde_json::to_string(&chunk) {
+                        let chunk_resp = to_chunk_response(chunk);
+                        match serde_json::to_string(&chunk_resp) {
                             Ok(json) => yield Ok::<Event, std::convert::Infallible>(Event::default().data(json)),
                             Err(err) => {
                                 let payload = serde_json::json!({"error": format!("serialize chunk failed: {err}")}).to_string();
@@ -77,8 +158,11 @@ async fn chat_completions(
             .into_response();
     }
 
-    match state.client.chat(request).await {
-        Ok(response) => Json(response).into_response(),
+    match state.client.chat(llm_request).await {
+        Ok(response) => {
+            let chat_response = to_chat_response(response);
+            Json(chat_response).into_response()
+        }
         Err(err) => map_error(err).into_response(),
     }
 }
@@ -115,7 +199,6 @@ mod tests {
     use axum::http::{Method, Request, header};
     use bigmodel_api::models::{ChatRequest, Message};
     use http_body_util::BodyExt;
-    use llm_client::providers::BigModelConfig;
     use tower::ServiceExt;
     use wiremock::matchers::{header as wm_header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -149,10 +232,12 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let state = GatewayState::new(BigModelHttpClient::new(BigModelConfig {
-            base_url: mock_server.uri(),
-            api_key: "test-key".to_string(),
-        }));
+        let client = llm_client::LlmClient::builder()
+            .with_default_bigmodel(mock_server.uri(), "test-key")
+            .unwrap()
+            .build()
+            .unwrap();
+        let state = GatewayState::new(client);
 
         let request_payload = serde_json::to_vec(&build_test_request(false)).unwrap();
 
@@ -193,10 +278,12 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let state = GatewayState::new(BigModelHttpClient::new(BigModelConfig {
-            base_url: mock_server.uri(),
-            api_key: "test-key".to_string(),
-        }));
+        let client = llm_client::LlmClient::builder()
+            .with_default_bigmodel(mock_server.uri(), "test-key")
+            .unwrap()
+            .build()
+            .unwrap();
+        let state = GatewayState::new(client);
 
         let request_payload = serde_json::to_vec(&build_test_request(true)).unwrap();
 

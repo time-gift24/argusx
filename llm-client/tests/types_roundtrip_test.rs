@@ -18,10 +18,14 @@ fn llm_request_and_chunk_are_constructible() {
     assert!(req.stream);
 
     let chunk = LlmChunk {
+        id: "test-id".to_string(),
+        created: 1234567890,
+        model: "glm-5".to_string(),
         delta_text: Some("hi".to_string()),
         delta_reasoning: None,
         finish_reason: None,
         usage: None,
     };
     assert_eq!(chunk.delta_text.as_deref(), Some("hi"));
+    assert_eq!(chunk.id, "test-id");
 }

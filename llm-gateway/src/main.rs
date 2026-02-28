@@ -1,7 +1,6 @@
 use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
-use llm_client::providers::{BigModelConfig, BigModelHttpClient};
 use llm_gateway::{GatewayState, app};
 
 #[tokio::main]
@@ -13,12 +12,12 @@ async fn main() -> Result<()> {
         .parse::<SocketAddr>()
         .context("invalid GATEWAY_LISTEN_ADDR")?;
 
-    let api_key = std::env::var("BIGMODEL_API_KEY").context("BIGMODEL_API_KEY is required")?;
+    let client = llm_client::LlmClient::builder()
+        .with_default_bigmodel_from_env()
+        .context("failed to create LLM client")?
+        .build()
+        .context("failed to build LLM client")?;
 
-    let base_url = std::env::var("BIGMODEL_BASE_URL")
-        .unwrap_or_else(|_| "https://open.bigmodel.cn/api/paas/v4".to_string());
-
-    let client = BigModelHttpClient::new(BigModelConfig { base_url, api_key });
     let state = GatewayState::new(client);
 
     let listener = tokio::net::TcpListener::bind(listen_addr).await?;
