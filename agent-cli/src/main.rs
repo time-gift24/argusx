@@ -3,7 +3,6 @@ use agent_cli::cli::CliArgs;
 use agent_cli::event_loop::run_tui_loop;
 use agent_cli::skills::SkillCatalog;
 use clap::Parser;
-use llm_client::providers::{BigModelConfig, BigModelHttpClient};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -12,11 +11,9 @@ async fn main() -> anyhow::Result<()> {
     let skills = std::sync::Arc::new(SkillCatalog::discover(&cwd));
     let system_prompt = skills.compose_system_prompt(args.system_prompt.clone());
 
-    let config = BigModelConfig {
-        base_url: args.base_url.clone(),
-        api_key: args.api_key.clone(),
-    };
-    let client = std::sync::Arc::new(BigModelHttpClient::new(config));
+    let client = llm_client::LlmClient::builder()
+        .with_default_bigmodel(args.base_url.clone(), args.api_key.clone())?
+        .build()?;
 
     let model_cfg = agent_turn::adapters::bigmodel::BigModelAdapterConfig {
         model: args.model.clone(),
@@ -27,7 +24,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let model = std::sync::Arc::new(
-        agent_turn::adapters::bigmodel::BigModelModelAdapter::new(client).with_config(model_cfg),
+        agent_turn::adapters::bigmodel::BigModelModelAdapter::new(std::sync::Arc::new(client)).with_config(model_cfg),
     );
 
     let mut builder = agent::AgentBuilder::new().model(model);

@@ -8,7 +8,6 @@ use agent_turn::adapters::bigmodel::{BigModelAdapterConfig, BigModelModelAdapter
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 use futures::StreamExt;
-use llm_client::providers::{BigModelConfig, BigModelHttpClient};
 use serde::Serialize;
 
 #[derive(Debug, Parser)]
@@ -80,11 +79,9 @@ async fn main() -> Result<()> {
         eprintln!("[warning] --max-retries/--base-delay-ms are currently ignored in facade mode");
     }
 
-    let config = BigModelConfig {
-        base_url: cli.base_url,
-        api_key: cli.api_key,
-    };
-    let client = Arc::new(BigModelHttpClient::new(config));
+    let client = llm_client::LlmClient::builder()
+        .with_default_bigmodel(cli.base_url, cli.api_key)?
+        .build()?;
 
     let model_cfg = BigModelAdapterConfig {
         model: cli.model,
@@ -94,7 +91,7 @@ async fn main() -> Result<()> {
         top_p: cli.top_p,
     };
 
-    let model = Arc::new(BigModelModelAdapter::new(client).with_config(model_cfg));
+    let model = Arc::new(BigModelModelAdapter::new(Arc::new(client)).with_config(model_cfg));
 
     let mut builder = AgentBuilder::new()
         .model(model)
