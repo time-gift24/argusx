@@ -9,22 +9,27 @@
 //! # Example
 //!
 //! ```no_run
-//! use llm_client::providers::{BigModelConfig, BigModelHttpClient};
-//! use llm_client::{RetryPolicy, TimeoutConfig};
-//! use bigmodel_api::{ChatRequest, Message};
+//! use llm_client::LlmClient;
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     let config = BigModelConfig {
-//!         api_key: "your-api-key".to_string(),
-//!         ..Default::default()
+//!     let client = LlmClient::builder()
+//!         .with_default_bigmodel_from_env()
+//!         .expect("failed to create client")
+//!         .build()
+//!         .expect("failed to build client");
+//!
+//!     let request = llm_client::LlmRequest {
+//!         model: "glm-5".to_string(),
+//!         messages: vec![llm_client::LlmMessage {
+//!             role: llm_client::LlmRole::User,
+//!             content: "Hello!".to_string(),
+//!         }],
+//!         stream: false,
+//!         max_tokens: None,
+//!         temperature: None,
+//!         top_p: None,
 //!     };
-//!
-//!     let client = BigModelHttpClient::new(config);
-//!
-//!     let request = ChatRequest::new("glm-5", vec![
-//!         Message::user("Hello!")
-//!     ]);
 //!
 //!     let response = client.chat(request).await.unwrap();
 //!     println!("{:?}", response);
@@ -36,7 +41,7 @@ pub mod client;
 pub mod config;
 pub mod error;
 pub mod mapping;
-pub mod providers;
+pub(crate) mod providers;
 pub mod retry;
 pub mod sse;
 pub mod types;
