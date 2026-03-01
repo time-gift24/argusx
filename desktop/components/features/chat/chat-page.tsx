@@ -31,9 +31,9 @@ export function ChatPage() {
         )}
       </div>
 
-      {/* 悬浮底部区域 */}
+      {/* 悬浮底部区域 - sticky 相对于页面内容 */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-xl"
+        className="sticky bottom-0 z-50 bg-background/80 backdrop-blur-xl"
       >
         {/* Badge 列表 */}
         <SessionBadgeList />
