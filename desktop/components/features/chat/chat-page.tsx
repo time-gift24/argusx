@@ -67,12 +67,6 @@ export function ChatPage() {
           </div>
         )}
       </div>
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-4 z-30 h-24 rounded-t-3xl bg-gradient-to-t from-background via-background/85 to-transparent"
-        style={{ bottom: `${composerHeight}px` }}
-      />
-
       {/* Floating bottom area - session bar with badges and input */}
       <ChatSessionBar onHeightChange={handleHeightChange} />
     </div>

@@ -13,7 +13,7 @@ export function ChatSidebar({ className, ...props }: React.ComponentProps<typeof
     <Sidebar
       {...props}
       side="right"
-      className={cn("overflow-hidden", className)}
+      className={cn("overflow-hidden group-data-[side=right]:!border-l-0", className)}
     >
       <SidebarContent className="min-h-0 p-0">
         <div className="flex min-h-0 flex-1">

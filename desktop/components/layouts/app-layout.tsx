@@ -23,7 +23,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         defaultLeftOpen={true}
         defaultRightOpen={false}
       >
-        <AppSidebar variant="floating" />
+        <AppSidebar variant="inset" />
         <SidebarInset className="min-h-0">
           <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-4">
             <div className="flex items-center gap-2">
@@ -47,7 +47,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             {children}
           </div>
         </SidebarInset>
-        {!isChatRoute ? <ChatSidebar variant="floating" side="right" /> : null}
+        {!isChatRoute ? <ChatSidebar variant="sidebar" side="right" /> : null}
       </SidebarProvider>
     </TooltipProvider>
   );
