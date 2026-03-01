@@ -2,18 +2,16 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
 use agent_core::{
-    new_id, AgentError, InputEnvelope, InputPart, InputSource, LanguageModel, ModelEventStream,
-    ModelOutputEvent, ModelRequest, RunEventStream, Runtime, SessionMeta, ToolCall, TurnRequest,
-    UiEventStream, Usage,
+    new_id, InputEnvelope, RunEventStream, Runtime, SessionMeta, TurnRequest, UiEventStream,
 };
 use agent_session::{SessionConfig, SessionRuntime};
 use agent_tool::AgentToolRuntime;
-use async_stream::stream;
-use async_trait::async_trait;
+use agent_turn::adapters::bigmodel::BigModelAdapterConfig;
+use agent_turn::BigModelModelAdapter;
 use futures::StreamExt;
+use llm_client::LlmClient;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -70,74 +68,7 @@ struct AgentStreamEnvelope {
     event: serde_json::Value,
 }
 
-#[derive(Clone)]
-struct DesktopModel;
-
-#[async_trait]
-impl LanguageModel for DesktopModel {
-    fn model_name(&self) -> &str {
-        "desktop-agent-model"
-    }
-
-    async fn stream(&self, request: ModelRequest) -> Result<ModelEventStream, AgentError> {
-        let user_text = latest_user_text(&request.inputs);
-        let tool_output = latest_tool_output(&request.inputs);
-
-        let response_stream = stream! {
-            yield Ok(ModelOutputEvent::ReasoningDelta {
-                delta: "Analyzing request...\n".to_string(),
-            });
-            tokio::time::sleep(Duration::from_millis(80)).await;
-
-            if let Some(tool_output) = tool_output {
-                yield Ok(ModelOutputEvent::ReasoningDelta {
-                    delta: "Synthesizing tool output...\n".to_string(),
-                });
-                tokio::time::sleep(Duration::from_millis(80)).await;
-                yield Ok(ModelOutputEvent::TextDelta {
-                    delta: summarize_tool_output(&tool_output),
-                });
-            } else if let Some(command) = extract_tool_command(user_text.as_deref()) {
-                yield Ok(ModelOutputEvent::ReasoningDelta {
-                    delta: format!("Planning shell execution: `{command}`\n"),
-                });
-                tokio::time::sleep(Duration::from_millis(80)).await;
-                yield Ok(ModelOutputEvent::ToolCall {
-                    call: ToolCall::new("shell", json!({ "command": command })),
-                });
-            } else {
-                let message = user_text.unwrap_or_else(|| "Hello".to_string());
-                yield Ok(ModelOutputEvent::ReasoningDelta {
-                    delta: "No tool required, generating answer directly.\n".to_string(),
-                });
-                tokio::time::sleep(Duration::from_millis(80)).await;
-                yield Ok(ModelOutputEvent::TextDelta {
-                    delta: format!("Received: {message}"),
-                });
-            }
-
-            let input_len = request
-                .inputs
-                .iter()
-                .flat_map(|input| input.parts.iter())
-                .map(|part| match part {
-                    InputPart::Text { text } => text.len() as u64,
-                    InputPart::Json { value } => value.to_string().len() as u64,
-                })
-                .sum::<u64>();
-            let usage = Usage {
-                input_tokens: (input_len / 4).max(1),
-                output_tokens: 32,
-                total_tokens: (input_len / 4).max(1) + 32,
-            };
-            yield Ok(ModelOutputEvent::Completed { usage: Some(usage) });
-        };
-
-        Ok(Box::pin(response_stream))
-    }
-}
-
-type RuntimeHandle = SessionRuntime<DesktopModel, AgentToolRuntime>;
+type RuntimeHandle = SessionRuntime<BigModelModelAdapter, AgentToolRuntime>;
 
 struct AppState {
     runtime: Arc<RuntimeHandle>,
@@ -178,7 +109,7 @@ async fn start_agent_turn(
     state: State<'_, AppState>,
     payload: StartAgentTurnPayload,
 ) -> Result<StartAgentTurnResponse, String> {
-    let _selected_model = payload.model.unwrap_or_else(|| "default".to_string());
+    let _selected_model = payload.model.unwrap_or_else(|| "glm-5".to_string());
     let _attachments_count = payload.attachments.as_ref().map_or(0, Vec::len);
 
     let backend_session_id = ensure_backend_session_id(&state, &payload.session_id).await?;
@@ -304,103 +235,34 @@ async fn ensure_backend_session_id(
     Ok(backend_session_id)
 }
 
-fn latest_user_text(inputs: &[InputEnvelope]) -> Option<String> {
-    for input in inputs.iter().rev() {
-        if input.source != InputSource::User {
-            continue;
-        }
-        for part in input.parts.iter().rev() {
-            if let InputPart::Text { text } = part {
-                return Some(text.clone());
-            }
-        }
-    }
-    None
-}
+fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
+    let llm_client = LlmClient::builder()
+        .with_default_bigmodel_from_env()
+        .map_err(|err| format!("failed to load BigModel env config: {err}"))?
+        .build()
+        .map_err(|err| format!("failed to build LLM client: {err}"))?;
 
-fn latest_tool_output(inputs: &[InputEnvelope]) -> Option<serde_json::Value> {
-    for input in inputs.iter().rev() {
-        if input.source != InputSource::Tool {
-            continue;
-        }
-        for part in input.parts.iter().rev() {
-            if let InputPart::Json { value } = part {
-                return Some(value.clone());
-            }
+    let mut model_config = BigModelAdapterConfig::default();
+    if let Ok(model) = std::env::var("BIGMODEL_MODEL") {
+        if !model.trim().is_empty() {
+            model_config.model = model;
         }
     }
-    None
-}
 
-fn extract_tool_command(text: Option<&str>) -> Option<String> {
-    let text = text?.trim();
-    if let Some(rest) = text.strip_prefix("/shell ") {
-        let command = rest.trim();
-        if !command.is_empty() {
-            return Some(command.to_string());
-        }
-    }
-    if let Some(rest) = text.strip_prefix("/tool ") {
-        let command = rest.trim();
-        if !command.is_empty() {
-            return Some(command.to_string());
-        }
-    }
-    None
-}
-
-fn summarize_tool_output(output: &serde_json::Value) -> String {
-    let stdout = output
-        .get("stdout")
-        .and_then(serde_json::Value::as_str)
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or("");
-    let stderr = output
-        .get("stderr")
-        .and_then(serde_json::Value::as_str)
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or("");
-    let exit_code = output
-        .get("exit_code")
-        .and_then(serde_json::Value::as_i64)
-        .map_or("unknown".to_string(), |code| code.to_string());
-
-    if !stdout.is_empty() && stderr.is_empty() {
-        return format!("Tool finished with exit code {exit_code}.\n\n{stdout}");
-    }
-    if stdout.is_empty() && !stderr.is_empty() {
-        return format!("Tool finished with exit code {exit_code}.\n\nstderr:\n{stderr}");
-    }
-    if !stdout.is_empty() && !stderr.is_empty() {
-        return format!(
-            "Tool finished with exit code {exit_code}.\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
-        );
-    }
-    format!(
-        "Tool finished with exit code {exit_code}.\n\n{}",
-        output
-            .to_string()
-            .chars()
-            .take(1000)
-            .collect::<String>()
-    )
-}
-
-fn build_runtime_state(base_path: PathBuf) -> AppState {
     let tools = tauri::async_runtime::block_on(AgentToolRuntime::default_with_builtins());
     let runtime = SessionRuntime::with_config(
         base_path,
-        Arc::new(DesktopModel),
+        Arc::new(BigModelModelAdapter::new(Arc::new(llm_client)).with_config(model_config)),
         Arc::new(tools),
         SessionConfig {
             max_parallel_tools: 4,
         },
     );
 
-    AppState {
+    Ok(AppState {
         runtime: Arc::new(runtime),
         frontend_to_backend_session: Arc::new(RwLock::new(HashMap::new())),
-    }
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -413,7 +275,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|_| std::env::temp_dir().join("argusx-desktop-agent"))
                 .join("sessions");
             std::fs::create_dir_all(&base_path)?;
-            app.manage(build_runtime_state(base_path));
+            let state = build_runtime_state(base_path).map_err(std::io::Error::other)?;
+            app.manage(state);
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
