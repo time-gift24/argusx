@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="blueGradient2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00D4FF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0099CC;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- 抽象的 A + 眼睛 -->
+  <g fill="none" stroke="url(#blueGradient2)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 主体 A 框架 -->
+    <path d="M 120 400 L 256 100 L 392 400"/>
+    <line x1="170" y1="280" x2="342" y2="280"/>
+
+    <!-- A 中的眼睛/核心 -->
+    <ellipse cx="256" cy="220" rx="45" ry="30"/>
+    <circle cx="256" cy="220" r="12" fill="url(#blueGradient2)" stroke="none"/>
+
+    <!-- 两侧延伸 - 数据流/连接线 -->
+    <path d="M 80 340 L 40 340 L 40 280" stroke-width="10"/>
+    <path d="M 432 340 L 472 340 L 472 280" stroke-width="10"/>
+
+    <!-- 底部横线延伸 -->
+    <line x1="120" y1="400" x2="80" y2="400"/>
+    <line x1="392" y1="400" x2="432" y2="400"/>
+
+    <!-- 顶部节点 -->
+    <circle cx="256" cy="100" r="10" fill="url(#blueGradient2)" stroke="none"/>
+  </g>
+</svg>

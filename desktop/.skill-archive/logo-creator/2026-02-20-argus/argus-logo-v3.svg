@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="blueGradient3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#38BDF8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0284C7;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- 极简线性：眼睛 + 圆环 -->
+  <g fill="none" stroke="url(#blueGradient3)" stroke-width="10" stroke-linecap="round">
+    <!-- 外圆环 -->
+    <circle cx="256" cy="230" r="140"/>
+
+    <!-- 内圆环 -->
+    <circle cx="256" cy="230" r="100" stroke-width="8"/>
+
+    <!-- 眼睛形状 -->
+    <path d="M 196 230 Q 256 170 316 230 Q 256 290 196 230" stroke-width="10"/>
+
+    <!-- 瞳孔 -->
+    <circle cx="256" cy="230" r="25" fill="url(#blueGradient3)" stroke="none"/>
+
+    <!-- 四周围绕的点/节点 -->
+    <circle cx="256" cy="60" r="8" fill="url(#blueGradient3)" stroke="none"/>
+    <circle cx="400" cy="140" r="6" fill="url(#blueGradient3)" stroke="none"/>
+    <circle cx="400" cy="320" r="6" fill="url(#blueGradient3)" stroke="none"/>
+    <circle cx="256" cy="400" r="8" fill="url(#blueGradient3)" stroke="none"/>
+    <circle cx="112" cy="320" r="6" fill="url(#blueGradient3)" stroke="none"/>
+    <circle cx="112" cy="140" r="6" fill="url(#blueGradient3)" stroke="none"/>
+
+    <!-- 连接线 -->
+    <line x1="256" y1="90" x2="256" y2="68"/>
+    <line x1="370" y1="150" x2="385" y2="135"/>
+    <line x1="370" y1="310" x2="385" y2="325"/>
+    <line x1="256" y1="370" x2="256" y2="392"/>
+    <line x1="142" y1="310" x2="127" y2="325"/>
+    <line x1="142" y1="150" x2="127" y2="135"/>
+  </g>
+</svg>

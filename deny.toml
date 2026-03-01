@@ -144,7 +144,7 @@ exceptions = [
     { allow = ["0BSD", "MIT", "Apache-2.0"], crate = "adler2" },
     { allow = ["Unlicense", "MIT"], crate = "aho-corasick" },
     # Workspace crates - internal use
-    { allow = ["MIT"], crate = "argusx-common" },
+    { allow = ["MIT"], crate = "common" },
     { allow = ["MIT"], crate = "bigmodel-api" },
     { allow = ["MIT"], crate = "llm-cli" },
     { allow = ["MIT"], crate = "llm-sdk" },

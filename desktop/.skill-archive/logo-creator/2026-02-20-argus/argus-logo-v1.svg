@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- 蓝色渐变 -->
+    <linearGradient id="blueGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00B4D8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0077B6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- 背景圆形（可选，用于展示时可移除） -->
+  <circle cx="256" cy="256" r="240" fill="none" stroke="url(#blueGradient)" stroke-width="8" opacity="0.1"/>
+
+  <!-- 主图形：眼睛轮廓 + AI 核心 -->
+  <g fill="none" stroke="url(#blueGradient)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 外圈 - 眼睛轮廓 -->
+    <ellipse cx="256" cy="230" rx="140" ry="90"/>
+
+    <!-- 瞳孔/AI 核心 - 多层同心圆 -->
+    <circle cx="256" cy="230" r="50"/>
+    <circle cx="256" cy="230" r="30" stroke-width="8"/>
+
+    <!-- 核心光点 -->
+    <circle cx="256" cy="230" r="12" fill="url(#blueGradient)" stroke="none"/>
+
+    <!-- 眼角延伸线 - 象征视野/监控 -->
+    <line x1="116" y1="230" x2="60" y2="230"/>
+    <line x1="396" y1="230" x2="452" y2="230"/>
+
+    <!-- 下方弧线 - 象征网络/连接/运维 -->
+    <path d="M 156 360 Q 256 420 356 360"/>
+    <path d="M 196 400 Q 256 440 316 400" stroke-width="8" opacity="0.6"/>
+
+    <!-- 顶部装饰线 - 象征数据流动 -->
+    <line x1="256" y1="140" x2="256" y2="100"/>
+    <circle cx="256" cy="85" r="8" fill="url(#blueGradient)" stroke="none"/>
+  </g>
+
+  <!-- 底部文字：Argus -->
+  <text x="256" y="480"
+        font-family="'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        font-size="52"
+        font-weight="600"
+        fill="url(#blueGradient)"
+        text-anchor="middle"
+        letter-spacing="8">ARGUS</text>
+</svg>
