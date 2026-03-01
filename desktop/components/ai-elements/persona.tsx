@@ -127,6 +127,15 @@ const useTheme = (enabled: boolean) => {
   return theme;
 };
 
+const setMachineInputValue = (
+  input: { value: number | boolean } | null | undefined,
+  value: number | boolean
+) => {
+  if (input) {
+    input.value = value;
+  }
+};
+
 interface PersonaWithModelProps {
   rive: ReturnType<typeof useRive>["rive"];
   source: (typeof sources)[keyof typeof sources];
@@ -253,18 +262,10 @@ export const Persona: FC<PersonaProps> = memo(
     const asleepInput = useStateMachineInput(rive, stateMachine, "asleep");
 
     useEffect(() => {
-      if (listeningInput) {
-        listeningInput.value = state === "listening";
-      }
-      if (thinkingInput) {
-        thinkingInput.value = state === "thinking";
-      }
-      if (speakingInput) {
-        speakingInput.value = state === "speaking";
-      }
-      if (asleepInput) {
-        asleepInput.value = state === "asleep";
-      }
+      setMachineInputValue(listeningInput, state === "listening");
+      setMachineInputValue(thinkingInput, state === "thinking");
+      setMachineInputValue(speakingInput, state === "speaking");
+      setMachineInputValue(asleepInput, state === "asleep");
     }, [state, listeningInput, thinkingInput, speakingInput, asleepInput]);
 
     const Component = source.hasModel ? PersonaWithModel : PersonaWithoutModel;

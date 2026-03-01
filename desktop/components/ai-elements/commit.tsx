@@ -150,6 +150,7 @@ export type CommitTimestampProps = HTMLAttributes<HTMLTimeElement> & {
 const relativeTimeFormat = new Intl.RelativeTimeFormat("en", {
   numeric: "auto",
 });
+const NOW = Date.now();
 
 export const CommitTimestamp = ({
   date,
@@ -158,7 +159,7 @@ export const CommitTimestamp = ({
   ...props
 }: CommitTimestampProps) => {
   const formatted = relativeTimeFormat.format(
-    Math.round((date.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+    Math.round((date.getTime() - NOW) / (1000 * 60 * 60 * 24)),
     "day"
   );
 
