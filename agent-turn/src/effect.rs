@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use agent_core::{
     new_id,
@@ -177,10 +177,11 @@ where
         let exclusive_tool_locks = Arc::clone(&self.exclusive_tool_locks);
 
         tokio::spawn(async move {
-            let _ = tx.send(RuntimeEvent::ToolDispatched {
+            let _ = tx.send(RuntimeEvent::ToolQueued {
                 event_id: new_id(),
                 epoch,
                 call_id: call.call_id.clone(),
+                tool_name: call.tool_name.clone(),
             });
 
             let Ok(permit) = semaphore.acquire_owned().await else {
@@ -190,6 +191,18 @@ where
                 });
                 return;
             };
+
+            let _ = tx.send(RuntimeEvent::ToolDequeued {
+                event_id: new_id(),
+                epoch,
+                call_id: call.call_id.clone(),
+                tool_name: call.tool_name.clone(),
+            });
+            let _ = tx.send(RuntimeEvent::ToolDispatched {
+                event_id: new_id(),
+                epoch,
+                call_id: call.call_id.clone(),
+            });
 
             let ctx = ToolExecutionContext {
                 session_id,
@@ -202,6 +215,7 @@ where
                 .await
                 .map(|spec| spec.execution_policy.parallel_mode)
                 .unwrap_or(ToolParallelMode::ParallelSafe);
+            let started_at = Instant::now();
 
             let result = if matches!(mode, ToolParallelMode::Exclusive) {
                 let lock = {
@@ -222,6 +236,11 @@ where
 
             match result {
                 Ok(mut result) => {
+                    let duration_ms = started_at.elapsed().as_millis() as u64;
+                    if let Some(output) = result.output.as_object_mut() {
+                        output.insert("duration_ms".to_string(), serde_json::json!(duration_ms));
+                    }
+                    emit_terminal_runtime_events(&tx, epoch, &call.call_id, &result, duration_ms);
                     if result.call_id != call.call_id {
                         result.call_id = call.call_id.clone();
                     }
@@ -240,10 +259,32 @@ where
                     });
                 }
                 Err(err) => {
+                    let duration_ms = started_at.elapsed().as_millis() as u64;
+                    let message = err.message;
+                    let _ = tx.send(RuntimeEvent::ToolStderrDelta {
+                        event_id: new_id(),
+                        epoch,
+                        call_id: call.call_id.clone(),
+                        delta: message.clone(),
+                    });
+                    let _ = tx.send(RuntimeEvent::ToolExit {
+                        event_id: new_id(),
+                        epoch,
+                        call_id: call.call_id.clone(),
+                        exit_code: None,
+                        duration_ms,
+                    });
                     let _ = tx.send(RuntimeEvent::ToolResultErr {
                         event_id: new_id(),
                         epoch,
-                        result: ToolResult::err(call.call_id, err.message),
+                        result: ToolResult {
+                            call_id: call.call_id,
+                            output: serde_json::json!({
+                                "error": message,
+                                "duration_ms": duration_ms,
+                            }),
+                            is_error: true,
+                        },
                     });
                 }
             }
@@ -275,6 +316,55 @@ fn map_agent_error(epoch: u64, err: AgentError) -> RuntimeEvent {
             message: other.to_string(),
         },
     }
+}
+
+fn emit_terminal_runtime_events(
+    tx: &mpsc::UnboundedSender<RuntimeEvent>,
+    epoch: u64,
+    call_id: &str,
+    result: &ToolResult,
+    duration_ms: u64,
+) {
+    let stdout = result
+        .output
+        .get("stdout")
+        .and_then(serde_json::Value::as_str)
+        .filter(|v| !v.is_empty());
+    if let Some(stdout) = stdout {
+        let _ = tx.send(RuntimeEvent::ToolStdoutDelta {
+            event_id: new_id(),
+            epoch,
+            call_id: call_id.to_string(),
+            delta: stdout.to_string(),
+        });
+    }
+
+    let stderr = result
+        .output
+        .get("stderr")
+        .and_then(serde_json::Value::as_str)
+        .filter(|v| !v.is_empty());
+    if let Some(stderr) = stderr {
+        let _ = tx.send(RuntimeEvent::ToolStderrDelta {
+            event_id: new_id(),
+            epoch,
+            call_id: call_id.to_string(),
+            delta: stderr.to_string(),
+        });
+    }
+
+    let exit_code = result
+        .output
+        .get("exit_code")
+        .and_then(serde_json::Value::as_i64)
+        .and_then(|v| i32::try_from(v).ok());
+    let _ = tx.send(RuntimeEvent::ToolExit {
+        event_id: new_id(),
+        epoch,
+        call_id: call_id.to_string(),
+        exit_code,
+        duration_ms,
+    });
 }
 
 #[cfg(test)]

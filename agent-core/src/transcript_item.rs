@@ -24,6 +24,10 @@ pub enum TranscriptItem {
     Reasoning {
         id: Id,
         text: String,
+        #[serde(default)]
+        truncated: bool,
+        #[serde(default)]
+        char_count: u32,
     },
     ToolCall {
         id: Id,
@@ -58,9 +62,26 @@ impl TranscriptItem {
     }
 
     pub fn reasoning(text: impl Into<String>) -> Self {
+        let text = text.into();
+        let char_count = text.chars().count() as u32;
+        Self::Reasoning {
+            id: new_id(),
+            text,
+            truncated: false,
+            char_count,
+        }
+    }
+
+    pub fn reasoning_with_meta(
+        text: impl Into<String>,
+        truncated: bool,
+        char_count: u32,
+    ) -> Self {
         Self::Reasoning {
             id: new_id(),
             text: text.into(),
+            truncated,
+            char_count,
         }
     }
 

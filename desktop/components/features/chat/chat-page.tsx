@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { listenAgentStream } from "@/lib/api/chat";
 import { useChatStore } from "@/lib/stores/chat-store";
 import { ConversationView } from "./conversation-view";
 import { ChatSessionBar } from "./chat-session-bar";
@@ -15,6 +16,32 @@ export function ChatPage() {
       createSession();
     }
   }, [sessions.length, createSession]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listenAgentStream((envelope) => {
+      useChatStore.getState().applyAgentStreamEnvelope(envelope);
+    })
+      .then((cleanup) => {
+        if (disposed) {
+          cleanup();
+          return;
+        }
+        unlisten = cleanup;
+      })
+      .catch((error) => {
+        console.error("Failed to listen agent stream", error);
+      });
+
+    return () => {
+      disposed = true;
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
 
   const currentSession = sessions.find((s) => s.id === currentSessionId);
   const handleHeightChange = useCallback((height: number) => {

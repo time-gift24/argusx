@@ -35,6 +35,37 @@ pub enum RuntimeEvent {
         epoch: u64,
         call_id: Id,
     },
+    ToolQueued {
+        event_id: Id,
+        epoch: u64,
+        call_id: Id,
+        tool_name: String,
+    },
+    ToolDequeued {
+        event_id: Id,
+        epoch: u64,
+        call_id: Id,
+        tool_name: String,
+    },
+    ToolStdoutDelta {
+        event_id: Id,
+        epoch: u64,
+        call_id: Id,
+        delta: String,
+    },
+    ToolStderrDelta {
+        event_id: Id,
+        epoch: u64,
+        call_id: Id,
+        delta: String,
+    },
+    ToolExit {
+        event_id: Id,
+        epoch: u64,
+        call_id: Id,
+        exit_code: Option<i32>,
+        duration_ms: u64,
+    },
     ToolResultOk {
         event_id: Id,
         epoch: u64,
@@ -78,6 +109,11 @@ impl RuntimeEvent {
             | RuntimeEvent::ModelToolCall { event_id, .. }
             | RuntimeEvent::ModelCompleted { event_id, .. }
             | RuntimeEvent::ToolDispatched { event_id, .. }
+            | RuntimeEvent::ToolQueued { event_id, .. }
+            | RuntimeEvent::ToolDequeued { event_id, .. }
+            | RuntimeEvent::ToolStdoutDelta { event_id, .. }
+            | RuntimeEvent::ToolStderrDelta { event_id, .. }
+            | RuntimeEvent::ToolExit { event_id, .. }
             | RuntimeEvent::ToolResultOk { event_id, .. }
             | RuntimeEvent::ToolResultErr { event_id, .. }
             | RuntimeEvent::InputInjected { event_id, .. }
@@ -122,6 +158,63 @@ impl RuntimeEvent {
                 event_id: eid,
                 epoch,
                 call_id,
+            },
+            RuntimeEvent::ToolQueued {
+                epoch,
+                call_id,
+                tool_name,
+                ..
+            } => RuntimeEvent::ToolQueued {
+                event_id: eid,
+                epoch,
+                call_id,
+                tool_name,
+            },
+            RuntimeEvent::ToolDequeued {
+                epoch,
+                call_id,
+                tool_name,
+                ..
+            } => RuntimeEvent::ToolDequeued {
+                event_id: eid,
+                epoch,
+                call_id,
+                tool_name,
+            },
+            RuntimeEvent::ToolStdoutDelta {
+                epoch,
+                call_id,
+                delta,
+                ..
+            } => RuntimeEvent::ToolStdoutDelta {
+                event_id: eid,
+                epoch,
+                call_id,
+                delta,
+            },
+            RuntimeEvent::ToolStderrDelta {
+                epoch,
+                call_id,
+                delta,
+                ..
+            } => RuntimeEvent::ToolStderrDelta {
+                event_id: eid,
+                epoch,
+                call_id,
+                delta,
+            },
+            RuntimeEvent::ToolExit {
+                epoch,
+                call_id,
+                exit_code,
+                duration_ms,
+                ..
+            } => RuntimeEvent::ToolExit {
+                event_id: eid,
+                epoch,
+                call_id,
+                exit_code,
+                duration_ms,
             },
             RuntimeEvent::ToolResultOk { epoch, result, .. } => RuntimeEvent::ToolResultOk {
                 event_id: eid,

@@ -36,9 +36,10 @@ import {
   PromptInputTools,
   usePromptInputAttachments,
 } from "@/components/ai-elements/prompt-input";
+import { startAgentTurn } from "@/lib/api/chat";
 import { useChatStore } from "@/lib/stores/chat-store";
 import { CheckIcon, SearchIcon } from "lucide-react";
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 
 const models = [
   {
@@ -154,12 +155,30 @@ const PromptInputAttachmentsDisplay = () => {
 };
 
 export function ChatPromptInput() {
-  const { currentSessionId, addMessage, updateSessionStatus } = useChatStore();
+  const {
+    currentSessionId,
+    sessions,
+    addMessage,
+    updateSessionStatus,
+    ensureAgentTurn,
+  } = useChatStore();
   const [model, setModel] = useState<string>(models[0].id);
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
-  const [status, setStatus] = useState<"submitted" | "streaming" | "ready" | "error">("ready");
+  const [submitStatus, setSubmitStatus] = useState<
+    "submitted" | "streaming" | "ready" | "error"
+  >("ready");
 
   const selectedModelData = models.find((m) => m.id === model);
+  const currentSession = useMemo(
+    () => sessions.find((session) => session.id === currentSessionId),
+    [sessions, currentSessionId]
+  );
+  const status: "submitted" | "streaming" | "ready" | "error" =
+    submitStatus === "error"
+      ? "error"
+      : currentSession?.status === "wait-input"
+        ? "ready"
+        : "streaming";
 
   const handleModelSelect = useCallback((id: string) => {
     setModel(id);
@@ -174,27 +193,36 @@ export function ChatPromptInput() {
         return;
       }
 
-      // 添加用户消息
-      addMessage(currentSessionId, {
+      const messageId = addMessage(currentSessionId, {
         role: "user",
         content: message.text,
       });
 
-      // 模拟 AI 响应
-      setStatus("submitted");
+      setSubmitStatus("submitted");
       updateSessionStatus(currentSessionId, "thinking");
 
-      // Mock: 模拟延迟后添加响应
-      setTimeout(() => {
-        addMessage(currentSessionId, {
-          role: "assistant",
-          content: `This is a mock response to: "${message.text}"\n\nIn a real implementation, this would be streamed from the LLM backend using Tauri IPC.`,
+      try {
+        const { turnId } = await startAgentTurn({
+          sessionId: currentSessionId,
+          input: message.text,
+          model,
+          attachments: message.files,
         });
+        ensureAgentTurn(currentSessionId, turnId, messageId);
+        setSubmitStatus("streaming");
+      } catch (error) {
+        console.error("Failed to start agent turn", error);
         updateSessionStatus(currentSessionId, "wait-input");
-        setStatus("ready");
-      }, 1000);
+        setSubmitStatus("error");
+      }
     },
-    [currentSessionId, addMessage, updateSessionStatus]
+    [
+      currentSessionId,
+      addMessage,
+      ensureAgentTurn,
+      model,
+      updateSessionStatus,
+    ]
   );
 
   return (

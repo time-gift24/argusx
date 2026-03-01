@@ -7,6 +7,8 @@ use crate::effect::Effect;
 use crate::state::{Lifecycle, ModelState, TurnEngineConfig, TurnState};
 use crate::transition::Transition;
 
+const REASONING_CHAR_LIMIT: u32 = 24_000;
+
 pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) -> Transition {
     let mut tr = Transition::new(state);
 
@@ -52,11 +54,14 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
             if !is_active_epoch(&tr.state, epoch) {
                 return tr;
             }
-            tr.state.reasoning_buffer.push_str(&delta);
-            tr.add_ui_event(UiThreadEvent::ReasoningDelta {
-                turn_id: tr.state.meta.turn_id.clone(),
-                delta,
-            });
+            emit_reasoning_started(&mut tr);
+            let visible_delta = append_reasoning_delta(&mut tr.state, &delta);
+            if !visible_delta.is_empty() {
+                tr.add_ui_event(UiThreadEvent::ReasoningDelta {
+                    turn_id: tr.state.meta.turn_id.clone(),
+                    delta: visible_delta,
+                });
+            }
         }
         RuntimeEvent::ModelToolCall { epoch, call, .. } => {
             if !is_active_epoch(&tr.state, epoch) {
@@ -80,7 +85,18 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
                 call_id: call_id.clone(),
                 tool_name: call.tool_name.clone(),
             });
+            tr.add_run_event(RunStreamEvent::ToolQueued {
+                turn_id: tr.state.meta.turn_id.clone(),
+                call_id: call_id.clone(),
+                tool_name: call.tool_name.clone(),
+            });
             tr.add_ui_event(UiThreadEvent::ToolCallRequested {
+                turn_id: tr.state.meta.turn_id.clone(),
+                call_id: call_id.clone(),
+                tool_name: call.tool_name.clone(),
+                arguments: call.arguments.clone(),
+            });
+            tr.add_ui_event(UiThreadEvent::ToolQueued {
                 turn_id: tr.state.meta.turn_id.clone(),
                 call_id,
                 tool_name: call.tool_name.clone(),
@@ -91,6 +107,50 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
                 turn_id: tr.state.meta.turn_id.clone(),
                 call,
             });
+        }
+        RuntimeEvent::ToolQueued {
+            epoch,
+            call_id,
+            tool_name,
+            ..
+        } => {
+            if !is_active_epoch(&tr.state, epoch) {
+                return tr;
+            }
+            if tr.state.inflight_tools.contains_key(&call_id) {
+                tr.add_run_event(RunStreamEvent::ToolQueued {
+                    turn_id: tr.state.meta.turn_id.clone(),
+                    call_id: call_id.clone(),
+                    tool_name: tool_name.clone(),
+                });
+                tr.add_ui_event(UiThreadEvent::ToolQueued {
+                    turn_id: tr.state.meta.turn_id.clone(),
+                    call_id,
+                    tool_name,
+                });
+            }
+        }
+        RuntimeEvent::ToolDequeued {
+            epoch,
+            call_id,
+            tool_name,
+            ..
+        } => {
+            if !is_active_epoch(&tr.state, epoch) {
+                return tr;
+            }
+            if tr.state.inflight_tools.contains_key(&call_id) {
+                tr.add_run_event(RunStreamEvent::ToolDequeued {
+                    turn_id: tr.state.meta.turn_id.clone(),
+                    call_id: call_id.clone(),
+                    tool_name: tool_name.clone(),
+                });
+                tr.add_ui_event(UiThreadEvent::ToolDequeued {
+                    turn_id: tr.state.meta.turn_id.clone(),
+                    call_id,
+                    tool_name,
+                });
+            }
         }
         RuntimeEvent::ToolDispatched { epoch, call_id, .. } => {
             if !is_active_epoch(&tr.state, epoch) {
@@ -106,6 +166,75 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
                     turn_id: tr.state.meta.turn_id.clone(),
                     call_id,
                     status: ToolCallStatus::Running,
+                });
+            }
+        }
+        RuntimeEvent::ToolStdoutDelta {
+            epoch,
+            call_id,
+            delta,
+            ..
+        } => {
+            if !is_active_epoch(&tr.state, epoch) {
+                return tr;
+            }
+            if tr.state.inflight_tools.contains_key(&call_id) {
+                tr.add_run_event(RunStreamEvent::ToolStdoutDelta {
+                    turn_id: tr.state.meta.turn_id.clone(),
+                    call_id: call_id.clone(),
+                    delta: delta.clone(),
+                });
+                tr.add_ui_event(UiThreadEvent::ToolStdoutDelta {
+                    turn_id: tr.state.meta.turn_id.clone(),
+                    call_id,
+                    delta,
+                });
+            }
+        }
+        RuntimeEvent::ToolStderrDelta {
+            epoch,
+            call_id,
+            delta,
+            ..
+        } => {
+            if !is_active_epoch(&tr.state, epoch) {
+                return tr;
+            }
+            if tr.state.inflight_tools.contains_key(&call_id) {
+                tr.add_run_event(RunStreamEvent::ToolStderrDelta {
+                    turn_id: tr.state.meta.turn_id.clone(),
+                    call_id: call_id.clone(),
+                    delta: delta.clone(),
+                });
+                tr.add_ui_event(UiThreadEvent::ToolStderrDelta {
+                    turn_id: tr.state.meta.turn_id.clone(),
+                    call_id,
+                    delta,
+                });
+            }
+        }
+        RuntimeEvent::ToolExit {
+            epoch,
+            call_id,
+            exit_code,
+            duration_ms,
+            ..
+        } => {
+            if !is_active_epoch(&tr.state, epoch) {
+                return tr;
+            }
+            if tr.state.inflight_tools.contains_key(&call_id) {
+                tr.add_run_event(RunStreamEvent::ToolExit {
+                    turn_id: tr.state.meta.turn_id.clone(),
+                    call_id: call_id.clone(),
+                    exit_code,
+                    duration_ms,
+                });
+                tr.add_ui_event(UiThreadEvent::ToolExit {
+                    turn_id: tr.state.meta.turn_id.clone(),
+                    call_id,
+                    exit_code,
+                    duration_ms,
                 });
             }
         }
@@ -309,8 +438,14 @@ fn maybe_finalize(tr: &mut Transition) {
         return;
     }
 
+    emit_reasoning_completed_if_needed(tr);
+
     if !tr.state.reasoning_buffer.is_empty() {
-        tr.add_item(TranscriptItem::reasoning(tr.state.reasoning_buffer.clone()));
+        tr.add_item(TranscriptItem::reasoning_with_meta(
+            tr.state.reasoning_buffer.clone(),
+            tr.state.reasoning_truncated,
+            tr.state.reasoning_char_count,
+        ));
     }
 
     if !tr.state.output_buffer.is_empty() {
@@ -349,6 +484,8 @@ fn maybe_finalize(tr: &mut Transition) {
 }
 
 fn fail_turn(tr: &mut Transition, message: String, cancelled: bool) {
+    emit_reasoning_completed_if_needed(tr);
+
     tr.state.lifecycle = Lifecycle::Failed;
     tr.state.model_state = ModelState::Error;
     let stats = TurnStats {
@@ -379,6 +516,62 @@ fn backoff_ms(config: &TurnEngineConfig, attempt: u32) -> u64 {
     let capped = attempt.saturating_sub(1).min(10);
     let multiplier = 1_u64.checked_shl(capped).unwrap_or(u64::MAX);
     config.retry_policy.base_delay_ms.saturating_mul(multiplier)
+}
+
+fn emit_reasoning_started(tr: &mut Transition) {
+    if tr.state.reasoning_started_emitted {
+        return;
+    }
+    tr.state.reasoning_started_emitted = true;
+    tr.add_run_event(RunStreamEvent::ReasoningStarted {
+        turn_id: tr.state.meta.turn_id.clone(),
+    });
+    tr.add_ui_event(UiThreadEvent::ReasoningStarted {
+        turn_id: tr.state.meta.turn_id.clone(),
+    });
+}
+
+fn append_reasoning_delta(state: &mut TurnState, delta: &str) -> String {
+    state.reasoning_char_count = state
+        .reasoning_char_count
+        .saturating_add(delta.chars().count() as u32);
+
+    if state.reasoning_truncated {
+        return String::new();
+    }
+
+    let current_len = state.reasoning_buffer.chars().count() as u32;
+    let remaining = REASONING_CHAR_LIMIT.saturating_sub(current_len);
+    if remaining == 0 {
+        state.reasoning_truncated = true;
+        return String::new();
+    }
+
+    let visible_delta: String = delta.chars().take(remaining as usize).collect();
+    state.reasoning_buffer.push_str(&visible_delta);
+
+    if visible_delta.chars().count() < delta.chars().count() {
+        state.reasoning_truncated = true;
+    }
+
+    visible_delta
+}
+
+fn emit_reasoning_completed_if_needed(tr: &mut Transition) {
+    if !tr.state.reasoning_started_emitted || tr.state.reasoning_completed_emitted {
+        return;
+    }
+    tr.state.reasoning_completed_emitted = true;
+    tr.add_run_event(RunStreamEvent::ReasoningCompleted {
+        turn_id: tr.state.meta.turn_id.clone(),
+        truncated: tr.state.reasoning_truncated,
+        char_count: tr.state.reasoning_char_count,
+    });
+    tr.add_ui_event(UiThreadEvent::ReasoningCompleted {
+        turn_id: tr.state.meta.turn_id.clone(),
+        truncated: tr.state.reasoning_truncated,
+        char_count: tr.state.reasoning_char_count,
+    });
 }
 
 #[cfg(test)]
