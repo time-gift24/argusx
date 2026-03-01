@@ -11,7 +11,8 @@ export async function fetchRuleCatalog(): Promise<RuleCatalogItem[]> {
   return data;
 }
 
-export async function fetchAnnotations(_docId: string): Promise<AnnotationDraft[]> {
+export async function fetchAnnotations(docId: string): Promise<AnnotationDraft[]> {
+  void docId;
   return [];
 }
 

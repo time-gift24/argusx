@@ -10,23 +10,29 @@ export function RightAnnotationPanel() {
   const catalog = useAnnotationStore((store) => store.catalog);
   const dispatch = useAnnotationStore((store) => store.dispatch);
   const submitActive = useAnnotationStore((store) => store.submitActive);
+  const listboxId = React.useId();
   const [isOpen, setIsOpen] = React.useState(false);
-  const [selectedRuleCode, setSelectedRuleCode] = React.useState<string>("");
-  const [payload, setPayload] = React.useState<Record<string, string>>({});
 
   const active = state.items.find((item) => item.id === state.activeId);
+  const hasActiveTarget = Boolean(active);
   const rules = catalog.length > 0 ? catalog : fallbackRules;
-  const effectiveRuleCode = active?.ruleCode ?? selectedRuleCode;
+  const effectiveRuleCode = active?.ruleCode ?? "";
   const selectedRule = rules.find((rule) => rule.code === effectiveRuleCode);
-  const effectivePayload = active?.payload ?? payload;
+  const effectivePayload = active?.payload ?? {};
 
-  const isSubmitDisabled = !selectedRule || selectedRule.schema.some((field) => {
+  const isSubmitDisabled = !hasActiveTarget || !selectedRule || selectedRule.schema.some((field) => {
     if (!field.required) return false;
     return !(effectivePayload[field.key] ?? "").trim();
   });
 
+  React.useEffect(() => {
+    setIsOpen(false);
+  }, [state.activeId]);
+
   function handleSelectRule(code: string) {
-    setSelectedRuleCode(code);
+    if (!hasActiveTarget) {
+      return;
+    }
     setIsOpen(false);
     dispatch({ type: "UPDATE_RULE", ruleCode: code });
   }
@@ -54,13 +60,23 @@ export function RightAnnotationPanel() {
           role="combobox"
           aria-label="违规检查项"
           aria-expanded={isOpen}
+          aria-controls={listboxId}
+          disabled={!hasActiveTarget}
           className="w-full rounded-md border bg-background px-3 py-2 text-left text-sm"
           onClick={() => setIsOpen((prev) => !prev)}
         >
           {selectedRule?.label ?? "请选择"}
         </button>
+        {!hasActiveTarget ? (
+          <p className="text-xs text-muted-foreground">请选择左侧内容开始标注。</p>
+        ) : null}
         {isOpen ? (
-          <ul className="rounded-md border bg-background" role="listbox" aria-label="违规检查项候选">
+          <ul
+            id={listboxId}
+            className="rounded-md border bg-background"
+            role="listbox"
+            aria-label="违规检查项候选"
+          >
             {rules.map((rule) => (
               <li
                 key={rule.code}
@@ -81,8 +97,13 @@ export function RightAnnotationPanel() {
           schema={selectedRule.schema}
           values={effectivePayload}
           onChange={(key, value) => {
-            setPayload((prev) => ({ ...prev, [key]: value }));
-            dispatch({ type: "UPDATE_PAYLOAD", payload: { [key]: value } });
+            if (!hasActiveTarget) {
+              return;
+            }
+            dispatch({
+              type: "UPDATE_PAYLOAD",
+              payload: { [key]: value },
+            });
           }}
         />
       ) : null}
