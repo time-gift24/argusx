@@ -14,6 +14,47 @@ type QuillReviewFieldProps = {
   nodeId?: string;
 };
 
+type HighlightRange = {
+  id: string;
+  start: number;
+  length: number;
+  isActive: boolean;
+};
+
+const BASE_HIGHLIGHT_COLOR = "rgba(16, 185, 129, 0.24)";
+const ACTIVE_HIGHLIGHT_COLOR = "rgba(16, 185, 129, 0.42)";
+
+function buildHighlightRanges({
+  items,
+  activeId,
+  fieldKey,
+  textLength,
+}: {
+  items: ReturnType<typeof useAnnotationStore.getState>["state"]["items"];
+  activeId: string | null;
+  fieldKey: string;
+  textLength: number;
+}): HighlightRange[] {
+  return items
+    .filter((item) => item.status !== "orphaned")
+    .filter((item) => item.location.source_type === "rich_text_selection")
+    .filter((item) => item.location.field_key === fieldKey)
+    .map((item) => {
+      const rawStart = item.location.start_offset ?? 0;
+      const start = Math.max(0, Math.min(rawStart, textLength));
+      const rawEnd = item.location.end_offset ?? start;
+      const end = Math.max(start, Math.min(rawEnd, textLength));
+
+      return {
+        id: item.id,
+        start,
+        length: end - start,
+        isActive: item.id === activeId,
+      };
+    })
+    .filter((range) => range.length > 0);
+}
+
 function buildRichLocation(input: {
   sectionId: string;
   fieldKey: string;
@@ -43,11 +84,22 @@ export function QuillReviewField({
 }: QuillReviewFieldProps) {
   const hostRef = React.useRef<HTMLDivElement>(null);
   const quillRef = React.useRef<Quill | null>(null);
+  const [isEditorReady, setIsEditorReady] = React.useState(false);
   const textRef = React.useRef(text);
   textRef.current = text;
 
   const state = useAnnotationStore((store) => store.state);
   const dispatch = useAnnotationStore((store) => store.dispatch);
+  const highlightRanges = React.useMemo(
+    () =>
+      buildHighlightRanges({
+        items: state.items,
+        activeId: state.activeId,
+        fieldKey,
+        textLength: text.length,
+      }),
+    [fieldKey, state.activeId, state.items, text.length],
+  );
 
   const onSelectionChange = useQuillSelectionAnchor({
     delayMs: 300,
@@ -71,8 +123,6 @@ export function QuillReviewField({
   });
   const onSelectionChangeRef = React.useRef(onSelectionChange);
   onSelectionChangeRef.current = onSelectionChange;
-
-  const isAnnotated = state.items.some((item) => item.location.field_key === fieldKey);
 
   React.useEffect(() => {
     let isCancelled = false;
@@ -105,6 +155,7 @@ export function QuillReviewField({
 
       quill.on("selection-change", handleSelectionChange);
       quillRef.current = quill;
+      setIsEditorReady(true);
 
       cleanup = () => {
         quill.off("selection-change", handleSelectionChange);
@@ -112,6 +163,7 @@ export function QuillReviewField({
           hostRef.current.innerHTML = "";
         }
         quillRef.current = null;
+        setIsEditorReady(false);
       };
     }
 
@@ -135,8 +187,35 @@ export function QuillReviewField({
     }
   }, [text]);
 
+  React.useEffect(() => {
+    const quill = quillRef.current;
+    if (!quill || !isEditorReady) {
+      return;
+    }
+
+    quill.formatText(0, text.length, { background: false }, "silent");
+
+    for (const range of highlightRanges.filter((item) => !item.isActive)) {
+      quill.formatText(
+        range.start,
+        range.length,
+        { background: BASE_HIGHLIGHT_COLOR },
+        "silent",
+      );
+    }
+
+    for (const range of highlightRanges.filter((item) => item.isActive)) {
+      quill.formatText(
+        range.start,
+        range.length,
+        { background: ACTIVE_HIGHLIGHT_COLOR },
+        "silent",
+      );
+    }
+  }, [highlightRanges, isEditorReady, text.length]);
+
   return (
-    <div className={`space-y-1 rounded-md border p-2 ${isAnnotated ? "border-emerald-500" : ""}`}>
+    <div className="space-y-1 rounded-md border p-2">
       <label className="text-sm font-medium">{label}</label>
       <div
         ref={hostRef}

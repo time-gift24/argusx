@@ -5,6 +5,25 @@ import { fallbackRules } from "@/lib/annotation/rules-fallback";
 import { useAnnotationStore } from "@/lib/stores/annotation-store";
 import { RuleDynamicFields } from "./rule-dynamic-fields";
 
+function LocationReadonlyField({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="block text-xs text-muted-foreground">{label}</label>
+      <input
+        readOnly
+        className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+        value={value}
+      />
+    </div>
+  );
+}
+
 export function RightAnnotationPanel() {
   const state = useAnnotationStore((store) => store.state);
   const catalog = useAnnotationStore((store) => store.catalog);
@@ -19,6 +38,8 @@ export function RightAnnotationPanel() {
   const effectiveRuleCode = active?.ruleCode ?? "";
   const selectedRule = rules.find((rule) => rule.code === effectiveRuleCode);
   const effectivePayload = active?.payload ?? {};
+  const location = active?.location;
+  const isRichSelection = location?.source_type === "rich_text_selection";
 
   const isSubmitDisabled = !hasActiveTarget || !selectedRule || selectedRule.schema.some((field) => {
     if (!field.required) return false;
@@ -41,14 +62,38 @@ export function RightAnnotationPanel() {
     <div data-testid="annotation-right-panel" className="space-y-4 rounded-md border bg-muted/20 p-4">
       <h2 className="text-sm font-semibold">标注面板</h2>
 
-      <div className="space-y-1">
-        <label className="block text-xs text-muted-foreground">定位字段</label>
-        <input
-          readOnly
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-          value={active?.location.field_key ?? ""}
-        />
-      </div>
+      <details className="rounded-md border bg-background/70 p-3">
+        <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+          定位信息（只读）
+        </summary>
+        <div className="mt-3 space-y-2">
+          <LocationReadonlyField label="来源类型" value={location?.source_type ?? ""} />
+          <LocationReadonlyField label="面板" value={location?.panel ?? ""} />
+          <LocationReadonlyField label="区段 ID" value={location?.section_id ?? ""} />
+          <LocationReadonlyField label="定位字段" value={location?.field_key ?? ""} />
+          <LocationReadonlyField label="节点 ID" value={location?.node_id ?? ""} />
+          {isRichSelection ? (
+            <>
+              <LocationReadonlyField
+                label="起始偏移"
+                value={location?.start_offset !== null && location?.start_offset !== undefined ? String(location.start_offset) : ""}
+              />
+              <LocationReadonlyField
+                label="结束偏移"
+                value={location?.end_offset !== null && location?.end_offset !== undefined ? String(location.end_offset) : ""}
+              />
+              <div className="space-y-1">
+                <label className="block text-xs text-muted-foreground">选中文本</label>
+                <textarea
+                  readOnly
+                  className="min-h-[64px] w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  value={location?.selected_text ?? ""}
+                />
+              </div>
+            </>
+          ) : null}
+        </div>
+      </details>
 
       <div className="space-y-1">
         <label className="block text-sm font-medium" htmlFor="rule-combobox">

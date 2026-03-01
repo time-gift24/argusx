@@ -48,4 +48,40 @@ describe("RightAnnotationPanel", () => {
     expect(screen.getByRole("combobox", { name: "违规检查项" })).toHaveTextContent("请选择");
     expect(screen.queryByLabelText("问题说明")).not.toBeInTheDocument();
   });
+
+  it("shows quill location metadata for rich-text selection", () => {
+    useAnnotationStore.setState((current) => ({
+      ...current,
+      state: {
+        items: [
+          {
+            id: "ann-rich-1",
+            location: {
+              source_type: "rich_text_selection",
+              panel: "paragraph_detail",
+              section_id: "paragraph-1",
+              field_key: "paragraph.summary",
+              node_id: "paragraph.summary-node",
+              start_offset: 2,
+              end_offset: 5,
+              selected_text: "CDE",
+            },
+            ruleCode: null,
+            payload: {},
+            status: "draft",
+            updatedAt: 1,
+          },
+        ],
+        activeId: "ann-rich-1",
+      },
+    }));
+
+    render(<AnnotationWorkspace />);
+
+    expect(screen.getByDisplayValue("paragraph.summary")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("paragraph.summary-node")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("2")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("5")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("CDE")).toBeInTheDocument();
+  });
 });

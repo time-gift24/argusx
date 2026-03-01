@@ -10,6 +10,6 @@ describe("left pane trigger", () => {
 
     await user.click(screen.getByTestId("annotatable-field-case_title"));
 
-    expect(screen.getByDisplayValue("case_title")).toBeInTheDocument();
+    expect(screen.getAllByDisplayValue("case_title").length).toBeGreaterThan(0);
   });
 });
