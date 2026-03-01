@@ -17,20 +17,6 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
 
-      - id: cargo-clippy-fast
-        name: cargo clippy -p prompt_lab_core -p prompt_lab_cli --all-targets -- -D warnings
-        language: system
-        entry: bash -c 'cargo clippy -p prompt_lab_core -p prompt_lab_cli --all-targets -- -D warnings'
-        pass_filenames: false
-        stages: [pre-commit]
-
-      - id: cargo-test-core-integration
-        name: cargo test -p prompt_lab_core --tests
-        language: system
-        entry: bash -c 'cargo test -p prompt_lab_core --tests'
-        pass_filenames: false
-        stages: [pre-commit]
-
       - id: cargo-clippy-workspace
         name: cargo clippy --workspace --all-targets --all-features -- -D warnings
         language: system

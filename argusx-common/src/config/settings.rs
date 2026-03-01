@@ -19,7 +19,7 @@ pub struct DatabaseConfig {
 impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
-            path: "prompt_lab/dev.db".to_string(),
+            path: "data/dev.db".to_string(),
             busy_timeout_ms: 5_000,
             max_connections: 5,
         }

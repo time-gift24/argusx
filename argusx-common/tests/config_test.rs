@@ -21,7 +21,7 @@ fn cleanup_after_test() {
 fn test_settings_default() {
     cleanup_env_vars();
     let settings = Settings::default();
-    assert_eq!(settings.database.path, "prompt_lab/dev.db");
+    assert_eq!(settings.database.path, "data/dev.db");
     assert_eq!(settings.database.busy_timeout_ms, 5000);
     assert_eq!(settings.database.max_connections, 5);
     assert_eq!(settings.logging.level, "info");
@@ -64,7 +64,7 @@ console = false
 fn test_database_config_default() {
     cleanup_env_vars();
     let config = DatabaseConfig::default();
-    assert_eq!(config.path, "prompt_lab/dev.db");
+    assert_eq!(config.path, "data/dev.db");
     assert_eq!(config.busy_timeout_ms, 5000);
     assert_eq!(config.max_connections, 5);
     cleanup_after_test();

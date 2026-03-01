@@ -148,8 +148,6 @@ exceptions = [
     { allow = ["MIT"], crate = "bigmodel-api" },
     { allow = ["MIT"], crate = "llm-cli" },
     { allow = ["MIT"], crate = "llm-sdk" },
-    { allow = ["MIT"], crate = "prompt_lab_cli" },
-    { allow = ["MIT"], crate = "prompt_lab_core" },
     { allow = ["MIT"], crate = "tauri-app" },
 ]
 

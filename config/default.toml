@@ -1,5 +1,5 @@
 [database]
-path = "prompt_lab/dev.db"
+path = "data/dev.db"
 busy_timeout_ms = 5000
 max_connections = 5
 
