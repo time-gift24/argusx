@@ -37,7 +37,7 @@ import {
   usePromptInputAttachments,
 } from "@/components/ai-elements/prompt-input";
 import { useChatStore } from "@/lib/stores/chat-store";
-import { CheckIcon, GlobeIcon, SearchIcon } from "lucide-react";
+import { CheckIcon, SearchIcon } from "lucide-react";
 import { memo, useCallback, useState } from "react";
 
 const models = [
@@ -169,7 +169,6 @@ export function ChatPromptInput() {
   const handleSubmit = useCallback(
     async (message: PromptInputMessage) => {
       const hasText = Boolean(message.text);
-      const hasAttachments = Boolean(message.files?.length);
 
       if (!hasText || !currentSessionId) {
         return;
@@ -200,7 +199,13 @@ export function ChatPromptInput() {
 
   return (
     <PromptInputProvider>
-      <PromptInput className="max-w-3xl" globalDrop multiple onSubmit={handleSubmit}>
+      <PromptInput
+        className="w-full"
+        globalDrop
+        inputGroupClassName="rounded-2xl has-[textarea]:rounded-2xl has-data-[align=block-end]:rounded-2xl has-data-[align=block-start]:rounded-2xl border-white/55 bg-background/80 shadow-[0_1px_0_rgba(255,255,255,0.72)_inset,0_14px_36px_-24px_rgba(15,23,42,0.65),0_1px_3px_rgba(15,23,42,0.2)] backdrop-blur-2xl transition-[background-color,border-color,box-shadow] duration-200 motion-reduce:transition-none has-[[data-slot=input-group-control]:focus-visible]:border-primary/60 has-[[data-slot=input-group-control]:focus-visible]:ring-primary/25 dark:border-white/12 dark:bg-background/55"
+        multiple
+        onSubmit={handleSubmit}
+      >
         <PromptInputAttachmentsDisplay />
         <PromptInputBody>
           <PromptInputTextarea placeholder="Send a message..." />
@@ -208,12 +213,12 @@ export function ChatPromptInput() {
         <PromptInputFooter>
           <PromptInputTools>
             <PromptInputActionMenu>
-              <PromptInputActionMenuTrigger />
+              <PromptInputActionMenuTrigger className="transition-colors duration-200 motion-reduce:transition-none" />
               <PromptInputActionMenuContent>
                 <PromptInputActionAddAttachments />
               </PromptInputActionMenuContent>
             </PromptInputActionMenu>
-            <PromptInputButton>
+            <PromptInputButton className="transition-colors duration-200 motion-reduce:transition-none">
               <SearchIcon size={16} />
               <span>Search</span>
             </PromptInputButton>
@@ -222,7 +227,7 @@ export function ChatPromptInput() {
               open={modelSelectorOpen}
             >
               <ModelSelectorTrigger asChild>
-                <PromptInputButton>
+                <PromptInputButton className="transition-colors duration-200 motion-reduce:transition-none">
                   {selectedModelData?.chefSlug && (
                     <ModelSelectorLogo provider={selectedModelData.chefSlug} />
                   )}
@@ -253,7 +258,10 @@ export function ChatPromptInput() {
               </ModelSelectorContent>
             </ModelSelector>
           </PromptInputTools>
-          <PromptInputSubmit status={status} />
+          <PromptInputSubmit
+            className="transition-colors duration-200 motion-reduce:transition-none"
+            status={status}
+          />
         </PromptInputFooter>
       </PromptInput>
     </PromptInputProvider>

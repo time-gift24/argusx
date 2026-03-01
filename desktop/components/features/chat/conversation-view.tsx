@@ -17,8 +17,8 @@ export function ConversationView({ sessionId }: ConversationViewProps) {
   const messages = useChatStore((state) => state.messages[sessionId] ?? []);
 
   return (
-    <Conversation className="h-full">
-      <ConversationContent className="mx-auto max-w-3xl px-4">
+    <Conversation className="h-full min-h-0">
+      <ConversationContent className="mx-auto max-w-3xl px-4 pb-8 pt-4">
         {messages.length === 0 ? (
           <ConversationEmptyState
             description="Send a message to start the conversation"
