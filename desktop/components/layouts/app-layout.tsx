@@ -1,6 +1,5 @@
 "use client";
 
-import { usePathname } from "next/navigation";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   SidebarProvider,
@@ -13,14 +12,6 @@ import { SidebarTrigger } from "./sidebar/sidebar-trigger";
 import { ThemeToggle } from "./theme-toggle";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const isChatPage = pathname === "/chat";
-
-  // Chat page has its own layout
-  if (isChatPage) {
-    return <>{children}</>;
-  }
-
   return (
     <TooltipProvider>
       <SidebarProvider defaultLeftOpen={true} defaultRightOpen={false}>
