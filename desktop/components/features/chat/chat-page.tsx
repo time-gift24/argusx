@@ -3,8 +3,7 @@
 import { useEffect } from "react";
 import { useChatStore } from "@/lib/stores/chat-store";
 import { ConversationView } from "./conversation-view";
-import { SessionBadgeList } from "./session-badge-list";
-import { ChatPromptInput } from "./chat-prompt-input";
+import { ChatSessionBar } from "./chat-session-bar";
 
 export function ChatPage() {
   const { sessions, currentSessionId, createSession } = useChatStore();
@@ -31,18 +30,8 @@ export function ChatPage() {
         )}
       </div>
 
-      {/* 悬浮底部区域 - sticky 相对于页面内容 */}
-      <div
-        className="sticky bottom-0 z-50 bg-background/80 backdrop-blur-xl"
-      >
-        {/* Badge 列表 */}
-        <SessionBadgeList />
-
-        {/* 输入框 */}
-        <div className="mx-auto max-w-3xl p-4 pt-0">
-          <ChatPromptInput />
-        </div>
-      </div>
+      {/* Floating bottom area - session bar with badges and input */}
+      <ChatSessionBar />
     </div>
   );
 }
