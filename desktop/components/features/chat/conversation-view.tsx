@@ -2,6 +2,7 @@
 
 import { useChatStore } from "@/lib/stores/chat-store";
 import type { ChatMessage, AgentTurnVM } from "@/lib/stores/chat-store";
+import { cn } from "@/lib/utils";
 import {
   Conversation,
   ConversationContent,
@@ -16,10 +17,14 @@ interface ConversationViewProps {
   sessionId: string;
 }
 
+const EMPTY_MESSAGES: ChatMessage[] = [];
+const EMPTY_TURNS: AgentTurnVM[] = [];
+
 export function ConversationView({ sessionId }: ConversationViewProps) {
-  // Extract messages and turns with proper memoization to avoid infinite loop
-  const messages = useChatStore((state) => state.messages[sessionId] ?? []);
-  const turns = useChatStore((state) => state.turns[sessionId] ?? []);
+  const messages = useChatStore(
+    (state) => state.messages[sessionId] ?? EMPTY_MESSAGES
+  );
+  const turns = useChatStore((state) => state.turns[sessionId] ?? EMPTY_TURNS);
 
   const timeline: Array<
     | { kind: "message"; at: number; message: ChatMessage }
@@ -45,7 +50,7 @@ export function ConversationView({ sessionId }: ConversationViewProps) {
 
   return (
     <Conversation className="h-full min-h-0">
-      <ConversationContent className="mx-auto max-w-3xl px-4 pb-8 pt-4">
+      <ConversationContent className="mx-auto flex max-w-3xl gap-4 px-4 pb-8 pt-4">
         {timeline.length === 0 ? (
           <ConversationEmptyState
             description="Send a message to start the conversation"
@@ -56,13 +61,26 @@ export function ConversationView({ sessionId }: ConversationViewProps) {
           timeline.map((item) =>
             item.kind === "message" ? (
               <Message
+                className={
+                  item.message.role === "user" ? "ml-0 justify-start" : undefined
+                }
                 from={item.message.role as "user" | "assistant" | "system"}
                 key={item.message.id}
               >
                 {item.message.role === "assistant" ? (
-                  <MessageResponse>{item.message.content}</MessageResponse>
+                  <MessageResponse className="text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
+                    {item.message.content}
+                  </MessageResponse>
                 ) : (
-                  <div className="whitespace-pre-wrap">{item.message.content}</div>
+                  <div
+                    className={cn(
+                      "whitespace-pre-wrap text-[13px] leading-5",
+                      item.message.role === "user" &&
+                        "w-fit max-w-full rounded-lg bg-secondary/70 px-3 py-2 text-foreground"
+                    )}
+                  >
+                    {item.message.content}
+                  </div>
                 )}
               </Message>
             ) : (

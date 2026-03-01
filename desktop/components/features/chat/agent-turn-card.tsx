@@ -104,7 +104,7 @@ export function AgentTurnCard({ sessionId, turn }: AgentTurnCardProps) {
               />
             </Button>
             {turn.reasoning.isExpanded && (
-              <div className="max-h-72 overflow-auto border-border/60 border-t px-4 py-3 text-sm leading-relaxed">
+              <div className="max-h-72 overflow-auto border-border/60 border-t px-4 py-2.5 text-[12px] leading-5">
                 <p className="whitespace-pre-wrap">{turn.reasoning.text}</p>
               </div>
             )}
@@ -183,7 +183,9 @@ export function AgentTurnCard({ sessionId, turn }: AgentTurnCardProps) {
         {hasTerminal && <Terminal isStreaming={turn.terminal.isStreaming} output={terminalOutput} />}
 
         {turn.assistantText.trim().length > 0 && (
-          <MessageResponse>{turn.assistantText}</MessageResponse>
+          <MessageResponse className="text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
+            {turn.assistantText}
+          </MessageResponse>
         )}
 
         {turn.status === "failed" || turn.status === "cancelled" ? (
