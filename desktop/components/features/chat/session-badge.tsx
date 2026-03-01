@@ -75,14 +75,18 @@ export function SessionBadge({
   const badgeColors = getBadgeColors();
 
   return (
-    <Badge
-      className={cn(
-        "relative cursor-pointer rounded-lg px-3 py-1.5 transition-all",
-        "hover:opacity-90",
-        isActive && "ring-2 ring-primary animate-pulse",
-        badgeColors.bg,
-        badgeColors.text
+    <div className="relative">
+      {/* Pulse ring for active session */}
+      {isActive && (
+        <span className="absolute inset-0 rounded-lg ring-2 ring-primary animate-pulse" />
       )}
+      <Badge
+        className={cn(
+          "relative cursor-pointer rounded-lg px-3 py-1.5 transition-all",
+          "hover:opacity-90",
+          badgeColors.bg,
+          badgeColors.text
+        )}
       onClick={onClick}
       {...(onContextMenu && { onContextMenu })}
       variant="outline"
@@ -103,6 +107,7 @@ export function SessionBadge({
       <span className="max-w-24 truncate text-xs font-medium">
         {session.title}
       </span>
-    </Badge>
+      </Badge>
+    </div>
   );
 }
