@@ -4,6 +4,7 @@ use crate::retry::run_with_retry;
 use crate::sse::{parse_sse_stream_result, SseEvent};
 use bigmodel_api::{ChatRequest, ChatResponse, ChatResponseChunk};
 use futures::{Stream, StreamExt};
+use std::collections::HashMap;
 use std::pin::Pin;
 use tokio::time::timeout;
 
@@ -14,6 +15,8 @@ pub struct BigModelConfig {
     pub base_url: String,
     /// API key for authentication.
     pub api_key: String,
+    /// Additional custom headers.
+    pub headers: HashMap<String, String>,
 }
 
 impl Default for BigModelConfig {
@@ -21,6 +24,7 @@ impl Default for BigModelConfig {
         Self {
             base_url: "https://open.bigmodel.cn/api/paas/v4".to_string(),
             api_key: String::new(),
+            headers: HashMap::new(),
         }
     }
 }
@@ -75,12 +79,14 @@ impl BigModelHttpClient {
         let http = self.http.clone();
         let url = format!("{}/chat/completions", self.config.base_url);
         let api_key = self.config.api_key.clone();
+        let headers = self.config.headers.clone();
         let retry = self.retry.clone();
 
         run_with_retry(retry, || {
             let http = http.clone();
             let url = url.clone();
             let api_key = api_key.clone();
+            let headers = headers.clone();
             let request = request.clone();
 
             Box::pin(async move {
@@ -88,6 +94,7 @@ impl BigModelHttpClient {
                     .post(&url)
                     .header("Authorization", format!("Bearer {}", api_key))
                     .header("Content-Type", "application/json")
+                    .headers(to_header_map(&headers))
                     .json(&request)
                     .send()
                     .await?;
@@ -114,6 +121,7 @@ impl BigModelHttpClient {
     ) -> Pin<Box<dyn Stream<Item = Result<ChatResponseChunk, LlmError>> + Send>> {
         let url = format!("{}/chat/completions", self.config.base_url);
         let api_key = self.config.api_key.clone();
+        let headers = self.config.headers.clone();
         let http = self.http_stream.clone(); // Use streaming client without request timeout
         let retry = self.retry.clone();
         let idle_timeout = self.timeout.stream_idle_timeout;
@@ -124,6 +132,7 @@ impl BigModelHttpClient {
                 let http = http.clone();
                 let url = url.clone();
                 let api_key = api_key.clone();
+                let headers = headers.clone();
                 let request = request.clone();
 
                 Box::pin(async move {
@@ -132,6 +141,7 @@ impl BigModelHttpClient {
                         .header("Authorization", format!("Bearer {}", api_key))
                         .header("Content-Type", "application/json")
                         .header("Accept", "text/event-stream")
+                        .headers(to_header_map(&headers))
                         .json(&request)
                         .send()
                         .await?;
@@ -172,6 +182,23 @@ impl BigModelHttpClient {
             }
         })
     }
+}
+
+fn to_header_map(headers: &HashMap<String, String>) -> reqwest::header::HeaderMap {
+    let mut map = reqwest::header::HeaderMap::new();
+    for (key, value) in headers {
+        if key.trim().is_empty() {
+            continue;
+        }
+        let Ok(name) = reqwest::header::HeaderName::from_bytes(key.trim().as_bytes()) else {
+            continue;
+        };
+        let Ok(val) = reqwest::header::HeaderValue::from_str(value) else {
+            continue;
+        };
+        map.insert(name, val);
+    }
+    map
 }
 
 fn parse_chunk(payload: &str) -> Result<ChatResponseChunk, LlmError> {

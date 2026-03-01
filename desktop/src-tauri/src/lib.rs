@@ -11,11 +11,17 @@ use agent_tool::AgentToolRuntime;
 use agent_turn::adapters::bigmodel::BigModelAdapterConfig;
 use agent_turn::BigModelModelAdapter;
 use futures::StreamExt;
-use llm_client::LlmClient;
+use llm_client::{LlmChunkStream, LlmClient, LlmError, LlmRequest, LlmResponse, ProviderAdapter};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, RwLock};
+
+mod llm_runtime_config;
+use llm_runtime_config::{
+    list_available_models as derive_available_models, normalize_runtime_config,
+    validate_turn_selection, AvailableModel, LlmRuntimeConfig, ProviderId,
+};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ChatSession {
@@ -41,7 +47,8 @@ pub struct ChatMessage {
 struct StartAgentTurnPayload {
     session_id: String,
     input: String,
-    model: Option<String>,
+    provider: ProviderId,
+    model: String,
     attachments: Option<Vec<serde_json::Value>>,
 }
 
@@ -72,7 +79,32 @@ type RuntimeHandle = SessionRuntime<BigModelModelAdapter, AgentToolRuntime>;
 
 struct AppState {
     runtime: Arc<RuntimeHandle>,
+    model_adapter: Arc<BigModelModelAdapter>,
+    llm_runtime_config: Arc<RwLock<LlmRuntimeConfig>>,
     frontend_to_backend_session: Arc<RwLock<HashMap<String, String>>>,
+}
+
+struct UnconfiguredAdapter;
+
+#[async_trait::async_trait]
+impl ProviderAdapter for UnconfiguredAdapter {
+    fn id(&self) -> &str {
+        "unconfigured"
+    }
+
+    async fn chat(&self, _req: LlmRequest) -> Result<LlmResponse, LlmError> {
+        Err(LlmError::InvalidRequest {
+            message: "No provider is configured".to_string(),
+        })
+    }
+
+    fn chat_stream(&self, _req: LlmRequest) -> LlmChunkStream {
+        Box::pin(async_stream::stream! {
+            yield Err(LlmError::InvalidRequest {
+                message: "No provider is configured".to_string(),
+            });
+        })
+    }
 }
 
 #[tauri::command]
@@ -104,18 +136,47 @@ async fn get_chat_messages(_session_id: String) -> Result<Vec<ChatMessage>, Stri
 }
 
 #[tauri::command]
+async fn get_llm_runtime_config(state: State<'_, AppState>) -> Result<LlmRuntimeConfig, String> {
+    Ok(state.llm_runtime_config.read().await.clone())
+}
+
+#[tauri::command]
+async fn set_llm_runtime_config(
+    state: State<'_, AppState>,
+    payload: LlmRuntimeConfig,
+) -> Result<LlmRuntimeConfig, String> {
+    let normalized = normalize_runtime_config(payload);
+    let client = build_llm_client_from_runtime_config(&normalized)?;
+    state.model_adapter.set_client(Arc::new(client));
+    *state.llm_runtime_config.write().await = normalized.clone();
+    Ok(normalized)
+}
+
+#[tauri::command]
+async fn list_available_models(state: State<'_, AppState>) -> Result<Vec<AvailableModel>, String> {
+    let cfg = state.llm_runtime_config.read().await;
+    Ok(derive_available_models(&cfg))
+}
+
+#[tauri::command]
 async fn start_agent_turn(
     app: AppHandle,
     state: State<'_, AppState>,
     payload: StartAgentTurnPayload,
 ) -> Result<StartAgentTurnResponse, String> {
-    let _selected_model = payload.model.unwrap_or_else(|| "glm-5".to_string());
     let _attachments_count = payload.attachments.as_ref().map_or(0, Vec::len);
+
+    {
+        let cfg = state.llm_runtime_config.read().await;
+        validate_turn_selection(&cfg, &payload.provider, &payload.model)?;
+    }
 
     let backend_session_id = ensure_backend_session_id(&state, &payload.session_id).await?;
     let turn_id = new_id();
     let request = TurnRequest {
         meta: SessionMeta::new(backend_session_id, turn_id.clone()),
+        provider: payload.provider.as_adapter_id().to_string(),
+        model: payload.model.clone(),
         initial_input: InputEnvelope::user_text(payload.input),
         transcript: Vec::new(),
     };
@@ -236,11 +297,8 @@ async fn ensure_backend_session_id(
 }
 
 fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
-    let llm_client = LlmClient::builder()
-        .with_default_bigmodel_from_env()
-        .map_err(|err| format!("failed to load BigModel env config: {err}"))?
-        .build()
-        .map_err(|err| format!("failed to build LLM client: {err}"))?;
+    let runtime_cfg = normalize_runtime_config(LlmRuntimeConfig::default());
+    let llm_client = build_llm_client_from_runtime_config(&runtime_cfg)?;
 
     let mut model_config = BigModelAdapterConfig::default();
     if let Ok(model) = std::env::var("BIGMODEL_MODEL") {
@@ -250,9 +308,11 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
     }
 
     let tools = tauri::async_runtime::block_on(AgentToolRuntime::default_with_builtins());
+    let model_adapter =
+        Arc::new(BigModelModelAdapter::new(Arc::new(llm_client)).with_config(model_config));
     let runtime = SessionRuntime::with_config(
         base_path,
-        Arc::new(BigModelModelAdapter::new(Arc::new(llm_client)).with_config(model_config)),
+        Arc::clone(&model_adapter),
         Arc::new(tools),
         SessionConfig {
             max_parallel_tools: 4,
@@ -261,8 +321,70 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
 
     Ok(AppState {
         runtime: Arc::new(runtime),
+        model_adapter,
+        llm_runtime_config: Arc::new(RwLock::new(runtime_cfg)),
         frontend_to_backend_session: Arc::new(RwLock::new(HashMap::new())),
     })
+}
+
+fn build_llm_client_from_runtime_config(cfg: &LlmRuntimeConfig) -> Result<LlmClient, String> {
+    let mut builder = LlmClient::builder();
+    let mut default_adapter = cfg
+        .default_provider
+        .as_ref()
+        .map(ProviderId::as_adapter_id)
+        .map(ToString::to_string);
+
+    if cfg.providers.bigmodel.is_available() {
+        builder = builder
+            .with_bigmodel_adapter(
+                cfg.providers.bigmodel.base_url.clone(),
+                cfg.providers.bigmodel.api_key.clone(),
+                cfg.providers.bigmodel.header_map(),
+            )
+            .map_err(|err| format!("failed to configure bigmodel adapter: {err}"))?;
+        if default_adapter.is_none() {
+            default_adapter = Some("bigmodel".to_string());
+        }
+    }
+
+    if cfg.providers.openai.is_available() {
+        builder = builder
+            .with_openai_adapter(
+                cfg.providers.openai.base_url.clone(),
+                cfg.providers.openai.api_key.clone(),
+                cfg.providers.openai.header_map(),
+            )
+            .map_err(|err| format!("failed to configure openai adapter: {err}"))?;
+        if default_adapter.is_none() {
+            default_adapter = Some("openai".to_string());
+        }
+    }
+
+    if cfg.providers.anthropic.is_available() {
+        builder = builder
+            .with_anthropic_adapter(
+                cfg.providers.anthropic.base_url.clone(),
+                cfg.providers.anthropic.api_key.clone(),
+                cfg.providers.anthropic.header_map(),
+            )
+            .map_err(|err| format!("failed to configure anthropic adapter: {err}"))?;
+        if default_adapter.is_none() {
+            default_adapter = Some("anthropic".to_string());
+        }
+    }
+
+    if let Some(adapter) = default_adapter {
+        builder = builder.default_adapter(adapter);
+    } else {
+        builder = builder
+            .register_adapter(Arc::new(UnconfiguredAdapter))
+            .default_adapter("unconfigured");
+    }
+
+    builder
+        .build()
+        .map_err(|err| format!("failed to build LLM client: {err}"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -285,6 +407,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             list_chat_sessions,
             delete_chat_session,
             get_chat_messages,
+            get_llm_runtime_config,
+            set_llm_runtime_config,
+            list_available_models,
             start_agent_turn,
             cancel_agent_turn,
         ])

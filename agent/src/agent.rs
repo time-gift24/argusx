@@ -85,6 +85,8 @@ where
         let turn_id = new_id();
         let request = TurnRequest {
             meta: SessionMeta::new(session_id.to_string(), turn_id.clone()),
+            provider: "bigmodel".to_string(),
+            model: "glm-5".to_string(),
             initial_input: InputEnvelope::user_text(text),
             transcript: Vec::new(),
         };
@@ -185,6 +187,8 @@ where
         let turn_id = new_id();
         let request = TurnRequest {
             meta: SessionMeta::new(session_id.to_string(), turn_id),
+            provider: "bigmodel".to_string(),
+            model: "glm-5".to_string(),
             initial_input: InputEnvelope::user_text(text),
             transcript: Vec::new(),
         };

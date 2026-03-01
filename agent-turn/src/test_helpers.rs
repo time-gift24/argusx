@@ -129,6 +129,8 @@ pub fn make_event_id(n: u32) -> String {
 pub struct StateBuilder {
     session_id: String,
     turn_id: String,
+    provider: String,
+    model: String,
     lifecycle: Lifecycle,
     model_state: ModelState,
     epoch: u64,
@@ -154,6 +156,8 @@ impl StateBuilder {
         Self {
             session_id: session_id.into(),
             turn_id: turn_id.into(),
+            provider: "bigmodel".to_string(),
+            model: "glm-5".to_string(),
             lifecycle: Lifecycle::Active,
             model_state: ModelState::NotStarted,
             epoch: 0,
@@ -179,6 +183,8 @@ impl StateBuilder {
         Self {
             session_id: state.meta.session_id.clone(),
             turn_id: state.meta.turn_id.clone(),
+            provider: state.provider,
+            model: state.model,
             lifecycle: state.lifecycle,
             model_state: state.model_state,
             epoch: state.epoch,
@@ -202,6 +208,18 @@ impl StateBuilder {
     /// Sets the lifecycle state
     pub fn with_lifecycle(mut self, lifecycle: Lifecycle) -> Self {
         self.lifecycle = lifecycle;
+        self
+    }
+
+    /// Sets the provider
+    pub fn with_provider(mut self, provider: impl Into<String>) -> Self {
+        self.provider = provider.into();
+        self
+    }
+
+    /// Sets the model
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = model.into();
         self
     }
 
@@ -322,6 +340,8 @@ impl StateBuilder {
     pub fn build(self) -> TurnState {
         TurnState {
             meta: SessionMeta::new(self.session_id, self.turn_id),
+            provider: self.provider,
+            model: self.model,
             lifecycle: self.lifecycle,
             model_state: self.model_state,
             epoch: self.epoch,

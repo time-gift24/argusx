@@ -61,6 +61,8 @@ where
     async fn run_turn(&self, request: TurnRequest) -> Result<RuntimeStreams, AgentError> {
         let TurnRequest {
             meta,
+            provider,
+            model,
             initial_input,
             transcript,
         } = request;
@@ -77,7 +79,7 @@ where
         let (run_tx, run_rx) = mpsc::unbounded_channel();
         let (ui_tx, ui_rx) = mpsc::unbounded_channel();
 
-        let mut state = TurnState::new(meta.clone());
+        let mut state = TurnState::new(meta.clone(), provider, model);
         state.transcript = transcript;
         let journal = TranscriptJournal::default();
 

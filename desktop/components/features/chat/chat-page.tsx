@@ -4,12 +4,19 @@ import { useCallback, useEffect, useState } from "react";
 import { listenAgentStream } from "@/lib/api/chat";
 import { CHAT_SIDEBAR_MIN_WIDTH } from "@/lib/layout/chat-layout";
 import { useChatStore } from "@/lib/stores/chat-store";
+import { useLlmRuntimeConfigStore } from "@/lib/stores/llm-runtime-config-store";
+import { Button } from "@/components/ui/button";
+import { Settings2Icon } from "lucide-react";
 import { ConversationView } from "./conversation-view";
 import { ChatSessionBar } from "./chat-session-bar";
+import { ChatRuntimeConfigDialog } from "./chat-runtime-config-dialog";
 
 export function ChatPage() {
   const { sessions, currentSessionId, createSession } = useChatStore();
+  const bootstrapLlmConfig = useLlmRuntimeConfigStore((state) => state.bootstrap);
   const [composerHeight, setComposerHeight] = useState(180);
+  const [configDialogOpen, setConfigDialogOpen] = useState(false);
+  const [configDialogSeed, setConfigDialogSeed] = useState(0);
 
   // 如果没有会话，自动创建一个
   useEffect(() => {
@@ -17,6 +24,10 @@ export function ChatPage() {
       createSession();
     }
   }, [sessions.length, createSession]);
+
+  useEffect(() => {
+    void bootstrapLlmConfig();
+  }, [bootstrapLlmConfig]);
 
   useEffect(() => {
     let disposed = false;
@@ -48,12 +59,28 @@ export function ChatPage() {
   const handleHeightChange = useCallback((height: number) => {
     setComposerHeight((current) => (current === height ? current : height));
   }, []);
+  const handleOpenConfigDialog = useCallback(() => {
+    setConfigDialogSeed((value) => value + 1);
+    setConfigDialogOpen(true);
+  }, []);
 
   return (
     <div
       className="relative flex min-h-0 flex-1 flex-col"
       style={{ minWidth: `${CHAT_SIDEBAR_MIN_WIDTH}px` }}
     >
+      <div className="absolute right-3 top-3 z-50">
+        <Button
+          className="chat-config-trigger border-primary/40 bg-background/90 shadow-sm hover:bg-background"
+          onClick={handleOpenConfigDialog}
+          size="icon-sm"
+          type="button"
+          variant="outline"
+        >
+          <Settings2Icon className="size-4" />
+          <span className="sr-only">Open runtime config</span>
+        </Button>
+      </div>
       {/* 主内容区域 - 消息列表 */}
       <div
         className="relative flex-1 min-h-0 overflow-hidden"
@@ -69,6 +96,11 @@ export function ChatPage() {
       </div>
       {/* Floating bottom area - session bar with badges and input */}
       <ChatSessionBar onHeightChange={handleHeightChange} />
+      <ChatRuntimeConfigDialog
+        key={configDialogSeed}
+        onOpenChange={setConfigDialogOpen}
+        open={configDialogOpen}
+      />
     </div>
   );
 }
