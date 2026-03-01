@@ -162,11 +162,18 @@ export default function DashboardPage() {
               <p className="font-medium">Start a new chat</p>
               <p className="text-sm text-muted-foreground">Begin a conversation with an AI agent</p>
             </div>
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/chat">
-                Go <ArrowRight className="ml-1 h-4 w-4" />
-              </Link>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/chat">
+                  Chat <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/annotation">
+                  Annotation <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
           </div>
           <Separator />
           <div className="flex items-center gap-4">

@@ -21,6 +21,6 @@ export type AnnotationState = {
 export type AnnotationAction =
   | { type: "OPEN"; location: AnnotationLocation }
   | { type: "UPDATE_RULE"; id?: string; ruleCode: string | null }
-  | { type: "UPDATE_PAYLOAD"; id?: string; payload: Partial<AnnotationPayload> }
+  | { type: "UPDATE_PAYLOAD"; id?: string; payload: AnnotationPayload }
   | { type: "SUBMIT_SUCCESS"; id?: string }
   | { type: "MARK_ORPHANED"; id?: string };
