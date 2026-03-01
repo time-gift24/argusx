@@ -1,6 +1,7 @@
 "use client";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { usePathname } from "next/navigation";
 import {
   SidebarProvider,
   SidebarInset,
@@ -12,11 +13,18 @@ import { SidebarTrigger } from "./sidebar/sidebar-trigger";
 import { ThemeToggle } from "./theme-toggle";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isChatRoute = pathname === "/chat" || pathname.startsWith("/chat/");
+
   return (
     <TooltipProvider>
-      <SidebarProvider defaultLeftOpen={true} defaultRightOpen={false}>
+      <SidebarProvider
+        className="h-svh overflow-hidden"
+        defaultLeftOpen={true}
+        defaultRightOpen={false}
+      >
         <AppSidebar variant="floating" />
-        <SidebarInset>
+        <SidebarInset className="min-h-0">
           <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-4">
             <div className="flex items-center gap-2">
               <SidebarTrigger
@@ -27,17 +35,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
             <div className="flex items-center gap-2">
               <ThemeToggle />
-              <SidebarTrigger
-                className="-mr-1"
-                side="right"
-              />
+              {!isChatRoute ? (
+                <SidebarTrigger
+                  className="-mr-1"
+                  side="right"
+                />
+              ) : null}
             </div>
           </header>
-          <div className="flex flex-1 flex-col gap-4 p-4">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
             {children}
           </div>
         </SidebarInset>
-        <ChatSidebar variant="floating" side="right" />
+        {!isChatRoute ? <ChatSidebar variant="floating" side="right" /> : null}
       </SidebarProvider>
     </TooltipProvider>
   );

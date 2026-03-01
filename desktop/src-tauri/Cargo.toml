@@ -21,9 +21,20 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
+serde_json = { workspace = true }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { workspace = true }
+tokio-stream = "0.1"
+futures = { workspace = true }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+tempfile = { workspace = true }
 
 # Workspace dependencies
 common = { path = "../../common" }
+agent-core = { path = "../../agent-core" }
+agent-session = { path = "../../agent-session" }
+agent-tool = { path = "../../agent-tool" }
+agent-turn = { path = "../../agent-turn" }
+llm-client = { path = "../../llm-client" }

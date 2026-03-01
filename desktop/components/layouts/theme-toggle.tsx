@@ -7,7 +7,11 @@ import { useTheme } from "@/hooks";
 export function ThemeToggle() {
   const { theme, toggleTheme, mounted } = useTheme();
 
-  const ariaLabel = theme === "dark" ? "Switch to light" : "Switch to dark";
+  const ariaLabel = mounted
+    ? theme === "dark"
+      ? "Switch to light"
+      : "Switch to dark"
+    : "Toggle theme";
 
   return (
     <Button

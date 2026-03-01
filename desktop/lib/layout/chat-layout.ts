@@ -1,0 +1,1 @@
+export const CHAT_SIDEBAR_MIN_WIDTH = 360;

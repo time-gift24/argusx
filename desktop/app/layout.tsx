@@ -10,6 +10,12 @@ export const metadata: Metadata = {
 
 const themeInitScript = `
 (() => {
+  // Clear sidebar localStorage to prevent hydration mismatch
+  try {
+    localStorage.removeItem("sidebar-width-left");
+    localStorage.removeItem("sidebar-width-right");
+  } catch {}
+
   const storageKey = "argusx-theme";
   const root = document.documentElement;
 

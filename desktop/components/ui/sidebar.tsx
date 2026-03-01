@@ -6,6 +6,7 @@ import { Slot } from "radix-ui"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
+import { CHAT_SIDEBAR_MIN_WIDTH } from "@/lib/layout/chat-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
@@ -31,12 +32,30 @@ const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
 // Resizable sidebar constants
-const SIDEBAR_WIDTH_MIN = 180
+const SIDEBAR_WIDTH_MIN_LEFT = 180
+const SIDEBAR_WIDTH_MIN_RIGHT = CHAT_SIDEBAR_MIN_WIDTH
 const SIDEBAR_WIDTH_MAX = 480
+const SIDEBAR_WIDTH_MAX_RIGHT_RATIO = 0.4
 const SIDEBAR_WIDTH_DEFAULT_LEFT = 256
 const SIDEBAR_WIDTH_DEFAULT_RIGHT = 400
 const SIDEBAR_STORAGE_KEY_LEFT = "sidebar-width-left"
 const SIDEBAR_STORAGE_KEY_RIGHT = "sidebar-width-right"
+
+const getSidebarMaxWidth = (side: "left" | "right") => {
+  if (side === "left") {
+    return SIDEBAR_WIDTH_MAX
+  }
+
+  const viewportWidth =
+    typeof window !== "undefined" ? window.innerWidth : SIDEBAR_WIDTH_MAX
+  return Math.max(
+    SIDEBAR_WIDTH_MIN_RIGHT,
+    Math.floor(viewportWidth * SIDEBAR_WIDTH_MAX_RIGHT_RATIO)
+  )
+}
+
+const getSidebarMinWidth = (side: "left" | "right") =>
+  side === "left" ? SIDEBAR_WIDTH_MIN_LEFT : SIDEBAR_WIDTH_MIN_RIGHT
 
 type SidebarSetOpen = React.Dispatch<React.SetStateAction<boolean>>
 
@@ -189,7 +208,9 @@ function SidebarProvider({
     if (stored) {
       const parsed = parseInt(stored, 10)
       if (!isNaN(parsed)) {
-        return Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, parsed))
+        const maxLeft = SIDEBAR_WIDTH_MAX
+        const minLeft = Math.min(SIDEBAR_WIDTH_MIN_LEFT, maxLeft)
+        return Math.max(minLeft, Math.min(maxLeft, parsed))
       }
     }
     return defaultLeftWidth
@@ -202,8 +223,9 @@ function SidebarProvider({
     if (stored) {
       const parsed = parseInt(stored, 10)
       if (!isNaN(parsed)) {
-        const maxRight = Math.floor(window.innerWidth / 2)
-        return Math.max(SIDEBAR_WIDTH_MIN, Math.min(maxRight, parsed))
+        const maxRight = getSidebarMaxWidth("right")
+        const minRight = getSidebarMinWidth("right")
+        return Math.max(minRight, Math.min(maxRight, parsed))
       }
     }
     return defaultRightWidth
@@ -211,17 +233,39 @@ function SidebarProvider({
 
   // Constrained setWidth functions
   const setLeftWidth = React.useCallback((width: number) => {
-    const constrained = Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, width))
+    const maxLeft = SIDEBAR_WIDTH_MAX
+    const minLeft = Math.min(SIDEBAR_WIDTH_MIN_LEFT, maxLeft)
+    const constrained = Math.max(minLeft, Math.min(maxLeft, width))
     setLeftWidthState(constrained)
     localStorage.setItem(SIDEBAR_STORAGE_KEY_LEFT, String(constrained))
   }, [])
 
   const setRightWidth = React.useCallback((width: number) => {
-    const maxRight = typeof window !== "undefined" ? Math.floor(window.innerWidth / 2) : SIDEBAR_WIDTH_MAX
-    const constrained = Math.max(SIDEBAR_WIDTH_MIN, Math.min(maxRight, width))
+    const maxRight = getSidebarMaxWidth("right")
+    const minRight = getSidebarMinWidth("right")
+    const constrained = Math.max(minRight, Math.min(maxRight, width))
     setRightWidthState(constrained)
     localStorage.setItem(SIDEBAR_STORAGE_KEY_RIGHT, String(constrained))
   }, [])
+
+  React.useEffect(() => {
+    const minLeft = getSidebarMinWidth("left")
+    if (leftWidth < minLeft) {
+      setLeftWidth(minLeft)
+    }
+  }, [leftWidth, setLeftWidth])
+
+  React.useEffect(() => {
+    const minRight = getSidebarMinWidth("right")
+    const maxRight = getSidebarMaxWidth("right")
+    if (rightWidth < minRight) {
+      setRightWidth(minRight)
+      return
+    }
+    if (rightWidth > maxRight) {
+      setRightWidth(maxRight)
+    }
+  }, [rightWidth, setRightWidth])
 
   // Helper to toggle the left sidebar.
   const toggleLeft = React.useCallback(() => {
@@ -534,9 +578,10 @@ function SidebarRail({
         side === "left"
           ? e.clientX - startXRef.current
           : startXRef.current - e.clientX
-      const maxWidth = side === "left" ? SIDEBAR_WIDTH_MAX : Math.floor(window.innerWidth / 2)
+      const maxWidth = getSidebarMaxWidth(side)
+      const minWidth = getSidebarMinWidth(side)
       const newWidth = Math.max(
-        SIDEBAR_WIDTH_MIN,
+        minWidth,
         Math.min(maxWidth, startWidthRef.current + delta)
       )
       setWidth(newWidth)

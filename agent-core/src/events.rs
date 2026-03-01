@@ -24,6 +24,14 @@ pub enum RunStreamEvent {
     TurnStart {
         turn_id: Id,
     },
+    ReasoningStarted {
+        turn_id: Id,
+    },
+    ReasoningCompleted {
+        turn_id: Id,
+        truncated: bool,
+        char_count: u32,
+    },
     InputInjected {
         turn_id: Id,
         input_id: Id,
@@ -33,10 +41,36 @@ pub enum RunStreamEvent {
         call_id: Id,
         tool_name: String,
     },
+    ToolQueued {
+        turn_id: Id,
+        call_id: Id,
+        tool_name: String,
+    },
+    ToolDequeued {
+        turn_id: Id,
+        call_id: Id,
+        tool_name: String,
+    },
     ToolExecutionStart {
         turn_id: Id,
         call_id: Id,
         tool_name: String,
+    },
+    ToolStdoutDelta {
+        turn_id: Id,
+        call_id: Id,
+        delta: String,
+    },
+    ToolStderrDelta {
+        turn_id: Id,
+        call_id: Id,
+        delta: String,
+    },
+    ToolExit {
+        turn_id: Id,
+        call_id: Id,
+        exit_code: Option<i32>,
+        duration_ms: u64,
     },
     ToolExecutionDone {
         turn_id: Id,
@@ -97,11 +131,46 @@ pub enum UiThreadEvent {
         turn_id: Id,
         call_id: Id,
         tool_name: String,
+        arguments: serde_json::Value,
+    },
+    ReasoningStarted {
+        turn_id: Id,
+    },
+    ReasoningCompleted {
+        turn_id: Id,
+        truncated: bool,
+        char_count: u32,
+    },
+    ToolQueued {
+        turn_id: Id,
+        call_id: Id,
+        tool_name: String,
+    },
+    ToolDequeued {
+        turn_id: Id,
+        call_id: Id,
+        tool_name: String,
     },
     ToolCallProgress {
         turn_id: Id,
         call_id: Id,
         status: ToolCallStatus,
+    },
+    ToolStdoutDelta {
+        turn_id: Id,
+        call_id: Id,
+        delta: String,
+    },
+    ToolStderrDelta {
+        turn_id: Id,
+        call_id: Id,
+        delta: String,
+    },
+    ToolExit {
+        turn_id: Id,
+        call_id: Id,
+        exit_code: Option<i32>,
+        duration_ms: u64,
     },
     ToolCallCompleted {
         turn_id: Id,

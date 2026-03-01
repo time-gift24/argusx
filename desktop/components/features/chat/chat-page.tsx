@@ -1,80 +1,80 @@
 "use client";
 
-import { useEffect } from "react";
-import { listen } from "@tauri-apps/api/event";
-import { MessageList } from "./message-list";
-import { ChatInput } from "./chat-input";
-import { SessionSwitcher } from "./session-switcher";
-import { StatusBar } from "./status-bar";
+import { useCallback, useEffect, useState } from "react";
+import { listenAgentStream } from "@/lib/api/chat";
+import { CHAT_SIDEBAR_MIN_WIDTH } from "@/lib/layout/chat-layout";
 import { useChatStore } from "@/lib/stores/chat-store";
+import { ConversationView } from "./conversation-view";
+import { ChatSessionBar } from "./chat-session-bar";
 
 export function ChatPage() {
-  const {
-    updateAssistantMessage,
-    setAgentStatus,
-    setReasoningText,
-    addToolCall,
-    updateToolCall,
-    loadSessions,
-    createSession
-  } = useChatStore();
+  const { sessions, currentSessionId, createSession } = useChatStore();
+  const [composerHeight, setComposerHeight] = useState(180);
+
+  // 如果没有会话，自动创建一个
+  useEffect(() => {
+    if (sessions.length === 0) {
+      createSession();
+    }
+  }, [sessions.length, createSession]);
 
   useEffect(() => {
-    // 初始化：加载 sessions，如果没有则创建
-    const init = async () => {
-      await loadSessions();
-      const { sessions } = useChatStore.getState();
-      if (sessions.length === 0) {
-        await createSession("New Chat");
-      }
-    };
-    init();
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
 
-    // 监听流式事件
-    const unlisten = listen<{
-      event_type: string;
-      data: Record<string, string>;
-    }>("chat-stream-event", (event) => {
-      const { event_type, data } = event.payload;
-      switch (event_type) {
-        case "message_delta":
-          updateAssistantMessage(data.content || "");
-          break;
-        case "reasoning":
-          setReasoningText(data.content || "");
-          break;
-        case "tool_start":
-          addToolCall({
-            callId: data.call_id,
-            toolName: data.tool_name,
-            status: "running"
-          });
-          break;
-        case "tool_end":
-          updateToolCall(data.call_id, { status: "done", output: data.output });
-          break;
-        case "turn_done":
-          setAgentStatus("idle");
-          setReasoningText("");
-          break;
-        case "error":
-          setAgentStatus("error");
-          break;
-      }
-    });
+    void listenAgentStream((envelope) => {
+      useChatStore.getState().applyAgentStreamEnvelope(envelope);
+    })
+      .then((cleanup) => {
+        if (disposed) {
+          cleanup();
+          return;
+        }
+        unlisten = cleanup;
+      })
+      .catch((error) => {
+        console.error("Failed to listen agent stream", error);
+      });
 
     return () => {
-      unlisten.then((fn) => fn());
+      disposed = true;
+      if (unlisten) {
+        unlisten();
+      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const currentSession = sessions.find((s) => s.id === currentSessionId);
+  const handleHeightChange = useCallback((height: number) => {
+    setComposerHeight((current) => (current === height ? current : height));
   }, []);
 
   return (
-    <div className="flex flex-col h-screen">
-      <MessageList />
-      <StatusBar />
-      <SessionSwitcher />
-      <ChatInput />
+    <div
+      className="relative flex min-h-0 flex-1 flex-col"
+      style={{ minWidth: `${CHAT_SIDEBAR_MIN_WIDTH}px` }}
+    >
+      {/* 主内容区域 - 消息列表 */}
+      <div
+        className="relative flex-1 min-h-0 overflow-hidden"
+        style={{ paddingBottom: `${composerHeight + 24}px` }}
+      >
+        {currentSession ? (
+          <ConversationView sessionId={currentSession.id} />
+        ) : (
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            Select or create a chat session
+          </div>
+        )}
+      </div>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-4 z-30 h-24 rounded-t-3xl bg-gradient-to-t from-background via-background/85 to-transparent"
+        style={{ bottom: `${composerHeight}px` }}
+      />
+
+      {/* Floating bottom area - session bar with badges and input */}
+      <ChatSessionBar onHeightChange={handleHeightChange} />
     </div>
   );
 }
