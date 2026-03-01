@@ -139,3 +139,14 @@
     display: none;
   }
 }
+
+@layer components {
+  [data-streamdown="code-block"] {
+    gap: 0;
+  }
+
+  [data-streamdown="code-block"] > [data-streamdown="code-block-header"] + div {
+    top: 0 !important;
+    margin-top: -2rem !important;
+  }
+}

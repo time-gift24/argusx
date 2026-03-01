@@ -39,7 +39,8 @@ import {
 import { startAgentTurn } from "@/lib/api/chat";
 import { useChatStore } from "@/lib/stores/chat-store";
 import { CheckIcon, SearchIcon } from "lucide-react";
-import { memo, useCallback, useMemo, useState } from "react";
+import type { FocusEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 
 const models = [
   {
@@ -176,14 +177,46 @@ export function ChatPromptInput() {
   const status: "submitted" | "streaming" | "ready" | "error" =
     submitStatus === "error"
       ? "error"
-      : currentSession?.status === "wait-input"
+      : currentSession?.status === "wait-input" ||
+          currentSession?.status === "await-input"
         ? "ready"
         : "streaming";
+  const [isPromptFocused, setIsPromptFocused] = useState(false);
 
   const handleModelSelect = useCallback((id: string) => {
     setModel(id);
     setModelSelectorOpen(false);
   }, []);
+
+  const handlePromptFocusCapture = useCallback(() => {
+    setIsPromptFocused(true);
+  }, []);
+
+  const handlePromptBlurCapture = useCallback(
+    (event: FocusEvent<HTMLFormElement>) => {
+      const nextFocusTarget = event.relatedTarget as Node | null;
+      if (!event.currentTarget.contains(nextFocusTarget)) {
+        setIsPromptFocused(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (
+      !isPromptFocused ||
+      !currentSessionId ||
+      currentSession?.status !== "await-input"
+    ) {
+      return;
+    }
+    updateSessionStatus(currentSessionId, "wait-input");
+  }, [
+    isPromptFocused,
+    currentSessionId,
+    currentSession?.status,
+    updateSessionStatus,
+  ]);
 
   const handleSubmit = useCallback(
     async (message: PromptInputMessage) => {
@@ -230,8 +263,10 @@ export function ChatPromptInput() {
       <PromptInput
         className="w-full"
         globalDrop
-        inputGroupClassName="rounded-2xl has-[textarea]:rounded-2xl has-data-[align=block-end]:rounded-2xl has-data-[align=block-start]:rounded-2xl border-white/55 bg-background/80 shadow-[0_1px_0_rgba(255,255,255,0.72)_inset,0_14px_36px_-24px_rgba(15,23,42,0.65),0_1px_3px_rgba(15,23,42,0.2)] backdrop-blur-2xl transition-[background-color,border-color,box-shadow] duration-200 motion-reduce:transition-none has-[[data-slot=input-group-control]:focus-visible]:border-primary/60 has-[[data-slot=input-group-control]:focus-visible]:ring-primary/25 dark:border-white/12 dark:bg-background/55"
+        inputGroupClassName="rounded-2xl has-[textarea]:rounded-2xl has-data-[align=block-end]:rounded-2xl has-data-[align=block-start]:rounded-2xl border-white/55 bg-background/80 shadow-[0_1px_0_rgba(255,255,255,0.72)_inset,0_14px_36px_-24px_rgba(15,23,42,0.65),0_1px_3px_rgba(15,23,42,0.2)] backdrop-blur-2xl transition-[background-color,border-color,box-shadow] duration-200 motion-reduce:transition-none has-[[data-slot=input-group-control]:focus-visible]:border-primary/60 has-[[data-slot=input-group-control]:focus-visible]:ring-primary/25 dark:border-white/12 dark:bg-background/55 dark:shadow-[0_16px_36px_-24px_rgba(2,6,23,0.9),0_1px_2px_rgba(2,6,23,0.55)]"
         multiple
+        onBlurCapture={handlePromptBlurCapture}
+        onFocusCapture={handlePromptFocusCapture}
         onSubmit={handleSubmit}
       >
         <PromptInputAttachmentsDisplay />

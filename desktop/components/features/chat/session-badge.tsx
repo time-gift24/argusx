@@ -20,6 +20,7 @@ interface SessionBadgeProps {
 /** Status color palette based on session status */
 const statusColors: Record<ChatStatus, { bg: string; text: string; dot: string }> = {
   "wait-input": { bg: "bg-muted", text: "text-muted-foreground", dot: "bg-gray-400" },
+  "await-input": { bg: "bg-orange-500/20", text: "text-orange-600 dark:text-orange-400", dot: "bg-orange-500" },
   thinking: { bg: "bg-blue-500/20", text: "text-blue-600 dark:text-blue-400", dot: "bg-blue-500" },
   "tool-call": { bg: "bg-amber-500/20", text: "text-amber-600 dark:text-amber-400", dot: "bg-amber-500" },
   outputing: { bg: "bg-emerald-500/20", text: "text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
@@ -30,6 +31,7 @@ const statusConfig: Record<
   { icon: React.ReactNode; label: string }
 > = {
   "wait-input": { icon: <MessageSquareIcon className="size-3" />, label: "Ready" },
+  "await-input": { icon: <MessageSquareIcon className="size-3" />, label: "Your Turn" },
   thinking: { icon: <Loader2Icon className="size-3 animate-spin" />, label: "Thinking" },
   "tool-call": { icon: <WrenchIcon className="size-3" />, label: "Tool" },
   outputing: { icon: <TypeIcon className="size-3" />, label: "Writing" },

@@ -4,7 +4,12 @@ import type { ToolState } from "@/types";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type ChatStatus = "wait-input" | "thinking" | "tool-call" | "outputing";
+export type ChatStatus =
+  | "wait-input"
+  | "await-input"
+  | "thinking"
+  | "tool-call"
+  | "outputing";
 
 export interface ChatSession {
   id: string;
@@ -887,7 +892,7 @@ export const useChatStore = create<ChatState>()(
                 turn.planSource = "reasoning-fallback";
               }
             }
-            sessions = updateSessionStatus("wait-input");
+            sessions = updateSessionStatus("await-input");
           }
           if (eventType === "error" || eventType === "turn_failed") {
             const message = String(event.message ?? "turn failed");

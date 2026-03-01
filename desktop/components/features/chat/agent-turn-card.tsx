@@ -17,8 +17,13 @@ import { Terminal } from "@/components/ai-elements/terminal";
 import { Message, MessageResponse } from "@/components/ai-elements/message";
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { useChatStore } from "@/lib/stores/chat-store";
-import { ChevronDownIcon, LightbulbIcon, Loader2Icon } from "lucide-react";
+import { ChevronDownIcon, LightbulbIcon, Loader2Icon, TerminalIcon } from "lucide-react";
 import { useMemo } from "react";
 
 interface AgentTurnCardProps {
@@ -65,6 +70,14 @@ export function AgentTurnCard({ sessionId, turn }: AgentTurnCardProps) {
 
   const hasReasoning = turn.reasoning.text.trim().length > 0 || turn.reasoning.isStreaming;
   const hasTerminal = terminalOutput.trim().length > 0 || turn.terminal.isStreaming;
+  const reasoningPreviewText = turn.reasoning.preview || "Streaming reasoning...";
+  const reasoningPreviewLength = Array.from(reasoningPreviewText).length;
+  const shouldShowReasoningToggle =
+    turn.reasoning.isExpanded ||
+    turn.reasoning.truncated ||
+    turn.reasoning.charCount > 72 ||
+    reasoningPreviewLength > 72 ||
+    turn.reasoning.isStreaming;
 
   return (
     <Message from="assistant">
@@ -79,7 +92,7 @@ export function AgentTurnCard({ sessionId, turn }: AgentTurnCardProps) {
               type="button"
               variant="ghost"
             >
-              <div className="space-y-1">
+              <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-center gap-2 text-sm">
                   <LightbulbIcon className="size-4 text-muted-foreground" />
                   <span className="font-medium">Reasoning</span>
@@ -92,16 +105,18 @@ export function AgentTurnCard({ sessionId, turn }: AgentTurnCardProps) {
                   </span>
                 </div>
                 {!turn.reasoning.isExpanded && (
-                  <p className="line-clamp-2 text-muted-foreground text-xs">
-                    {turn.reasoning.preview || "Streaming reasoning..."}
+                  <p className="truncate text-muted-foreground text-xs">
+                    {reasoningPreviewText}
                   </p>
                 )}
               </div>
-              <ChevronDownIcon
-                className={`size-4 text-muted-foreground transition-transform ${
-                  turn.reasoning.isExpanded ? "rotate-180" : ""
-                }`}
-              />
+              {shouldShowReasoningToggle ? (
+                <ChevronDownIcon
+                  className={`ml-2 size-4 shrink-0 text-muted-foreground transition-transform ${
+                    turn.reasoning.isExpanded ? "rotate-180" : ""
+                  }`}
+                />
+              ) : null}
             </Button>
             {turn.reasoning.isExpanded && (
               <div className="max-h-72 overflow-auto border-border/60 border-t px-4 py-2.5 text-[12px] leading-5">
@@ -180,7 +195,26 @@ export function AgentTurnCard({ sessionId, turn }: AgentTurnCardProps) {
           </Queue>
         )}
 
-        {hasTerminal && <Terminal isStreaming={turn.terminal.isStreaming} output={terminalOutput} />}
+        {hasTerminal && (
+          <Collapsible className="group" defaultOpen={false}>
+            <CollapsibleTrigger asChild>
+              <button
+                className="flex w-full cursor-pointer items-center gap-2 text-left text-muted-foreground text-sm transition-colors hover:text-foreground"
+                type="button"
+              >
+                <TerminalIcon className="size-4" />
+                <span>Terminal</span>
+                <ChevronDownIcon className="size-4 transition-transform group-data-[state=open]:rotate-180" />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-2">
+              <Terminal
+                isStreaming={turn.terminal.isStreaming}
+                output={terminalOutput}
+              />
+            </CollapsibleContent>
+          </Collapsible>
+        )}
 
         {turn.assistantText.trim().length > 0 && (
           <MessageResponse className="text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
