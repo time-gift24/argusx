@@ -20,7 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
 
 const MOCK_MODELS = [
   { id: "glm-4", name: "GLM-4" },
@@ -58,14 +57,14 @@ export function ChatPromptInput() {
   };
 
   return (
-    <div className={cn("rounded-xl border border-border bg-card p-2 shadow-lg")}>
-      <PromptInput onSubmit={handleSubmit}>
-        <PromptInputTextarea
-          className="min-h-[60px]"
-          placeholder="Send a message..."
-        />
+    <PromptInput className="max-w-3xl" onSubmit={handleSubmit}>
+      <PromptInputTextarea
+        className="min-h-[60px]"
+        placeholder="Send a message..."
+      />
 
-        <div className="flex items-center justify-between gap-2 pt-2">
+      <div className="flex flex-col gap-2 pt-2">
+        <div className="flex items-center justify-between gap-2">
           <PromptInputTools>
             <PromptInputActionMenu>
               <PromptInputActionMenuTrigger />
@@ -73,25 +72,27 @@ export function ChatPromptInput() {
                 <PromptInputActionAddAttachments />
               </PromptInputActionMenuContent>
             </PromptInputActionMenu>
-
-            {/* 模型选择 */}
-            <Select value={selectedModel} onValueChange={setSelectedModel}>
-              <SelectTrigger className="h-8 w-28 border-none bg-transparent text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MOCK_MODELS.map((model) => (
-                  <SelectItem key={model.id} value={model.id}>
-                    {model.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </PromptInputTools>
 
           <PromptInputSubmit status={status === "submitted" ? "submitted" : "ready"} />
         </div>
-      </PromptInput>
-    </div>
+
+        {/* 模型选择 */}
+        <div className="flex items-center justify-end">
+          <Select value={selectedModel} onValueChange={setSelectedModel}>
+            <SelectTrigger className="h-8 w-28 border-none bg-transparent text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MOCK_MODELS.map((model) => (
+                <SelectItem key={model.id} value={model.id}>
+                  {model.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </PromptInput>
   );
 }

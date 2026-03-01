@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import { cn } from "@/lib/utils";
 import { useChatStore } from "@/lib/stores/chat-store";
 import { ConversationView } from "./conversation-view";
 import { SessionBadgeList } from "./session-badge-list";
@@ -20,9 +19,9 @@ export function ChatPage() {
   const currentSession = sessions.find((s) => s.id === currentSessionId);
 
   return (
-    <div className="relative flex h-screen flex-col">
+    <div className="flex h-full flex-col">
       {/* 主内容区域 - 消息列表 */}
-      <div className="flex-1 overflow-hidden pb-40">
+      <div className="flex-1 overflow-hidden">
         {currentSession ? (
           <ConversationView sessionId={currentSession.id} />
         ) : (
@@ -32,19 +31,15 @@ export function ChatPage() {
         )}
       </div>
 
-      {/* 悬浮底部区域 */}
-      <div
-        className={cn(
-          "fixed bottom-0 left-0 right-0 z-50",
-          "bg-background/80 backdrop-blur-xl",
-          "border-t border-border/50"
-        )}
-      >
+      {/* 底部区域 */}
+      <div className="border-t border-border/50 p-4">
         {/* Badge 列表 */}
-        <SessionBadgeList />
+        <div className="mb-4">
+          <SessionBadgeList />
+        </div>
 
         {/* 输入框 */}
-        <div className="mx-auto max-w-3xl p-4">
+        <div className="mx-auto max-w-3xl">
           <ChatPromptInput />
         </div>
       </div>
