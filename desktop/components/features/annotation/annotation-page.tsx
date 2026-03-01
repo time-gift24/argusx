@@ -1,6 +1,16 @@
+"use client";
+
+import { useEffect } from "react";
 import { AnnotationWorkspace } from "./annotation-workspace";
+import { useAnnotationStore } from "@/lib/stores/annotation-store";
 
 export function AnnotationPage() {
+  const loadCatalog = useAnnotationStore((store) => store.loadCatalog);
+
+  useEffect(() => {
+    loadCatalog();
+  }, [loadCatalog]);
+
   return (
     <div className="flex flex-col gap-4">
       <header>

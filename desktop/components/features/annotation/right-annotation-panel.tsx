@@ -7,17 +7,22 @@ import { RuleDynamicFields } from "./rule-dynamic-fields";
 
 export function RightAnnotationPanel() {
   const state = useAnnotationStore((store) => store.state);
+  const catalog = useAnnotationStore((store) => store.catalog);
   const dispatch = useAnnotationStore((store) => store.dispatch);
+  const submitActive = useAnnotationStore((store) => store.submitActive);
   const [isOpen, setIsOpen] = React.useState(false);
-  const [selectedRuleCode, setSelectedRuleCode] = React.useState("");
+  const [selectedRuleCode, setSelectedRuleCode] = React.useState<string>("");
   const [payload, setPayload] = React.useState<Record<string, string>>({});
 
   const active = state.items.find((item) => item.id === state.activeId);
-  const selectedRule = fallbackRules.find((rule) => rule.code === selectedRuleCode);
+  const rules = catalog.length > 0 ? catalog : fallbackRules;
+  const effectiveRuleCode = active?.ruleCode ?? selectedRuleCode;
+  const selectedRule = rules.find((rule) => rule.code === effectiveRuleCode);
+  const effectivePayload = active?.payload ?? payload;
 
   const isSubmitDisabled = !selectedRule || selectedRule.schema.some((field) => {
     if (!field.required) return false;
-    return !(payload[field.key] ?? "").trim();
+    return !(effectivePayload[field.key] ?? "").trim();
   });
 
   function handleSelectRule(code: string) {
@@ -56,11 +61,11 @@ export function RightAnnotationPanel() {
         </button>
         {isOpen ? (
           <ul className="rounded-md border bg-background" role="listbox" aria-label="违规检查项候选">
-            {fallbackRules.map((rule) => (
+            {rules.map((rule) => (
               <li
                 key={rule.code}
                 role="option"
-                aria-selected={selectedRuleCode === rule.code}
+                aria-selected={effectiveRuleCode === rule.code}
                 className="cursor-pointer px-3 py-2 text-sm hover:bg-accent"
                 onClick={() => handleSelectRule(rule.code)}
               >
@@ -74,7 +79,7 @@ export function RightAnnotationPanel() {
       {selectedRule ? (
         <RuleDynamicFields
           schema={selectedRule.schema}
-          values={payload}
+          values={effectivePayload}
           onChange={(key, value) => {
             setPayload((prev) => ({ ...prev, [key]: value }));
             dispatch({ type: "UPDATE_PAYLOAD", payload: { [key]: value } });
@@ -86,6 +91,9 @@ export function RightAnnotationPanel() {
         type="button"
         className="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
         disabled={isSubmitDisabled}
+        onClick={() => {
+          void submitActive();
+        }}
       >
         提交标注
       </button>
