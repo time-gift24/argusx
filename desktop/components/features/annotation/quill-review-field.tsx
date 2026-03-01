@@ -4,6 +4,7 @@ import * as React from "react";
 import { useQuillSelectionAnchor } from "@/hooks/use-quill-selection-anchor";
 import { useAnnotationStore } from "@/lib/stores/annotation-store";
 import type { AnnotationLocation } from "@/lib/annotation/types";
+import type Quill from "quill";
 
 type QuillReviewFieldProps = {
   sectionId: string;
@@ -40,7 +41,11 @@ export function QuillReviewField({
   text,
   nodeId,
 }: QuillReviewFieldProps) {
-  const areaRef = React.useRef<HTMLTextAreaElement>(null);
+  const hostRef = React.useRef<HTMLDivElement>(null);
+  const quillRef = React.useRef<Quill | null>(null);
+  const textRef = React.useRef(text);
+  textRef.current = text;
+
   const state = useAnnotationStore((store) => store.state);
   const dispatch = useAnnotationStore((store) => store.dispatch);
 
@@ -49,7 +54,7 @@ export function QuillReviewField({
     onFire: (range) => {
       const start = range.index;
       const end = range.index + range.length;
-      const selectedText = text.slice(start, end);
+      const selectedText = quillRef.current?.getText(start, range.length) ?? textRef.current.slice(start, end);
 
       dispatch({
         type: "OPEN",
@@ -64,28 +69,78 @@ export function QuillReviewField({
       });
     },
   });
+  const onSelectionChangeRef = React.useRef(onSelectionChange);
+  onSelectionChangeRef.current = onSelectionChange;
 
   const isAnnotated = state.items.some((item) => item.location.field_key === fieldKey);
 
-  function handleSelectionStop() {
-    const area = areaRef.current;
-    if (!area) return;
+  React.useEffect(() => {
+    let isCancelled = false;
+    let cleanup: (() => void) | undefined;
 
-    const start = area.selectionStart ?? 0;
-    const end = area.selectionEnd ?? 0;
-    onSelectionChange({ index: start, length: Math.max(0, end - start) });
-  }
+    async function mountEditor() {
+      if (!hostRef.current || quillRef.current) {
+        return;
+      }
+
+      const quillModule = await import("quill");
+      if (isCancelled || !hostRef.current) {
+        return;
+      }
+
+      const QuillCtor = quillModule.default;
+      const quill = new QuillCtor(hostRef.current, {
+        theme: "bubble",
+        readOnly: true,
+        modules: {
+          toolbar: false,
+        },
+      });
+
+      quill.setText(textRef.current);
+
+      const handleSelectionChange = (range: { index: number; length: number } | null) => {
+        onSelectionChangeRef.current(range);
+      };
+
+      quill.on("selection-change", handleSelectionChange);
+      quillRef.current = quill;
+
+      cleanup = () => {
+        quill.off("selection-change", handleSelectionChange);
+        if (hostRef.current) {
+          hostRef.current.innerHTML = "";
+        }
+        quillRef.current = null;
+      };
+    }
+
+    void mountEditor();
+
+    return () => {
+      isCancelled = true;
+      cleanup?.();
+    };
+  }, []);
+
+  React.useEffect(() => {
+    const quill = quillRef.current;
+    if (!quill) {
+      return;
+    }
+    const currentText = quill.getText();
+    const nextText = text.endsWith("\n") ? text : `${text}\n`;
+    if (currentText !== nextText) {
+      quill.setText(text);
+    }
+  }, [text]);
 
   return (
     <div className={`space-y-1 rounded-md border p-2 ${isAnnotated ? "border-emerald-500" : ""}`}>
       <label className="text-sm font-medium">{label}</label>
-      <textarea
-        ref={areaRef}
-        readOnly
-        value={text}
-        onMouseUp={handleSelectionStop}
-        onKeyUp={handleSelectionStop}
-        className="min-h-[70px] w-full rounded-md border bg-background px-2 py-1 text-sm"
+      <div
+        ref={hostRef}
+        className="min-h-[70px] rounded-md border bg-background px-2 py-1 text-sm [&_.ql-editor]:min-h-[70px] [&_.ql-editor]:p-0"
       />
     </div>
   );
