@@ -76,29 +76,18 @@ export function SessionBadge({
 
   return (
     <div className="relative">
-      {/* Pulse ring for active session */}
-      {isActive && (
-        <span className="absolute inset-0 rounded-lg ring-2 ring-primary animate-pulse" />
-      )}
       <Badge
         className={cn(
           "relative cursor-pointer rounded-lg px-3 py-1.5 transition-all",
           "hover:opacity-90",
           badgeColors.bg,
-          badgeColors.text
+          badgeColors.text,
+          isActive && "border-primary animate-pulse"
         )}
       onClick={onClick}
       {...(onContextMenu && { onContextMenu })}
       variant="outline"
     >
-      {/* Status indicator dot - top-left corner */}
-      <span
-        className={cn(
-          "absolute -top-1 -left-1 h-2.5 w-2.5 rounded-full border-2 border-background",
-          badgeColors.dot
-        )}
-        title={status.label}
-      />
 
       {/* Status icon (smaller, for visual feedback) */}
       <span className="mr-1.5 opacity-70">{status.icon}</span>
