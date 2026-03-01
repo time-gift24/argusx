@@ -73,7 +73,6 @@ export function SessionBadge({
   };
 
   const badgeColors = getBadgeColors();
-  const isActiveStatus = session.status === "thinking" || session.status === "tool-call" || session.status === "outputing";
 
   return (
     <Badge
@@ -92,8 +91,7 @@ export function SessionBadge({
       <span
         className={cn(
           "absolute -top-1 -left-1 h-2.5 w-2.5 rounded-full border-2 border-background",
-          badgeColors.dot,
-          isActiveStatus && "animate-pulse"
+          badgeColors.dot
         )}
         title={status.label}
       />
