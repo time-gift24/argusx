@@ -63,8 +63,9 @@ export function ChatPromptInput() {
         placeholder="Send a message..."
       />
 
-      <div className="flex flex-col gap-2 pt-2">
-        <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 pt-2">
+        {/* 左下角：模型选择 */}
+        <div className="flex items-center gap-2">
           <PromptInputTools>
             <PromptInputActionMenu>
               <PromptInputActionMenuTrigger />
@@ -74,11 +75,6 @@ export function ChatPromptInput() {
             </PromptInputActionMenu>
           </PromptInputTools>
 
-          <PromptInputSubmit status={status === "submitted" ? "submitted" : "ready"} />
-        </div>
-
-        {/* 模型选择 */}
-        <div className="flex items-center justify-end">
           <Select value={selectedModel} onValueChange={setSelectedModel}>
             <SelectTrigger className="h-8 w-28 border-none bg-transparent text-xs">
               <SelectValue />
@@ -92,6 +88,9 @@ export function ChatPromptInput() {
             </SelectContent>
           </Select>
         </div>
+
+        {/* 右下角：发送按钮 */}
+        <PromptInputSubmit status={status === "submitted" ? "submitted" : "ready"} />
       </div>
     </PromptInput>
   );
