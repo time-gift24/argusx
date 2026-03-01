@@ -1,80 +1,53 @@
 "use client";
 
 import { useEffect } from "react";
-import { listen } from "@tauri-apps/api/event";
-import { MessageList } from "./message-list";
-import { ChatInput } from "./chat-input";
-import { SessionSwitcher } from "./session-switcher";
-import { StatusBar } from "./status-bar";
+import { cn } from "@/lib/utils";
 import { useChatStore } from "@/lib/stores/chat-store";
+import { ConversationView } from "./conversation-view";
+import { SessionBadgeList } from "./session-badge-list";
+import { ChatPromptInput } from "./chat-prompt-input";
 
 export function ChatPage() {
-  const {
-    updateAssistantMessage,
-    setAgentStatus,
-    setReasoningText,
-    addToolCall,
-    updateToolCall,
-    loadSessions,
-    createSession
-  } = useChatStore();
+  const { sessions, currentSessionId, createSession } = useChatStore();
 
+  // 如果没有会话，自动创建一个
   useEffect(() => {
-    // 初始化：加载 sessions，如果没有则创建
-    const init = async () => {
-      await loadSessions();
-      const { sessions } = useChatStore.getState();
-      if (sessions.length === 0) {
-        await createSession("New Chat");
-      }
-    };
-    init();
+    if (sessions.length === 0) {
+      createSession();
+    }
+  }, [sessions.length, createSession]);
 
-    // 监听流式事件
-    const unlisten = listen<{
-      event_type: string;
-      data: Record<string, string>;
-    }>("chat-stream-event", (event) => {
-      const { event_type, data } = event.payload;
-      switch (event_type) {
-        case "message_delta":
-          updateAssistantMessage(data.content || "");
-          break;
-        case "reasoning":
-          setReasoningText(data.content || "");
-          break;
-        case "tool_start":
-          addToolCall({
-            callId: data.call_id,
-            toolName: data.tool_name,
-            status: "running"
-          });
-          break;
-        case "tool_end":
-          updateToolCall(data.call_id, { status: "done", output: data.output });
-          break;
-        case "turn_done":
-          setAgentStatus("idle");
-          setReasoningText("");
-          break;
-        case "error":
-          setAgentStatus("error");
-          break;
-      }
-    });
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const currentSession = sessions.find((s) => s.id === currentSessionId);
 
   return (
-    <div className="flex flex-col h-screen">
-      <MessageList />
-      <StatusBar />
-      <SessionSwitcher />
-      <ChatInput />
+    <div className="relative flex h-screen flex-col">
+      {/* 主内容区域 - 消息列表 */}
+      <div className="flex-1 overflow-hidden pb-40">
+        {currentSession ? (
+          <ConversationView sessionId={currentSession.id} />
+        ) : (
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            Select or create a chat session
+          </div>
+        )}
+      </div>
+
+      {/* 悬浮底部区域 */}
+      <div
+        className={cn(
+          "fixed bottom-0 left-0 right-0 z-50",
+          "bg-background/80 backdrop-blur-xl",
+          "border-t border-border/50"
+        )}
+      >
+        {/* Badge 列表 */}
+        <SessionBadgeList />
+
+        {/* 输入框 */}
+        <div className="mx-auto max-w-3xl p-4">
+          <ChatPromptInput />
+        </div>
+      </div>
     </div>
   );
 }
