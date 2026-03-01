@@ -99,8 +99,7 @@ fn emit_chunk(
     chunk: LlmChunk,
     tx: &mpsc::UnboundedSender<Result<ModelOutputEvent, AgentError>>,
 ) {
-    // For now, we only emit the text delta and reasoning delta
-    // Tool calls would require additional mapping
+    // Emit reasoning delta
     if let Some(reasoning_delta) = chunk.delta_reasoning {
         if !reasoning_delta.is_empty() {
             let _ = tx.send(Ok(ModelOutputEvent::ReasoningDelta {
@@ -109,11 +108,37 @@ fn emit_chunk(
         }
     }
 
+    // Emit text delta
     if let Some(content_delta) = chunk.delta_text {
         if !content_delta.is_empty() {
             let _ = tx.send(Ok(ModelOutputEvent::TextDelta {
                 delta: content_delta,
             }));
+        }
+    }
+
+    // Emit tool calls
+    if let Some(tool_calls) = chunk.delta_tool_calls {
+        for tc in tool_calls {
+            let Some(tool_name) = tc.tool_name else {
+                continue;
+            };
+            if tool_name.is_empty() {
+                continue;
+            }
+
+            // Parse arguments as JSON, fall back to empty object on parse failure
+            let arguments = tc.arguments
+                .as_ref()
+                .and_then(|args| serde_json::from_str(args).ok())
+                .unwrap_or_else(|| serde_json::json!({}));
+
+            let call = ToolCall {
+                call_id: tc.call_id.unwrap_or_else(new_id),
+                tool_name,
+                arguments,
+            };
+            let _ = tx.send(Ok(ModelOutputEvent::ToolCall { call }));
         }
     }
 }
@@ -152,8 +177,13 @@ fn convert_model_request(request: ModelRequest, cfg: &BigModelAdapterConfig) -> 
         messages.push(input_envelope_to_message(input));
     }
 
-    // Note: tools are not yet supported in the generic LlmRequest
-    // They would need to be added as a separate field
+    // Map tools from ModelRequest to LlmRequest
+    let llm_tools = tools.into_iter().map(|t| llm_client::LlmTool {
+        name: t.name,
+        description: t.description,
+        parameters: t.input_schema,
+    }).collect::<Vec<_>>();
+    let llm_tools = if llm_tools.is_empty() { None } else { Some(llm_tools) };
 
     LlmRequest {
         model: cfg.model.clone(),
@@ -162,6 +192,7 @@ fn convert_model_request(request: ModelRequest, cfg: &BigModelAdapterConfig) -> 
         max_tokens: cfg.max_tokens,
         temperature: cfg.temperature,
         top_p: cfg.top_p,
+        tools: llm_tools,
     }
 }
 
@@ -327,6 +358,7 @@ mod tests {
             model: "glm-test".to_string(),
             delta_text: Some("hello".to_string()),
             delta_reasoning: Some("thinking".to_string()),
+            delta_tool_calls: None,
             finish_reason: None,
             usage: None,
         };
@@ -352,6 +384,105 @@ mod tests {
     }
 
     #[test]
+    fn stream_chunk_emits_tool_call_events() {
+        use llm_client::LlmToolCall;
+
+        // Test with valid JSON arguments
+        let chunk = LlmChunk {
+            id: "chunk-1".to_string(),
+            created: 0,
+            model: "glm-test".to_string(),
+            delta_text: None,
+            delta_reasoning: None,
+            delta_tool_calls: Some(vec![
+                LlmToolCall {
+                    call_id: Some("call-123".to_string()),
+                    tool_name: Some("echo".to_string()),
+                    arguments: Some(r#"{"text":"hello"}"#.to_string()),
+                },
+            ]),
+            finish_reason: None,
+            usage: None,
+        };
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        emit_chunk(chunk, &tx);
+
+        let event = rx.try_recv().expect("tool call event").expect("ok");
+        assert!(matches!(event, ModelOutputEvent::ToolCall { call: _ }));
+
+        if let ModelOutputEvent::ToolCall { call } = event {
+            assert_eq!(call.call_id, "call-123");
+            assert_eq!(call.tool_name, "echo");
+            assert_eq!(call.arguments, serde_json::json!({"text": "hello"}));
+        }
+    }
+
+    #[test]
+    fn stream_chunk_tool_call_falls_back_to_empty_on_invalid_json() {
+        use llm_client::LlmToolCall;
+
+        // Test with invalid JSON arguments - should fall back to {}
+        let chunk = LlmChunk {
+            id: "chunk-1".to_string(),
+            created: 0,
+            model: "glm-test".to_string(),
+            delta_text: None,
+            delta_reasoning: None,
+            delta_tool_calls: Some(vec![
+                LlmToolCall {
+                    call_id: Some("call-456".to_string()),
+                    tool_name: Some("bad_json".to_string()),
+                    arguments: Some("invalid json {".to_string()),
+                },
+            ]),
+            finish_reason: None,
+            usage: None,
+        };
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        emit_chunk(chunk, &tx);
+
+        let event = rx.try_recv().expect("tool call event").expect("ok");
+        assert!(matches!(event, ModelOutputEvent::ToolCall { call: _ }));
+
+        if let ModelOutputEvent::ToolCall { call } = event {
+            assert_eq!(call.call_id, "call-456");
+            assert_eq!(call.tool_name, "bad_json");
+            // Should fall back to empty object on parse failure
+            assert_eq!(call.arguments, serde_json::json!({}));
+        }
+    }
+
+    #[test]
+    fn stream_chunk_skips_tool_call_when_tool_name_missing() {
+        use llm_client::LlmToolCall;
+
+        let chunk = LlmChunk {
+            id: "chunk-1".to_string(),
+            created: 0,
+            model: "glm-test".to_string(),
+            delta_text: None,
+            delta_reasoning: None,
+            delta_tool_calls: Some(vec![LlmToolCall {
+                call_id: Some("call-missing-name".to_string()),
+                tool_name: None,
+                arguments: Some(r#"{"x":1}"#.to_string()),
+            }]),
+            finish_reason: None,
+            usage: None,
+        };
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        emit_chunk(chunk, &tx);
+
+        assert!(
+            rx.try_recv().is_err(),
+            "tool call without name must be ignored"
+        );
+    }
+
+    #[test]
     fn map_errors_to_agent_error_classes() {
         let retryable = map_llm_error(LlmError::RateLimit {
             message: "busy".to_string(),
@@ -373,6 +504,7 @@ mod tests {
             model: "glm-test".to_string(),
             delta_text: None,
             delta_reasoning: None,
+            delta_tool_calls: None,
             finish_reason: None,
             usage: Some(LlmUsage {
                 input_tokens: 12,

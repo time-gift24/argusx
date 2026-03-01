@@ -29,6 +29,7 @@
 //!         max_tokens: None,
 //!         temperature: None,
 //!         top_p: None,
+//!         tools: None,
 //!     };
 //!
 //!     let response = client.chat(request).await.unwrap();
@@ -40,7 +41,7 @@ pub mod adapter;
 pub mod client;
 pub mod config;
 pub mod error;
-pub mod mapping;
+pub(crate) mod mapping;
 pub(crate) mod providers;
 pub mod retry;
 pub mod sse;
@@ -54,5 +55,6 @@ pub use error::LlmError;
 pub use retry::run_with_retry;
 
 pub use types::{
-    LlmChunk, LlmChunkStream, LlmMessage, LlmRequest, LlmResponse, LlmRole, LlmUsage,
+    LlmChunk, LlmChunkStream, LlmMessage, LlmRequest, LlmResponse, LlmRole, LlmTool,
+    LlmToolCall, LlmUsage,
 };

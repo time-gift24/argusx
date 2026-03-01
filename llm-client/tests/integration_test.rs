@@ -43,6 +43,7 @@ async fn facade_can_chat_via_bigmodel_adapter() {
         max_tokens: None,
         temperature: None,
         top_p: None,
+        tools: None,
     };
 
     let res = client.chat(req).await.unwrap();

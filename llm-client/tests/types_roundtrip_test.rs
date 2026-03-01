@@ -13,6 +13,7 @@ fn llm_request_and_chunk_are_constructible() {
         max_tokens: Some(128),
         temperature: Some(0.7),
         top_p: Some(0.9),
+        tools: None,
     };
 
     assert!(req.stream);
@@ -23,6 +24,7 @@ fn llm_request_and_chunk_are_constructible() {
         model: "glm-5".to_string(),
         delta_text: Some("hi".to_string()),
         delta_reasoning: None,
+        delta_tool_calls: None,
         finish_reason: None,
         usage: None,
     };
