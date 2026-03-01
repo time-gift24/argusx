@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { listenAgentStream } from "@/lib/api/chat";
+import { CHAT_SIDEBAR_MIN_WIDTH } from "@/lib/layout/chat-layout";
 import { useChatStore } from "@/lib/stores/chat-store";
 import { ConversationView } from "./conversation-view";
 import { ChatSessionBar } from "./chat-session-bar";
@@ -49,7 +50,10 @@ export function ChatPage() {
   }, []);
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div
+      className="relative flex min-h-0 flex-1 flex-col"
+      style={{ minWidth: `${CHAT_SIDEBAR_MIN_WIDTH}px` }}
+    >
       {/* 主内容区域 - 消息列表 */}
       <div
         className="relative flex-1 min-h-0 overflow-hidden"

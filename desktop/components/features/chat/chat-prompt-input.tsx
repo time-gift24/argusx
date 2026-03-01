@@ -238,8 +238,8 @@ export function ChatPromptInput() {
         <PromptInputBody>
           <PromptInputTextarea placeholder="Send a message..." />
         </PromptInputBody>
-        <PromptInputFooter>
-          <PromptInputTools>
+        <PromptInputFooter className="flex-wrap items-center gap-2">
+          <PromptInputTools className="flex-wrap gap-1.5">
             <PromptInputActionMenu>
               <PromptInputActionMenuTrigger className="transition-colors duration-200 motion-reduce:transition-none" />
               <PromptInputActionMenuContent>
@@ -255,12 +255,12 @@ export function ChatPromptInput() {
               open={modelSelectorOpen}
             >
               <ModelSelectorTrigger asChild>
-                <PromptInputButton className="transition-colors duration-200 motion-reduce:transition-none">
+                <PromptInputButton className="max-w-full transition-colors duration-200 motion-reduce:transition-none">
                   {selectedModelData?.chefSlug && (
                     <ModelSelectorLogo provider={selectedModelData.chefSlug} />
                   )}
                   {selectedModelData?.name && (
-                    <ModelSelectorName>{selectedModelData.name}</ModelSelectorName>
+                    <ModelSelectorName className="max-w-28">{selectedModelData.name}</ModelSelectorName>
                   )}
                 </PromptInputButton>
               </ModelSelectorTrigger>
