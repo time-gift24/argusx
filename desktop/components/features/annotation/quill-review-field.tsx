@@ -36,7 +36,11 @@ function buildHighlightRanges({
   textLength: number;
 }): HighlightRange[] {
   return items
-    .filter((item) => item.status !== "orphaned")
+    .filter(
+      (item) =>
+        item.status === "submitted" ||
+        (item.status === "draft" && item.id === activeId),
+    )
     .filter((item) => item.location.source_type === "rich_text_selection")
     .filter((item) => item.location.field_key === fieldKey)
     .map((item) => {

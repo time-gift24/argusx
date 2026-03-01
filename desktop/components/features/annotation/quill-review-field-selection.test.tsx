@@ -202,6 +202,23 @@ describe("QuillReviewField selection mapping", () => {
             status: "orphaned",
             updatedAt: 3,
           },
+          {
+            id: "ann-d",
+            location: {
+              source_type: "rich_text_selection",
+              panel: "paragraph_detail",
+              section_id: "paragraph-1",
+              field_key: "paragraph.summary",
+              node_id: "paragraph.summary-node",
+              start_offset: 5,
+              end_offset: 7,
+              selected_text: "FG",
+            },
+            ruleCode: null,
+            payload: {},
+            status: "draft",
+            updatedAt: 4,
+          },
         ],
         activeId: "ann-b",
       },
@@ -222,6 +239,7 @@ describe("QuillReviewField selection mapping", () => {
     });
 
     const [clearCall, baseCall, activeCall] = mockQuillInstances[0].formatCalls;
+    expect(mockQuillInstances[0].formatCalls).toHaveLength(3);
     expect(clearCall).toEqual({
       index: 0,
       length: 8,
