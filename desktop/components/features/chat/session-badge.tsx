@@ -80,7 +80,7 @@ export function SessionBadge({
       className={cn(
         "relative cursor-pointer rounded-lg px-3 py-1.5 transition-all",
         "hover:opacity-90",
-        isActive ? "ring-2 ring-primary ring-offset-2 dark:ring-offset-background" : "",
+        isActive && "ring-2 ring-primary ring-offset-1 dark:ring-offset-background",
         badgeColors.bg,
         badgeColors.text
       )}
@@ -93,7 +93,7 @@ export function SessionBadge({
         className={cn(
           "absolute -top-1 -left-1 h-2.5 w-2.5 rounded-full border-2 border-background",
           badgeColors.dot,
-          isActiveStatus && "animate-pulse"
+          (isActive || isActiveStatus) && "animate-pulse"
         )}
         title={status.label}
       />
