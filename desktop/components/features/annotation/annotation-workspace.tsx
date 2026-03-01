@@ -1,3 +1,4 @@
+import { RightAnnotationPanel } from "./right-annotation-panel";
 import { mockReviewData } from "./mock-review-data";
 
 export function AnnotationWorkspace() {
@@ -12,13 +13,7 @@ export function AnnotationWorkspace() {
         <p className="mt-2 text-sm text-muted-foreground">{mockReviewData.basicInfo.case_summary}</p>
       </section>
 
-      <aside
-        data-testid="annotation-right-panel"
-        className="rounded-md border bg-muted/30 p-4"
-      >
-        <h2 className="text-sm font-semibold">标注面板</h2>
-        <p className="mt-2 text-sm text-muted-foreground">选择左侧字段后开始编辑。</p>
-      </aside>
+      <RightAnnotationPanel />
     </div>
   );
 }
