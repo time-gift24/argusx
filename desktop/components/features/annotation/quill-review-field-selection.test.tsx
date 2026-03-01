@@ -1,0 +1,121 @@
+import { act, render, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { QuillReviewField } from "@/components/features/annotation/quill-review-field";
+import { initialAnnotationState } from "@/lib/annotation/reducer";
+import { useAnnotationStore } from "@/lib/stores/annotation-store";
+
+const { mockQuillInstances } = vi.hoisted(() => ({
+  mockQuillInstances: [] as MockQuillInstance[],
+}));
+
+type MockRange = { index: number; length: number };
+
+type MockQuillInstance = {
+  setText: (value: string) => void;
+  getText: (index?: number, length?: number) => string;
+  on: (event: string, handler: (range: MockRange | null) => void) => void;
+  off: (event: string, handler: (range: MockRange | null) => void) => void;
+  emitSelection: (range: MockRange | null) => void;
+};
+
+vi.mock("quill", () => {
+  class MockQuill implements MockQuillInstance {
+    private text = "\n";
+
+    private readonly listeners = new Map<string, Set<(range: MockRange | null) => void>>();
+
+    constructor(host: HTMLElement) {
+      const container = document.createElement("div");
+      container.className = "ql-container";
+      const editor = document.createElement("div");
+      editor.className = "ql-editor";
+      container.appendChild(editor);
+      host.appendChild(container);
+
+      mockQuillInstances.push(this);
+    }
+
+    setText(value: string) {
+      this.text = value.endsWith("\n") ? value : `${value}\n`;
+    }
+
+    getText(index?: number, length?: number) {
+      if (index === undefined) {
+        return this.text;
+      }
+      if (length === undefined) {
+        return this.text.slice(index);
+      }
+      return this.text.slice(index, index + length);
+    }
+
+    on(event: string, handler: (range: MockRange | null) => void) {
+      const existing = this.listeners.get(event) ?? new Set();
+      existing.add(handler);
+      this.listeners.set(event, existing);
+    }
+
+    off(event: string, handler: (range: MockRange | null) => void) {
+      this.listeners.get(event)?.delete(handler);
+    }
+
+    emitSelection(range: MockRange | null) {
+      for (const handler of this.listeners.get("selection-change") ?? []) {
+        handler(range);
+      }
+    }
+  }
+
+  return {
+    default: MockQuill,
+  };
+});
+
+describe("QuillReviewField selection mapping", () => {
+  beforeEach(() => {
+    mockQuillInstances.length = 0;
+    useAnnotationStore.setState((current) => ({
+      ...current,
+      state: initialAnnotationState,
+      catalog: [],
+      catalogSource: null,
+    }));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("opens annotation with quill range offsets and selected text", async () => {
+    render(
+      <QuillReviewField
+        sectionId="paragraph-1"
+        fieldKey="paragraph.summary"
+        label="段落摘要"
+        text="ABCDEFGH"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(mockQuillInstances.length).toBe(1);
+    });
+
+    vi.useFakeTimers();
+    act(() => {
+      mockQuillInstances[0].emitSelection({ index: 2, length: 3 });
+      vi.advanceTimersByTime(300);
+    });
+
+    const state = useAnnotationStore.getState().state;
+    expect(state.activeId).not.toBeNull();
+    expect(state.items).toHaveLength(1);
+
+    const current = state.items[0];
+    expect(current.location.source_type).toBe("rich_text_selection");
+    expect(current.location.section_id).toBe("paragraph-1");
+    expect(current.location.field_key).toBe("paragraph.summary");
+    expect(current.location.start_offset).toBe(2);
+    expect(current.location.end_offset).toBe(5);
+    expect(current.location.selected_text).toBe("CDE");
+  });
+});
