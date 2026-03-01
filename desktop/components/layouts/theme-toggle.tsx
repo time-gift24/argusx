@@ -6,12 +6,10 @@ import { useTheme } from "@/hooks";
 
 export function ThemeToggle() {
   const { theme, toggleTheme, mounted } = useTheme();
+  const displayTheme = mounted ? theme : "light";
 
-  const ariaLabel = mounted
-    ? theme === "dark"
-      ? "Switch to light"
-      : "Switch to dark"
-    : "Toggle theme";
+  const ariaLabel =
+    displayTheme === "dark" ? "Switch to light" : "Switch to dark";
 
   return (
     <Button
@@ -25,7 +23,7 @@ export function ThemeToggle() {
     >
       {!mounted ? (
         <Monitor className="h-4 w-4" />
-      ) : theme === "dark" ? (
+      ) : displayTheme === "dark" ? (
         <Moon className="h-4 w-4" />
       ) : (
         <Sun className="h-4 w-4" />
