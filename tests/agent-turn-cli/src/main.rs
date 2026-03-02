@@ -277,8 +277,8 @@ fn handle_ui_event(
         UiThreadEvent::Done { summary, stats, .. } => {
             let _ = close_reasoning_line(stderr, state)?;
             if let Some(summary) = summary {
-                writeln!(stderr, "[done] summary: {summary}")
-                    .context("failed to write done summary")?;
+                writeln!(stderr, "[summary]").context("failed to write summary header")?;
+                writeln!(stderr, "{summary}").context("failed to write done summary")?;
             }
             writeln!(
                 stderr,
@@ -403,5 +403,32 @@ mod tests {
 
         assert_eq!(stderr, "[reasoning] thinking\n");
         assert_eq!(stdout, "\nanswer\n");
+    }
+
+    #[test]
+    fn done_event_renders_summary_block_with_newline_header() {
+        let mut stdout = Vec::<u8>::new();
+        let mut stderr = Vec::<u8>::new();
+        let mut state = UiRenderState::default();
+
+        handle_ui_event(
+            UiThreadEvent::Done {
+                turn_id: ui_event_turn_id(),
+                summary: Some("第一轮：A\n第二轮：B".to_string()),
+                stats: TurnStats::default(),
+            },
+            false,
+            &mut stdout,
+            &mut stderr,
+            &mut state,
+        )
+        .expect("done");
+        finalize_ui_render(false, &mut stdout, &mut stderr, &mut state).expect("finalize");
+
+        let stderr = String::from_utf8(stderr).expect("stderr utf8");
+        assert_eq!(
+            stderr,
+            "[summary]\n第一轮：A\n第二轮：B\n[done] stats: tools=0 input_tokens=0 output_tokens=0\n"
+        );
     }
 }
