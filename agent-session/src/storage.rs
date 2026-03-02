@@ -42,6 +42,32 @@ pub trait SessionStore: Send + Sync {
     async fn list(&self, filter: SessionFilter) -> Result<Vec<SessionInfo>>;
 }
 
+#[async_trait]
+pub trait SessionArtifactStore: SessionStore {
+    async fn save_turn_context(&self, context: &TurnContext) -> Result<()>;
+    async fn save_turn_summary(&self, session_id: &str, summary: &TurnSummary) -> Result<()>;
+    async fn list_turn_summaries(&self, session_id: &str) -> Result<Vec<TurnSummary>>;
+    async fn load_latest_turn_summary(&self, session_id: &str) -> Result<Option<TurnSummary>>;
+    async fn delete_turn_artifacts(&self, session_id: &str, turn_id: &str) -> Result<()>;
+    async fn truncate_turns_after(
+        &self,
+        session_id: &str,
+        restored_turn_id: &str,
+    ) -> Result<Vec<String>>;
+    async fn save_turn_transcript(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        items: &[TranscriptItem],
+    ) -> Result<()>;
+    async fn load_turn_transcript(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+    ) -> Result<Vec<TranscriptItem>>;
+    async fn find_session_id_by_turn_id(&self, turn_id: &str) -> Result<Option<String>>;
+}
+
 pub struct FileSessionStore {
     base_path: PathBuf,
 }
@@ -373,12 +399,12 @@ fn validate_id(kind: &str, id: &str) -> Result<()> {
 }
 
 pub struct FileTurnCheckpointStore {
-    store: Arc<FileSessionStore>,
+    store: Arc<dyn SessionArtifactStore>,
     turn_to_session: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl FileTurnCheckpointStore {
-    pub fn new(store: Arc<FileSessionStore>) -> Self {
+    pub fn new(store: Arc<dyn SessionArtifactStore>) -> Self {
         Self {
             store,
             turn_to_session: Arc::new(RwLock::new(HashMap::new())),
@@ -464,6 +490,58 @@ impl CheckpointStore for FileTurnCheckpointStore {
             .save_turn_transcript(&session_id, turn_id, items)
             .await
             .map_err(to_agent_error)
+    }
+}
+
+#[async_trait]
+impl SessionArtifactStore for FileSessionStore {
+    async fn save_turn_context(&self, context: &TurnContext) -> Result<()> {
+        FileSessionStore::save_turn_context(self, context).await
+    }
+
+    async fn save_turn_summary(&self, session_id: &str, summary: &TurnSummary) -> Result<()> {
+        FileSessionStore::save_turn_summary(self, session_id, summary).await
+    }
+
+    async fn list_turn_summaries(&self, session_id: &str) -> Result<Vec<TurnSummary>> {
+        FileSessionStore::list_turn_summaries(self, session_id).await
+    }
+
+    async fn load_latest_turn_summary(&self, session_id: &str) -> Result<Option<TurnSummary>> {
+        FileSessionStore::load_latest_turn_summary(self, session_id).await
+    }
+
+    async fn delete_turn_artifacts(&self, session_id: &str, turn_id: &str) -> Result<()> {
+        FileSessionStore::delete_turn_artifacts(self, session_id, turn_id).await
+    }
+
+    async fn truncate_turns_after(
+        &self,
+        session_id: &str,
+        restored_turn_id: &str,
+    ) -> Result<Vec<String>> {
+        FileSessionStore::truncate_turns_after(self, session_id, restored_turn_id).await
+    }
+
+    async fn save_turn_transcript(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        items: &[TranscriptItem],
+    ) -> Result<()> {
+        FileSessionStore::save_turn_transcript(self, session_id, turn_id, items).await
+    }
+
+    async fn load_turn_transcript(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+    ) -> Result<Vec<TranscriptItem>> {
+        FileSessionStore::load_turn_transcript(self, session_id, turn_id).await
+    }
+
+    async fn find_session_id_by_turn_id(&self, turn_id: &str) -> Result<Option<String>> {
+        FileSessionStore::find_session_id_by_turn_id(self, turn_id).await
     }
 }
 

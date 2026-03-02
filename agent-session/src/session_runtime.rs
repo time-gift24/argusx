@@ -17,14 +17,16 @@ use tokio::sync::RwLock;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{info, warn};
 
-use crate::storage::{FileSessionStore, FileTurnCheckpointStore, SessionFilter, SessionStore};
+use crate::storage::{
+    FileSessionStore, FileTurnCheckpointStore, SessionArtifactStore, SessionFilter,
+};
 
 pub struct SessionRuntime<L, T>
 where
     L: agent_core::LanguageModel + Send + Sync + 'static,
     T: agent_core::tools::ToolExecutor + agent_core::tools::ToolCatalog + Send + Sync + 'static,
 {
-    store: Arc<FileSessionStore>,
+    store: Arc<dyn SessionArtifactStore>,
     checkpoint_store: Arc<FileTurnCheckpointStore>,
     turn_runtime: Arc<TurnRuntime<L, T>>,
     sessions: Arc<RwLock<HashMap<SessionId, SessionState>>>,
@@ -71,7 +73,20 @@ where
         tools: Arc<T>,
         config: SessionConfig,
     ) -> Self {
-        let store = Arc::new(FileSessionStore::new(base_path));
+        let store: Arc<dyn SessionArtifactStore> = Arc::new(FileSessionStore::new(base_path));
+        Self::with_store_and_config(store, model, tools, config)
+    }
+
+    pub fn with_store(store: Arc<dyn SessionArtifactStore>, model: Arc<L>, tools: Arc<T>) -> Self {
+        Self::with_store_and_config(store, model, tools, SessionConfig::default())
+    }
+
+    pub fn with_store_and_config(
+        store: Arc<dyn SessionArtifactStore>,
+        model: Arc<L>,
+        tools: Arc<T>,
+        config: SessionConfig,
+    ) -> Self {
         let checkpoint_store = Arc::new(FileTurnCheckpointStore::new(Arc::clone(&store)));
         let turn_config = TurnEngineConfig {
             max_parallel_tools: config.max_parallel_tools,
@@ -351,7 +366,7 @@ where
 
     async fn clear_active_turn_if_current(
         sessions: Arc<RwLock<HashMap<SessionId, SessionState>>>,
-        store: Arc<FileSessionStore>,
+        store: Arc<dyn SessionArtifactStore>,
         session_id: SessionId,
         turn_id: TurnId,
     ) {
@@ -381,7 +396,7 @@ where
 
     async fn complete_turn_if_current(
         sessions: Arc<RwLock<HashMap<SessionId, SessionState>>>,
-        store: Arc<FileSessionStore>,
+        store: Arc<dyn SessionArtifactStore>,
         session_id: SessionId,
         summary: TurnSummary,
     ) {
