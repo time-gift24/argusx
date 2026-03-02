@@ -152,6 +152,11 @@ interface ChatState {
     codeBlockId: string,
     expanded: boolean
   ) => void;
+  restoreToCheckpoint: (
+    sessionId: string,
+    restoredTurnId: string,
+    removedTurnIds: string[]
+  ) => void;
   applyAgentStreamEnvelope: (envelope: AgentStreamEnvelope) => void;
 }
 
@@ -756,6 +761,66 @@ export const useChatStore = create<ChatState>()(
             turnUiState: {
               ...state.turnUiState,
               [sessionId]: sessionUi,
+            },
+          };
+        });
+      },
+
+      restoreToCheckpoint: (sessionId, restoredTurnId, removedTurnIds) => {
+        set((state) => {
+          const currentTurns = state.turns[sessionId] ?? [];
+          const restoredIndex = currentTurns.findIndex(
+            (turn) => turn.id === restoredTurnId
+          );
+          if (restoredIndex === -1) {
+            return {};
+          }
+
+          const trailingTurnIds = currentTurns
+            .slice(restoredIndex + 1)
+            .map((turn) => turn.id);
+          const removedTurnSet = new Set([...removedTurnIds, ...trailingTurnIds]);
+          const keptTurns = currentTurns.filter((turn) => !removedTurnSet.has(turn.id));
+          const removedTurns = currentTurns.filter((turn) => removedTurnSet.has(turn.id));
+          const removedRequestMessageIds = new Set(
+            removedTurns
+              .map((turn) => turn.requestMessageId)
+              .filter((id): id is string => typeof id === "string" && id.length > 0)
+          );
+          const cutoffTimestamp = keptTurns.at(-1)?.updatedAt ?? Date.now();
+          const currentMessages = state.messages[sessionId] ?? [];
+          const keptMessages = currentMessages.filter(
+            (message) =>
+              !removedRequestMessageIds.has(message.id) &&
+              message.createdAt <= cutoffTimestamp
+          );
+
+          const nextSessionUi = { ...(state.turnUiState[sessionId] ?? {}) };
+          for (const turnId of removedTurnSet) {
+            delete nextSessionUi[turnId];
+          }
+
+          return {
+            sessions: state.sessions.map((session) =>
+              session.id === sessionId
+                ? {
+                    ...session,
+                    status: "wait-input",
+                    updatedAt: Date.now(),
+                  }
+                : session
+            ),
+            messages: {
+              ...state.messages,
+              [sessionId]: keptMessages,
+            },
+            turns: {
+              ...state.turns,
+              [sessionId]: keptTurns,
+            },
+            turnUiState: {
+              ...state.turnUiState,
+              [sessionId]: nextSessionUi,
             },
           };
         });

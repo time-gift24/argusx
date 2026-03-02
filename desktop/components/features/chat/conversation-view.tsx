@@ -11,7 +11,8 @@ import {
 import { Message, MessageResponse } from "@/components/ai-elements/message";
 import { BotIcon } from "lucide-react";
 import { AgentTurnCard } from "./agent-turn-card";
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
+import { TurnCheckpoint } from "./turn-checkpoint";
 
 interface ConversationViewProps {
   sessionId: string;
@@ -84,11 +85,10 @@ export function ConversationView({ sessionId }: ConversationViewProps) {
                 )}
               </Message>
             ) : (
-              <AgentTurnCard
-                key={item.turn.id}
-                sessionId={sessionId}
-                turn={item.turn}
-              />
+              <Fragment key={item.turn.id}>
+                <AgentTurnCard sessionId={sessionId} turn={item.turn} />
+                <TurnCheckpoint sessionId={sessionId} turn={item.turn} />
+              </Fragment>
             )
           )
         )}

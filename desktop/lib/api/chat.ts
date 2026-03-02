@@ -76,6 +76,16 @@ export interface StartAgentTurnResponse {
   turnId: string;
 }
 
+export interface RestoreTurnCheckpointPayload {
+  sessionId: string;
+  turnId: string;
+}
+
+export interface RestoreTurnCheckpointResponse {
+  restoredTurnId: string;
+  removedTurnIds: string[];
+}
+
 export async function createChatSession(title?: string): Promise<ChatSession> {
   try {
     return await invoke("create_chat_session", { title });
@@ -149,6 +159,16 @@ export async function cancelAgentTurn(turnId: string): Promise<void> {
     await invoke("cancel_agent_turn", { payload: { turnId } });
   } catch (error) {
     throw new Error(`Failed to cancel agent turn: ${error}`);
+  }
+}
+
+export async function restoreTurnCheckpoint(
+  payload: RestoreTurnCheckpointPayload
+): Promise<RestoreTurnCheckpointResponse> {
+  try {
+    return await invoke("restore_turn_checkpoint", { payload });
+  } catch (error) {
+    throw new Error(`Failed to restore checkpoint: ${error}`);
   }
 }
 

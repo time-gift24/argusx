@@ -140,6 +140,45 @@ impl FileSessionStore {
         Ok(summaries.pop())
     }
 
+    pub async fn delete_turn_artifacts(&self, session_id: &str, turn_id: &str) -> Result<()> {
+        let turn_path = self.checked_turn_path(session_id, turn_id)?;
+        if fs::try_exists(&turn_path).await? {
+            fs::remove_dir_all(turn_path).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn truncate_turns_after(
+        &self,
+        session_id: &str,
+        restored_turn_id: &str,
+    ) -> Result<Vec<String>> {
+        validate_session_id(session_id)?;
+        validate_turn_id(restored_turn_id)?;
+
+        let summaries = self.list_turn_summaries(session_id).await?;
+        let Some(target_index) = summaries
+            .iter()
+            .position(|summary| summary.turn_id == restored_turn_id)
+        else {
+            anyhow::bail!(
+                "restore target turn {restored_turn_id} not found in session {session_id}"
+            );
+        };
+
+        let removed_turn_ids: Vec<String> = summaries
+            .iter()
+            .skip(target_index + 1)
+            .map(|summary| summary.turn_id.clone())
+            .collect();
+
+        for turn_id in &removed_turn_ids {
+            self.delete_turn_artifacts(session_id, turn_id).await?;
+        }
+
+        Ok(removed_turn_ids)
+    }
+
     pub async fn save_turn_transcript(
         &self,
         session_id: &str,
@@ -591,5 +630,69 @@ mod tests {
 
         // Silence unused import lint for SessionMeta in test scope and ensure ID helpers stay serializable.
         let _ = SessionMeta::new("s1", "t1");
+    }
+
+    #[tokio::test]
+    async fn truncate_turns_after_removes_later_turn_dirs() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let store = FileSessionStore::new(temp_dir.path().to_path_buf());
+        let session = SessionInfo::new("s1".into(), "session".into());
+        store.create(&session).await.expect("create session");
+
+        for idx in 1..=3 {
+            let turn_id = format!("t{idx}");
+            let context = TurnContext {
+                turn_id: turn_id.clone(),
+                session_id: "s1".into(),
+                epoch: 0,
+                started_at: idx as i64,
+            };
+            store
+                .save_turn_context(&context)
+                .await
+                .expect("save turn context");
+            let summary = TurnSummary {
+                turn_id: turn_id.clone(),
+                epoch: 0,
+                started_at: idx as i64,
+                ended_at: Some(idx as i64 + 100),
+                status: TurnStatus::Done,
+                final_message: Some(format!("done {idx}")),
+                tool_calls_count: 0,
+                input_tokens: 1,
+                output_tokens: 1,
+            };
+            store
+                .save_turn_summary("s1", &summary)
+                .await
+                .expect("save turn summary");
+            store
+                .save_turn_transcript(
+                    "s1",
+                    &turn_id,
+                    &[TranscriptItem::assistant_message(format!("m{idx}"))],
+                )
+                .await
+                .expect("save turn transcript");
+        }
+
+        let removed = store
+            .truncate_turns_after("s1", "t2")
+            .await
+            .expect("truncate turns");
+        assert_eq!(removed, vec!["t3".to_string()]);
+
+        let summaries = store
+            .list_turn_summaries("s1")
+            .await
+            .expect("list summaries after truncate");
+        assert_eq!(summaries.len(), 2);
+        assert_eq!(summaries[0].turn_id, "t1");
+        assert_eq!(summaries[1].turn_id, "t2");
+
+        let turns_path = temp_dir.path().join("s1").join("turns");
+        assert!(turns_path.join("t1").exists(), "t1 should remain");
+        assert!(turns_path.join("t2").exists(), "t2 should remain");
+        assert!(!turns_path.join("t3").exists(), "t3 should be removed");
     }
 }

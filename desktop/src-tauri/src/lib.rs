@@ -67,6 +67,20 @@ struct CancelAgentTurnPayload {
     turn_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RestoreTurnCheckpointPayload {
+    session_id: String,
+    turn_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RestoreTurnCheckpointResponse {
+    restored_turn_id: String,
+    removed_turn_ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AgentStreamEnvelope {
@@ -190,7 +204,13 @@ async fn start_agent_turn(
         .await
         .map_err(|err| format!("failed to run turn: {err}"))?;
 
-    spawn_stream_forwarders(app, payload.session_id, turn_id.clone(), streams.run, streams.ui);
+    spawn_stream_forwarders(
+        app,
+        payload.session_id,
+        turn_id.clone(),
+        streams.run,
+        streams.ui,
+    );
 
     Ok(StartAgentTurnResponse { turn_id })
 }
@@ -202,9 +222,58 @@ async fn cancel_agent_turn(
 ) -> Result<(), String> {
     state
         .runtime
-        .cancel_turn(&payload.turn_id, Some("cancelled from desktop ui".to_string()))
+        .cancel_turn(
+            &payload.turn_id,
+            Some("cancelled from desktop ui".to_string()),
+        )
         .await
         .map_err(|err| format!("failed to cancel turn {}: {err}", payload.turn_id))
+}
+
+#[tauri::command]
+async fn restore_turn_checkpoint(
+    state: State<'_, AppState>,
+    payload: RestoreTurnCheckpointPayload,
+) -> Result<RestoreTurnCheckpointResponse, String> {
+    let mapped_backend_session_id = state
+        .frontend_to_backend_session
+        .read()
+        .await
+        .get(&payload.session_id)
+        .cloned();
+
+    let backend_session_id = if let Some(session_id) = mapped_backend_session_id {
+        session_id
+    } else {
+        let Some(found_session_id) = state
+            .runtime
+            .find_session_id_by_turn_id(&payload.turn_id)
+            .await
+            .map_err(|err| format!("failed to resolve session by turn id: {err}"))?
+        else {
+            return Err(format!(
+                "turn {} was not found in any session",
+                payload.turn_id
+            ));
+        };
+        state
+            .frontend_to_backend_session
+            .write()
+            .await
+            .insert(payload.session_id.clone(), found_session_id.clone());
+        found_session_id
+    };
+
+    let result = state
+        .runtime
+        .restore_to_turn(&backend_session_id, &payload.turn_id)
+        .await
+        .map_err(|err| format!("failed to restore checkpoint {}: {err}", payload.turn_id))?;
+
+    Ok(RestoreTurnCheckpointResponse {
+        restored_turn_id: result.restored_turn_id,
+        removed_turn_ids: result.removed_turn_ids,
+    })
 }
 
 fn spawn_stream_forwarders(
@@ -415,6 +484,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             list_available_models,
             start_agent_turn,
             cancel_agent_turn,
+            restore_turn_checkpoint,
         ])
         .run(tauri::generate_context!())?;
     Ok(())

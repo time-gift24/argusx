@@ -13,22 +13,15 @@ interface AgentTurnCardProps {
 
 export function AgentTurnCard({ sessionId, turn }: AgentTurnCardProps) {
   const summaryText = turn.assistantText.trim();
-  const shouldShowFinalSummary =
-    summaryText.length > 0 &&
-    (turn.status === "done" || turn.status === "failed" || turn.status === "cancelled");
+  const shouldShowSummary = summaryText.length > 0;
 
   return (
     <Message from="assistant">
       <div className="w-full space-y-2">
-        {shouldShowFinalSummary && (
-          <div>
-            <p className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
-              Final Summary
-            </p>
-            <MessageResponse className="text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
-              {summaryText}
-            </MessageResponse>
-          </div>
+        {shouldShowSummary && (
+          <MessageResponse className="text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
+            {summaryText}
+          </MessageResponse>
         )}
 
         <TurnProcessCard sessionId={sessionId} turn={turn} />

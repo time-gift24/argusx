@@ -11,6 +11,7 @@ use agent_turn::{TurnEngineConfig, TurnRuntime};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures::StreamExt;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -47,6 +48,12 @@ impl Default for SessionConfig {
             max_parallel_tools: 4,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RestoreCheckpointResult {
+    pub restored_turn_id: String,
+    pub removed_turn_ids: Vec<String>,
 }
 
 impl<L, T> SessionRuntime<L, T>
@@ -156,6 +163,72 @@ where
 
     pub async fn restore_session(&self, session_id: &SessionId) -> Result<SessionInfo> {
         self.ensure_session_loaded(session_id).await.map(|s| s.info)
+    }
+
+    pub async fn find_session_id_by_turn_id(&self, turn_id: &str) -> Result<Option<String>> {
+        self.store.find_session_id_by_turn_id(turn_id).await
+    }
+
+    pub async fn restore_to_turn(
+        &self,
+        session_id: &SessionId,
+        turn_id: &TurnId,
+    ) -> Result<RestoreCheckpointResult> {
+        self.ensure_session_loaded(session_id).await?;
+
+        let (target_turn_id, updated_info, removed_turn_ids) = {
+            let mut sessions = self.sessions.write().await;
+            let state = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| anyhow!("Session not found: {session_id}"))?;
+
+            if state.current_turn_id.is_some() {
+                anyhow::bail!("Session {session_id} is busy");
+            }
+
+            let Some(target_index) = state
+                .turns
+                .iter()
+                .position(|summary| summary.turn_id == *turn_id)
+            else {
+                anyhow::bail!("Turn {turn_id} not found in session {session_id}");
+            };
+            let target = state.turns[target_index].clone();
+
+            if target.status != TurnStatus::Done {
+                anyhow::bail!("Turn {turn_id} is not in done status and cannot be restored");
+            }
+
+            let removed_turn_ids: Vec<String> = state
+                .turns
+                .iter()
+                .skip(target_index + 1)
+                .map(|summary| summary.turn_id.clone())
+                .collect();
+
+            state.turns.truncate(target_index + 1);
+            state.current_turn_id = None;
+            state.info.status = SessionStatus::Idle;
+            state.info.updated_at = chrono::Utc::now().timestamp_millis();
+
+            (target.turn_id.clone(), state.info.clone(), removed_turn_ids)
+        };
+
+        let removed_on_disk = self.store.truncate_turns_after(session_id, turn_id).await?;
+
+        if removed_turn_ids != removed_on_disk {
+            warn!(
+                "restore_to_turn removed turn mismatch for session {} target {}: memory={:?} disk={:?}",
+                session_id, turn_id, removed_turn_ids, removed_on_disk
+            );
+        }
+
+        self.store.update(&updated_info).await?;
+
+        Ok(RestoreCheckpointResult {
+            restored_turn_id: target_turn_id,
+            removed_turn_ids: removed_on_disk,
+        })
     }
 
     async fn load_previous_transcript(
@@ -767,6 +840,183 @@ mod tests {
             first_user_text(&captured[0].transcript[0]),
             Some("persist me".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn restore_to_turn_truncates_state_and_disk() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let runtime = SessionRuntime::new(
+            temp_dir.path().to_path_buf(),
+            Arc::new(MockModel),
+            Arc::new(MockTools),
+        );
+
+        let session_id = runtime
+            .create_session(None, Some("Restore".into()))
+            .await
+            .expect("create session");
+
+        let summaries = vec![
+            TurnSummary {
+                turn_id: "t1".into(),
+                epoch: 0,
+                started_at: 1,
+                ended_at: Some(11),
+                status: TurnStatus::Done,
+                final_message: Some("one".into()),
+                tool_calls_count: 0,
+                input_tokens: 1,
+                output_tokens: 1,
+            },
+            TurnSummary {
+                turn_id: "t2".into(),
+                epoch: 0,
+                started_at: 2,
+                ended_at: Some(12),
+                status: TurnStatus::Done,
+                final_message: Some("two".into()),
+                tool_calls_count: 0,
+                input_tokens: 1,
+                output_tokens: 1,
+            },
+            TurnSummary {
+                turn_id: "t3".into(),
+                epoch: 0,
+                started_at: 3,
+                ended_at: Some(13),
+                status: TurnStatus::Done,
+                final_message: Some("three".into()),
+                tool_calls_count: 0,
+                input_tokens: 1,
+                output_tokens: 1,
+            },
+        ];
+        seed_turn_state_and_artifacts(&runtime, &session_id, &summaries).await;
+
+        let result = runtime
+            .restore_to_turn(&session_id, &"t2".to_string())
+            .await
+            .expect("restore to t2");
+        assert_eq!(result.restored_turn_id, "t2");
+        assert_eq!(result.removed_turn_ids, vec!["t3".to_string()]);
+
+        let sessions = runtime.sessions.read().await;
+        let state = sessions.get(&session_id).expect("session state exists");
+        assert_eq!(state.turns.len(), 2);
+        assert_eq!(state.turns[0].turn_id, "t1");
+        assert_eq!(state.turns[1].turn_id, "t2");
+        drop(sessions);
+
+        let persisted = runtime
+            .store
+            .list_turn_summaries(&session_id)
+            .await
+            .expect("list summaries");
+        assert_eq!(persisted.len(), 2);
+        assert_eq!(persisted[0].turn_id, "t1");
+        assert_eq!(persisted[1].turn_id, "t2");
+
+        let turns_path = temp_dir.path().join(&session_id).join("turns");
+        assert!(turns_path.join("t1").exists());
+        assert!(turns_path.join("t2").exists());
+        assert!(!turns_path.join("t3").exists());
+    }
+
+    #[tokio::test]
+    async fn restore_to_turn_rejects_non_done_target() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let runtime = SessionRuntime::new(
+            temp_dir.path().to_path_buf(),
+            Arc::new(MockModel),
+            Arc::new(MockTools),
+        );
+
+        let session_id = runtime
+            .create_session(None, Some("Restore Failed".into()))
+            .await
+            .expect("create session");
+
+        let summaries = vec![
+            TurnSummary {
+                turn_id: "t1".into(),
+                epoch: 0,
+                started_at: 1,
+                ended_at: Some(11),
+                status: TurnStatus::Done,
+                final_message: Some("one".into()),
+                tool_calls_count: 0,
+                input_tokens: 1,
+                output_tokens: 1,
+            },
+            TurnSummary {
+                turn_id: "t2".into(),
+                epoch: 0,
+                started_at: 2,
+                ended_at: Some(12),
+                status: TurnStatus::Failed,
+                final_message: None,
+                tool_calls_count: 0,
+                input_tokens: 1,
+                output_tokens: 1,
+            },
+        ];
+        seed_turn_state_and_artifacts(&runtime, &session_id, &summaries).await;
+
+        let err = runtime
+            .restore_to_turn(&session_id, &"t2".to_string())
+            .await
+            .expect_err("restore should fail");
+        assert!(err.to_string().contains("not in done status"));
+
+        let persisted = runtime
+            .store
+            .list_turn_summaries(&session_id)
+            .await
+            .expect("list summaries");
+        assert_eq!(persisted.len(), 2);
+        assert_eq!(persisted[0].turn_id, "t1");
+        assert_eq!(persisted[1].turn_id, "t2");
+    }
+
+    async fn seed_turn_state_and_artifacts(
+        runtime: &SessionRuntime<MockModel, MockTools>,
+        session_id: &str,
+        summaries: &[TurnSummary],
+    ) {
+        for summary in summaries {
+            let context = TurnContext {
+                turn_id: summary.turn_id.clone(),
+                session_id: session_id.to_string(),
+                epoch: summary.epoch,
+                started_at: summary.started_at,
+            };
+            runtime
+                .store
+                .save_turn_context(&context)
+                .await
+                .expect("save turn context");
+            runtime
+                .store
+                .save_turn_summary(session_id, summary)
+                .await
+                .expect("save turn summary");
+            runtime
+                .store
+                .save_turn_transcript(
+                    session_id,
+                    &summary.turn_id,
+                    &[TranscriptItem::assistant_message(summary.turn_id.clone())],
+                )
+                .await
+                .expect("save turn transcript");
+        }
+
+        let mut sessions = runtime.sessions.write().await;
+        let state = sessions
+            .get_mut(session_id)
+            .expect("session state exists for seeding");
+        state.turns = summaries.to_vec();
+        state.current_turn_id = None;
     }
 
     fn first_user_text(item: &TranscriptItem) -> Option<String> {
