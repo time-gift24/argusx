@@ -272,4 +272,60 @@ describe("QuillReviewField selection mapping", () => {
       source: "silent",
     });
   });
+
+  it("opens annotation with sop location encoding for sop step section", async () => {
+    render(
+      <QuillReviewField
+        sectionId="sop-step-12"
+        fieldKey="sop.12.operation"
+        label="操作步骤"
+        text="ABCDEFGH"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(mockQuillInstances.length).toBe(1);
+    });
+
+    vi.useFakeTimers();
+    act(() => {
+      mockQuillInstances[0].emitSelection({ index: 1, length: 2 });
+      vi.advanceTimersByTime(300);
+    });
+
+    const state = useAnnotationStore.getState().state;
+    const current = state.items[0];
+    expect(current.location.section_id).toBe("sop-step-12");
+    expect(current.location.field_key).toBe("sop.12.operation");
+    expect(current.location.start_offset).toBe(1);
+    expect(current.location.end_offset).toBe(3);
+    expect(current.location.selected_text).toBe("BC");
+  });
+
+  it("normalizes html text before mapping selection offsets and selected_text", async () => {
+    render(
+      <QuillReviewField
+        sectionId="sop-step-11"
+        fieldKey="sop.11.operation"
+        label="操作步骤"
+        text="<p>ABCD</p>"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(mockQuillInstances.length).toBe(1);
+    });
+
+    vi.useFakeTimers();
+    act(() => {
+      mockQuillInstances[0].emitSelection({ index: 1, length: 2 });
+      vi.advanceTimersByTime(300);
+    });
+
+    const state = useAnnotationStore.getState().state;
+    const current = state.items[0];
+    expect(current.location.start_offset).toBe(1);
+    expect(current.location.end_offset).toBe(3);
+    expect(current.location.selected_text).toBe("BC");
+  });
 });

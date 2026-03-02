@@ -25,6 +25,20 @@ type HighlightRange = {
 const BASE_HIGHLIGHT_COLOR = "rgba(16, 185, 129, 0.24)";
 const ACTIVE_HIGHLIGHT_COLOR = "rgba(16, 185, 129, 0.42)";
 
+function normalizeQuillInputText(value: string): string {
+  if (!value.includes("<")) {
+    return value;
+  }
+
+  if (typeof document === "undefined") {
+    return value.replace(/<[^>]+>/g, "");
+  }
+
+  const container = document.createElement("div");
+  container.innerHTML = value;
+  return container.textContent ?? "";
+}
+
 function buildHighlightRanges({
   items,
   activeId,
@@ -90,8 +104,9 @@ export function QuillReviewField({
   const hostRef = React.useRef<HTMLDivElement>(null);
   const quillRef = React.useRef<Quill | null>(null);
   const [isEditorReady, setIsEditorReady] = React.useState(false);
-  const textRef = React.useRef(text);
-  textRef.current = text;
+  const normalizedText = React.useMemo(() => normalizeQuillInputText(text), [text]);
+  const textRef = React.useRef(normalizedText);
+  textRef.current = normalizedText;
 
   const state = useAnnotationStore((store) => store.state);
   const dispatch = useAnnotationStore((store) => store.dispatch);
@@ -101,9 +116,9 @@ export function QuillReviewField({
         items: state.items,
         activeId: state.activeId,
         fieldKey,
-        textLength: text.length,
+        textLength: normalizedText.length,
       }),
-    [fieldKey, state.activeId, state.items, text.length],
+    [fieldKey, normalizedText.length, state.activeId, state.items],
   );
 
   const onSelectionChange = useQuillSelectionAnchor({
@@ -190,11 +205,13 @@ export function QuillReviewField({
       return;
     }
     const currentText = quill.getText();
-    const nextText = text.endsWith("\n") ? text : `${text}\n`;
+    const nextText = normalizedText.endsWith("\n")
+      ? normalizedText
+      : `${normalizedText}\n`;
     if (currentText !== nextText) {
-      quill.setText(text);
+      quill.setText(normalizedText);
     }
-  }, [text]);
+  }, [normalizedText]);
 
   React.useEffect(() => {
     const quill = quillRef.current;
@@ -202,7 +219,7 @@ export function QuillReviewField({
       return;
     }
 
-    quill.formatText(0, text.length, { background: false }, "silent");
+    quill.formatText(0, normalizedText.length, { background: false }, "silent");
 
     for (const range of highlightRanges.filter((item) => !item.isActive)) {
       quill.formatText(
@@ -221,7 +238,7 @@ export function QuillReviewField({
         "silent",
       );
     }
-  }, [highlightRanges, isEditorReady, text.length]);
+  }, [highlightRanges, isEditorReady, normalizedText.length]);
 
   return (
     <div className="space-y-1 rounded-md border p-2">
