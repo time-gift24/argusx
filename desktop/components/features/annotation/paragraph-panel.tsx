@@ -1,40 +1,59 @@
-import { QuillReviewField } from "./quill-review-field";
+import { useMemo, useState } from "react";
+import { mockReviewData } from "./mock-review-data";
+import { SopStepDetail } from "./sop-step-detail";
+import { SopTreeNav } from "./sop-tree-nav";
+import {
+  pickDefaultSopStep,
+  type SopGroups,
+  type SopStepLite,
+} from "@/lib/annotation/sop-view-model";
 
-const PARAGRAPH_FIELDS = [
-  {
-    fieldKey: "paragraph.summary",
-    label: "段落摘要",
-    text: "本段描述了事实背景与时间线。",
-  },
-  {
-    fieldKey: "paragraph.basis",
-    label: "法条依据",
-    text: "援引了行政处罚法第 xx 条作为处理依据。",
-  },
-  {
-    fieldKey: "paragraph.process",
-    label: "程序描述",
-    text: "记录了调查、告知和陈述申辩过程。",
-  },
-  {
-    fieldKey: "paragraph.decision",
-    label: "处理结论",
-    text: "最终作出罚款并责令整改的决定。",
-  },
-];
+function findStepById(groups: SopGroups, stepId: number): SopStepLite | null {
+  for (const category of ["detect", "handle", "verification", "rollback"] as const) {
+    const hit = groups[category].find((step) => step.sop_step_id === stepId);
+    if (hit) {
+      return hit;
+    }
+  }
+
+  return null;
+}
 
 export function ParagraphPanel() {
+  const groups = useMemo<SopGroups>(() => ({
+    detect: mockReviewData.sop?.detect ?? [],
+    handle: mockReviewData.sop?.handle ?? [],
+    verification: mockReviewData.sop?.verification ?? [],
+    rollback: mockReviewData.sop?.rollback ?? [],
+  }), []);
+
+  const [activeStepId, setActiveStepId] = useState<number | null>(() => pickDefaultSopStep(groups)?.sop_step_id ?? null);
+
+  const activeStep = activeStepId === null ? null : findStepById(groups, activeStepId);
+  const activeDetail = activeStepId === null ? null : mockReviewData.sop?.step_details?.[activeStepId];
+
+  if (!activeStep || !activeDetail) {
+    return (
+      <div className="rounded-md border bg-background p-3 text-sm text-muted-foreground">
+        暂无可展示的 SOP 步骤。
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-3">
-      {PARAGRAPH_FIELDS.map((field, index) => (
-        <QuillReviewField
-          key={field.fieldKey}
-          sectionId={`paragraph-${index + 1}`}
-          fieldKey={field.fieldKey}
-          label={field.label}
-          text={field.text}
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[260px_minmax(0,1fr)]">
+      <div>
+        <SopTreeNav
+          groups={groups}
+          activeStepId={activeStepId}
+          onSelect={setActiveStepId}
         />
-      ))}
+      </div>
+      <SopStepDetail
+        stepId={activeStep.sop_step_id}
+        stepName={activeStep.name}
+        stepDetail={activeDetail}
+      />
     </div>
   );
 }
