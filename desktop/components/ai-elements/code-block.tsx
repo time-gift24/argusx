@@ -103,6 +103,7 @@ type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string;
   language: BundledLanguage;
   showLineNumbers?: boolean;
+  compact?: boolean;
 };
 
 interface TokenizedCode {
@@ -113,11 +114,13 @@ interface TokenizedCode {
 
 interface CodeBlockContextType {
   code: string;
+  compact: boolean;
 }
 
 // Context
 const CodeBlockContext = createContext<CodeBlockContextType>({
   code: "",
+  compact: false,
 });
 
 // Highlighter cache (singleton per language)
@@ -254,10 +257,12 @@ const CodeBlockBody = memo(
   ({
     tokenized,
     showLineNumbers,
+    compact,
     className,
   }: {
     tokenized: TokenizedCode;
     showLineNumbers: boolean;
+    compact: boolean;
     className?: string;
   }) => {
     const preStyle = useMemo(
@@ -276,14 +281,15 @@ const CodeBlockBody = memo(
     return (
       <pre
         className={cn(
-          "dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)] m-0 p-3 text-[12px] leading-5",
+          "dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)] m-0",
+          compact ? "p-2 text-[11px] leading-4" : "p-3 text-[12px] leading-5",
           className
         )}
         style={preStyle}
       >
         <code
           className={cn(
-            "font-mono text-[12px] leading-5",
+            compact ? "font-mono text-[11px] leading-4" : "font-mono text-[12px] leading-5",
             showLineNumbers && "[counter-increment:line_0] [counter-reset:line]"
           )}
         >
@@ -301,6 +307,7 @@ const CodeBlockBody = memo(
   (prevProps, nextProps) =>
     prevProps.tokenized === nextProps.tokenized &&
     prevProps.showLineNumbers === nextProps.showLineNumbers &&
+    prevProps.compact === nextProps.compact &&
     prevProps.className === nextProps.className
 );
 
@@ -309,14 +316,17 @@ CodeBlockBody.displayName = "CodeBlockBody";
 export const CodeBlockContainer = ({
   className,
   language,
+  compact = false,
   style,
   ...props
-}: HTMLAttributes<HTMLDivElement> & { language: string }) => (
+}: HTMLAttributes<HTMLDivElement> & { language: string; compact?: boolean }) => (
   <div
     className={cn(
       "group relative w-full overflow-hidden rounded-md border bg-background text-foreground",
+      compact && "border-border/60",
       className
     )}
+    data-density={compact ? "compact" : "default"}
     data-language={language}
     style={{
       containIntrinsicSize: "auto 200px",
@@ -380,10 +390,12 @@ export const CodeBlockContent = ({
   code,
   language,
   showLineNumbers = false,
+  compact = false,
 }: {
   code: string;
   language: BundledLanguage;
   showLineNumbers?: boolean;
+  compact?: boolean;
 }) => {
   // Memoized raw tokens for immediate display
   const rawTokens = useMemo(() => createRawTokens(code), [code]);
@@ -397,7 +409,11 @@ export const CodeBlockContent = ({
     let cancelled = false;
 
     // Reset to raw tokens when code changes (shows current code, not stale tokens)
-    setTokenized(highlightCode(code, language) ?? rawTokens);
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setTokenized(highlightCode(code, language) ?? rawTokens);
+      }
+    });
 
     // Subscribe to async highlighting result
     highlightCode(code, language, (result) => {
@@ -413,7 +429,11 @@ export const CodeBlockContent = ({
 
   return (
     <div className="relative overflow-auto">
-      <CodeBlockBody showLineNumbers={showLineNumbers} tokenized={tokenized} />
+      <CodeBlockBody
+        compact={compact}
+        showLineNumbers={showLineNumbers}
+        tokenized={tokenized}
+      />
     </div>
   );
 };
@@ -422,18 +442,25 @@ export const CodeBlock = ({
   code,
   language,
   showLineNumbers = false,
+  compact = false,
   className,
   children,
   ...props
 }: CodeBlockProps) => {
-  const contextValue = useMemo(() => ({ code }), [code]);
+  const contextValue = useMemo(() => ({ code, compact }), [code, compact]);
 
   return (
     <CodeBlockContext.Provider value={contextValue}>
-      <CodeBlockContainer className={className} language={language} {...props}>
+      <CodeBlockContainer
+        className={className}
+        compact={compact}
+        language={language}
+        {...props}
+      >
         {children}
         <CodeBlockContent
           code={code}
+          compact={compact}
           language={language}
           showLineNumbers={showLineNumbers}
         />
@@ -458,7 +485,7 @@ export const CodeBlockCopyButton = ({
 }: CodeBlockCopyButtonProps) => {
   const [isCopied, setIsCopied] = useState(false);
   const timeoutRef = useRef<number>(0);
-  const { code } = useContext(CodeBlockContext);
+  const { code, compact } = useContext(CodeBlockContext);
 
   const copyToClipboard = useCallback(async () => {
     if (typeof window === "undefined" || !navigator?.clipboard?.writeText) {
@@ -492,13 +519,13 @@ export const CodeBlockCopyButton = ({
 
   return (
     <Button
-      className={cn("shrink-0", className)}
+      className={cn(compact && "size-6", "shrink-0", className)}
       onClick={copyToClipboard}
-      size="icon"
+      size={compact ? "icon-sm" : "icon"}
       variant="ghost"
       {...props}
     >
-      {children ?? <Icon size={14} />}
+      {children ?? <Icon size={compact ? 13 : 14} />}
     </Button>
   );
 };

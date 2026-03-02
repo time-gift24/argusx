@@ -91,6 +91,18 @@ export type AgentTurnStatus =
   | "failed"
   | "cancelled";
 
+export type TurnProcessSectionKey =
+  | "reasoning"
+  | "plan"
+  | "tools"
+  | "terminal";
+
+export interface TurnUiState {
+  processExpanded: boolean;
+  sectionExpanded: Partial<Record<TurnProcessSectionKey, boolean>>;
+  codeExpanded: Record<string, boolean>;
+}
+
 export interface AgentTurnVM {
   id: string;
   sessionId: string;
@@ -114,6 +126,7 @@ interface ChatState {
   currentSessionId: string | null;
   messages: Record<string, ChatMessage[]>;
   turns: Record<string, AgentTurnVM[]>;
+  turnUiState: Record<string, Record<string, TurnUiState>>;
 
   createSession: () => string;
   deleteSession: (id: string) => void;
@@ -126,8 +139,26 @@ interface ChatState {
   updateSessionStatus: (id: string, status: ChatStatus) => void;
   ensureAgentTurn: (sessionId: string, turnId: string, requestMessageId?: string) => void;
   setReasoningExpanded: (sessionId: string, turnId: string, expanded: boolean) => void;
+  setTurnProcessExpanded: (sessionId: string, turnId: string, expanded: boolean) => void;
+  setTurnSectionExpanded: (
+    sessionId: string,
+    turnId: string,
+    section: TurnProcessSectionKey,
+    expanded: boolean
+  ) => void;
+  setTurnCodeExpanded: (
+    sessionId: string,
+    turnId: string,
+    codeBlockId: string,
+    expanded: boolean
+  ) => void;
   applyAgentStreamEnvelope: (envelope: AgentStreamEnvelope) => void;
 }
+
+type PersistedChatState = Pick<
+  ChatState,
+  "sessions" | "currentSessionId" | "messages" | "turns" | "turnUiState"
+>;
 
 const COLORS = ["chart-1", "chart-2", "chart-3", "chart-4", "chart-5"];
 const REASONING_CHAR_LIMIT = 24_000;
@@ -183,6 +214,12 @@ const createEmptyTurn = (
     lastSeq: 0,
   };
 };
+
+const createDefaultTurnUiState = (): TurnUiState => ({
+  processExpanded: false,
+  sectionExpanded: {},
+  codeExpanded: {},
+});
 
 const toPreview = (text: string): string => {
   const compact = text.replace(/\s+/g, " ").trim();
@@ -518,6 +555,7 @@ export const useChatStore = create<ChatState>()(
       currentSessionId: null,
       messages: {},
       turns: {},
+      turnUiState: {},
 
       createSession: () => {
         const id = `session-${Date.now()}`;
@@ -538,6 +576,7 @@ export const useChatStore = create<ChatState>()(
           currentSessionId: id,
           messages: { ...state.messages, [id]: [] },
           turns: { ...state.turns, [id]: [] },
+          turnUiState: { ...state.turnUiState, [id]: {} },
         }));
 
         return id;
@@ -550,13 +589,15 @@ export const useChatStore = create<ChatState>()(
           delete messages[id];
           const turns = { ...state.turns };
           delete turns[id];
+          const turnUiState = { ...state.turnUiState };
+          delete turnUiState[id];
 
           let currentSessionId = state.currentSessionId;
           if (currentSessionId === id) {
             currentSessionId = sessions[0]?.id ?? null;
           }
 
-          return { sessions, messages, turns, currentSessionId };
+          return { sessions, messages, turns, turnUiState, currentSessionId };
         });
       },
 
@@ -648,6 +689,73 @@ export const useChatStore = create<ChatState>()(
             turns: {
               ...state.turns,
               [sessionId]: currentTurns,
+            },
+          };
+        });
+      },
+
+      setTurnProcessExpanded: (sessionId, turnId, expanded) => {
+        set((state) => {
+          const sessionUi = { ...(state.turnUiState[sessionId] ?? {}) };
+          const turnUi = sessionUi[turnId] ?? createDefaultTurnUiState();
+
+          sessionUi[turnId] = {
+            ...turnUi,
+            processExpanded: expanded,
+          };
+
+          return {
+            turnUiState: {
+              ...state.turnUiState,
+              [sessionId]: sessionUi,
+            },
+          };
+        });
+      },
+
+      setTurnSectionExpanded: (sessionId, turnId, section, expanded) => {
+        set((state) => {
+          const sessionUi = { ...(state.turnUiState[sessionId] ?? {}) };
+          const turnUi = sessionUi[turnId] ?? createDefaultTurnUiState();
+
+          sessionUi[turnId] = {
+            ...turnUi,
+            sectionExpanded: {
+              ...turnUi.sectionExpanded,
+              [section]: expanded,
+            },
+          };
+
+          return {
+            turnUiState: {
+              ...state.turnUiState,
+              [sessionId]: sessionUi,
+            },
+          };
+        });
+      },
+
+      setTurnCodeExpanded: (sessionId, turnId, codeBlockId, expanded) => {
+        set((state) => {
+          const sessionUi = { ...(state.turnUiState[sessionId] ?? {}) };
+          const turnUi = sessionUi[turnId] ?? createDefaultTurnUiState();
+          const codeExpanded = { ...turnUi.codeExpanded };
+
+          if (expanded) {
+            codeExpanded[codeBlockId] = true;
+          } else {
+            delete codeExpanded[codeBlockId];
+          }
+
+          sessionUi[turnId] = {
+            ...turnUi,
+            codeExpanded,
+          };
+
+          return {
+            turnUiState: {
+              ...state.turnUiState,
+              [sessionId]: sessionUi,
             },
           };
         });
@@ -942,7 +1050,14 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: "chat-storage",
-      version: 4,
+      version: 5,
+      partialize: ((state: ChatState) => ({
+        sessions: state.sessions,
+        currentSessionId: state.currentSessionId,
+        messages: state.messages,
+        turns: state.turns,
+        turnUiState: {},
+      })) as unknown as (state: ChatState) => PersistedChatState,
       migrate: (persistedState: unknown) => {
         const state = (persistedState ?? {}) as Partial<ChatState>;
         // Reset transient streaming states after hydration to avoid stale "streaming" state
@@ -972,6 +1087,7 @@ export const useChatStore = create<ChatState>()(
                 ...turn.reasoning,
                 isStreaming: false,
                 status: nextReasoningStatus,
+                isExpanded: false,
               },
               queue: {
                 ...turn.queue,
@@ -1011,16 +1127,21 @@ export const useChatStore = create<ChatState>()(
           });
         }
         // Also reset session statuses to "wait-input" to avoid stale streaming states
-        const sessions = (state.sessions ?? []).map((session) => ({
+        const sessions: ChatSession[] = (state.sessions ?? []).map((session) => ({
           ...session,
-          status: session.status === "thinking" || session.status === "tool-call" || session.status === "outputing"
-            ? "wait-input"
-            : session.status,
+          status:
+            session.status === "thinking" ||
+            session.status === "tool-call" ||
+            session.status === "outputing"
+              ? "wait-input"
+              : session.status,
         }));
         return {
-          ...state,
+          currentSessionId: state.currentSessionId ?? null,
+          messages: state.messages ?? {},
           turns: resetTurns,
           sessions,
+          turnUiState: {},
         };
       },
     }
