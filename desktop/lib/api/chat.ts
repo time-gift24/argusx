@@ -18,6 +18,12 @@ export interface ChatMessage {
   created_at: number;
 }
 
+export interface GetChatMessagesOptions {
+  range?: "window_24h" | "all";
+  cursor?: number;
+  limit?: number;
+}
+
 export type AgentStreamSource = "run" | "ui";
 
 export interface AgentEventPayload {
@@ -110,9 +116,17 @@ export async function deleteChatSession(id: string): Promise<void> {
   }
 }
 
-export async function getChatMessages(sessionId: string): Promise<ChatMessage[]> {
+export async function getChatMessages(
+  sessionId: string,
+  options?: GetChatMessagesOptions
+): Promise<ChatMessage[]> {
   try {
-    return await invoke("get_chat_messages", { session_id: sessionId });
+    return await invoke("get_chat_messages", {
+      session_id: sessionId,
+      range: options?.range,
+      cursor: options?.cursor,
+      limit: options?.limit,
+    });
   } catch (error) {
     throw new Error(`Failed to get chat messages: ${error}`);
   }
@@ -143,6 +157,14 @@ export async function setLlmRuntimeConfig(
     return await invoke("set_llm_runtime_config", { payload });
   } catch (error) {
     throw new Error(`Failed to set llm runtime config: ${error}`);
+  }
+}
+
+export async function clearLlmRuntimeConfig(): Promise<LlmRuntimeConfig> {
+  try {
+    return await invoke("clear_llm_runtime_config");
+  } catch (error) {
+    throw new Error(`Failed to clear llm runtime config: ${error}`);
   }
 }
 

@@ -22,7 +22,9 @@ export function SessionBadgeList() {
       {sessions.map((session) => (
         <BadgeContextMenu
           key={session.id}
-          onDelete={() => deleteSession(session.id)}
+          onDelete={() => {
+            void deleteSession(session.id);
+          }}
           onRename={(title) => updateSession(session.id, { title })}
           session={session}
         >
@@ -41,7 +43,9 @@ export function SessionBadgeList() {
           "border border-dashed border-muted-foreground/50",
           "hover:border-primary hover:bg-primary/10"
         )}
-        onClick={() => createSession()}
+        onClick={() => {
+          void createSession();
+        }}
         size="icon"
         variant="ghost"
       >

@@ -7,13 +7,14 @@ import { useChatStore } from "@/lib/stores/chat-store";
 import { useLlmRuntimeConfigStore } from "@/lib/stores/llm-runtime-config-store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Settings2Icon } from "lucide-react";
+import { HistoryIcon, Settings2Icon } from "lucide-react";
 import { ConversationView } from "./conversation-view";
 import { ChatSessionBar } from "./chat-session-bar";
 import { ChatRuntimeConfigDialog } from "./chat-runtime-config-dialog";
+import { ChatFullInfoDialog } from "./chat-full-info-dialog";
 
 export function ChatPage() {
-  const { sessions, currentSessionId, createSession } = useChatStore();
+  const { sessions, currentSessionId, bootstrap } = useChatStore();
   const bootstrapLlmConfig = useLlmRuntimeConfigStore((state) => state.bootstrap);
   const availableModels = useLlmRuntimeConfigStore((state) => state.availableModels);
   const isConfigLoading = useLlmRuntimeConfigStore((state) => state.loading);
@@ -22,13 +23,11 @@ export function ChatPage() {
   const [configDialogSeed, setConfigDialogSeed] = useState(0);
   const hasAvailableModels = availableModels.length > 0;
   const showNoModelHint = !isConfigLoading && !hasAvailableModels;
+  const [fullInfoDialogOpen, setFullInfoDialogOpen] = useState(false);
 
-  // 如果没有会话，自动创建一个
   useEffect(() => {
-    if (sessions.length === 0) {
-      createSession();
-    }
-  }, [sessions.length, createSession]);
+    void bootstrap();
+  }, [bootstrap]);
 
   useEffect(() => {
     void bootstrapLlmConfig();
@@ -68,12 +67,27 @@ export function ChatPage() {
     setConfigDialogSeed((value) => value + 1);
     setConfigDialogOpen(true);
   }, []);
+  const handleOpenFullInfoDialog = useCallback(() => {
+    setFullInfoDialogOpen(true);
+  }, []);
 
   return (
     <div
       className="relative flex min-h-0 flex-1 flex-col"
       style={{ minWidth: `${CHAT_SIDEBAR_MIN_WIDTH}px` }}
     >
+      <div className="absolute left-3 top-3 z-50">
+        <Button
+          className="border-primary/30 bg-background/90 shadow-sm hover:bg-background"
+          onClick={handleOpenFullInfoDialog}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <HistoryIcon className="mr-1 size-4" />
+          Full Info
+        </Button>
+      </div>
       <div className="absolute right-3 top-3 z-50">
         <div className="relative">
           <span
@@ -119,6 +133,11 @@ export function ChatPage() {
         key={configDialogSeed}
         onOpenChange={setConfigDialogOpen}
         open={configDialogOpen}
+      />
+      <ChatFullInfoDialog
+        onOpenChange={setFullInfoDialogOpen}
+        open={fullInfoDialogOpen}
+        sessionId={currentSessionId}
       />
     </div>
   );

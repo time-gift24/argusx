@@ -1,8 +1,20 @@
-import type { AgentEventPayload, AgentStreamEnvelope } from "@/lib/api/chat";
+import type {
+  AgentEventPayload,
+  AgentStreamEnvelope,
+  ChatMessage as BackendChatMessage,
+  ChatSession as BackendChatSession,
+  GetChatMessagesOptions,
+} from "@/lib/api/chat";
+import {
+  createChatSession as createChatSessionApi,
+  deleteChatSession as deleteChatSessionApi,
+  getChatMessages,
+  listChatSessions,
+} from "@/lib/api/chat";
+import { trimChatCacheToBudget } from "@/lib/stores/chat-cache-budget";
 import type { ToolState } from "@/types";
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
 export type ChatStatus =
   | "wait-input"
@@ -127,9 +139,17 @@ interface ChatState {
   messages: Record<string, ChatMessage[]>;
   turns: Record<string, AgentTurnVM[]>;
   turnUiState: Record<string, Record<string, TurnUiState>>;
+  cacheBytes: number;
 
-  createSession: () => string;
-  deleteSession: (id: string) => void;
+  bootstrap: () => Promise<void>;
+  createSession: () => Promise<string>;
+  deleteSession: (id: string) => Promise<void>;
+  loadSessionMessages: (
+    sessionId: string,
+    options?: GetChatMessagesOptions
+  ) => Promise<void>;
+  loadFullSessionMessages: (sessionId: string, limit?: number) => Promise<void>;
+  clearSessionCache: (sessionId: string) => void;
   updateSession: (id: string, updates: Partial<Pick<ChatSession, "title" | "color">>) => void;
   setCurrentSession: (id: string) => void;
   addMessage: (
@@ -160,12 +180,9 @@ interface ChatState {
   applyAgentStreamEnvelope: (envelope: AgentStreamEnvelope) => void;
 }
 
-type PersistedChatState = Pick<
-  ChatState,
-  "sessions" | "currentSessionId" | "messages" | "turns" | "turnUiState"
->;
-
 const COLORS = ["chart-1", "chart-2", "chart-3", "chart-4", "chart-5"];
+const CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
+const DEFAULT_LOAD_LIMIT = 300;
 const REASONING_CHAR_LIMIT = 24_000;
 const COMPLETED_TASK_STATUSES = new Set(["completed", "done", "success", "succeeded", "finished"]);
 const STRUCTURED_PLAN_EVENT_TYPES = new Set([
@@ -553,41 +570,132 @@ const mapToolCallStatusToQueue = (status: string): QueueItemVM["status"] => {
   return "waiting";
 };
 
-export const useChatStore = create<ChatState>()(
-  persist(
-    (set, get) => ({
+const hashSessionColor = (sessionId: string): string => {
+  let hash = 0;
+  for (let index = 0; index < sessionId.length; index += 1) {
+    hash = (hash * 31 + sessionId.charCodeAt(index)) >>> 0;
+  }
+  return COLORS[hash % COLORS.length];
+};
+
+const mapBackendStatus = (status: BackendChatSession["status"]): ChatStatus => {
+  if (status === "active") {
+    return "thinking";
+  }
+  if (status === "archived") {
+    return "wait-input";
+  }
+  return "wait-input";
+};
+
+const toStoreSession = (session: BackendChatSession): ChatSession => ({
+  id: session.id,
+  title: session.title,
+  color: hashSessionColor(session.id),
+  status: mapBackendStatus(session.status),
+  createdAt: session.created_at,
+  updatedAt: session.updated_at,
+});
+
+const toStoreMessage = (message: BackendChatMessage): ChatMessage => ({
+  id: message.id,
+  sessionId: message.session_id,
+  role: message.role,
+  content: message.content,
+  createdAt: message.created_at,
+});
+
+export const useChatStore = create<ChatState>((set, get) => ({
       sessions: [],
       currentSessionId: null,
       messages: {},
       turns: {},
       turnUiState: {},
+      cacheBytes: 0,
 
-      createSession: () => {
-        const id = `session-${Date.now()}`;
-        const now = Date.now();
-        const colorIndex = get().sessions.length % COLORS.length;
+      bootstrap: async () => {
+        const remoteSessions = await listChatSessions();
+        const ensured = remoteSessions.length > 0 ? remoteSessions : [await createChatSessionApi()];
+        const sessions = ensured.map(toStoreSession);
+        const candidateCurrentId = get().currentSessionId;
+        const currentSessionId = candidateCurrentId && sessions.some((s) => s.id === candidateCurrentId)
+          ? candidateCurrentId
+          : sessions[0]?.id ?? null;
 
-        const newSession: ChatSession = {
-          id,
-          title: `Chat ${get().sessions.length + 1}`,
-          color: COLORS[colorIndex],
-          status: "wait-input",
-          createdAt: now,
-          updatedAt: now,
-        };
+        set((state) => {
+          const validIds = new Set(sessions.map((session) => session.id));
+          const messages = Object.fromEntries(
+            Object.entries(state.messages).filter(([sessionId]) => validIds.has(sessionId))
+          );
+          const turns = Object.fromEntries(
+            Object.entries(state.turns).filter(([sessionId]) => validIds.has(sessionId))
+          );
+          const turnUiState = Object.fromEntries(
+            Object.entries(state.turnUiState).filter(([sessionId]) => validIds.has(sessionId))
+          );
 
-        set((state) => ({
-          sessions: [...state.sessions, newSession],
-          currentSessionId: id,
-          messages: { ...state.messages, [id]: [] },
-          turns: { ...state.turns, [id]: [] },
-          turnUiState: { ...state.turnUiState, [id]: {} },
-        }));
+          const trimmed = trimChatCacheToBudget(
+            sessions,
+            messages,
+            turns,
+            currentSessionId,
+            CACHE_BUDGET_BYTES
+          );
 
-        return id;
+          return {
+            sessions,
+            currentSessionId,
+            messages: trimmed.messages,
+            turns: trimmed.turns,
+            turnUiState,
+            cacheBytes: trimmed.estimatedBytes,
+          };
+        });
+
+        if (currentSessionId) {
+          await get().loadSessionMessages(currentSessionId, {
+            range: "window_24h",
+            limit: DEFAULT_LOAD_LIMIT,
+          });
+        }
       },
 
-      deleteSession: (id) => {
+      createSession: async () => {
+        const created = await createChatSessionApi();
+        const nextSession = toStoreSession(created);
+
+        set((state) => {
+          const sessions = [nextSession, ...state.sessions.filter((session) => session.id !== nextSession.id)];
+          const messages = { ...state.messages, [nextSession.id]: state.messages[nextSession.id] ?? [] };
+          const turns = { ...state.turns, [nextSession.id]: state.turns[nextSession.id] ?? [] };
+          const turnUiState = {
+            ...state.turnUiState,
+            [nextSession.id]: state.turnUiState[nextSession.id] ?? {},
+          };
+          const trimmed = trimChatCacheToBudget(
+            sessions,
+            messages,
+            turns,
+            nextSession.id,
+            CACHE_BUDGET_BYTES
+          );
+
+          return {
+            sessions,
+            currentSessionId: nextSession.id,
+            messages: trimmed.messages,
+            turns: trimmed.turns,
+            turnUiState,
+            cacheBytes: trimmed.estimatedBytes,
+          };
+        });
+
+        return nextSession.id;
+      },
+
+      deleteSession: async (id) => {
+        await deleteChatSessionApi(id);
+
         set((state) => {
           const sessions = state.sessions.filter((s) => s.id !== id);
           const messages = { ...state.messages };
@@ -597,12 +705,103 @@ export const useChatStore = create<ChatState>()(
           const turnUiState = { ...state.turnUiState };
           delete turnUiState[id];
 
-          let currentSessionId = state.currentSessionId;
-          if (currentSessionId === id) {
-            currentSessionId = sessions[0]?.id ?? null;
+          const currentSessionId = state.currentSessionId === id ? (sessions[0]?.id ?? null) : state.currentSessionId;
+          const trimmed = trimChatCacheToBudget(
+            sessions,
+            messages,
+            turns,
+            currentSessionId,
+            CACHE_BUDGET_BYTES
+          );
+
+          return {
+            sessions,
+            messages: trimmed.messages,
+            turns: trimmed.turns,
+            turnUiState,
+            currentSessionId,
+            cacheBytes: trimmed.estimatedBytes,
+          };
+        });
+      },
+
+      loadSessionMessages: async (sessionId, options) => {
+        const range = options?.range ?? "window_24h";
+        const remote = await getChatMessages(sessionId, options);
+        const incoming = remote.map(toStoreMessage);
+        const isCursorPagination = range === "all" && typeof options?.cursor === "number";
+
+        set((state) => {
+          const existing = state.messages[sessionId] ?? [];
+          let nextSessionMessages: ChatMessage[];
+
+          if (isCursorPagination) {
+            const seen = new Set(existing.map((message) => message.id));
+            const older = incoming.filter((message) => !seen.has(message.id));
+            nextSessionMessages = [...older, ...existing];
+          } else if (range === "all") {
+            const seen = new Set<string>();
+            nextSessionMessages = [...existing, ...incoming]
+              .filter((message) => {
+                if (seen.has(message.id)) {
+                  return false;
+                }
+                seen.add(message.id);
+                return true;
+              })
+              .sort((a, b) => a.createdAt - b.createdAt);
+          } else {
+            nextSessionMessages = incoming;
           }
 
-          return { sessions, messages, turns, turnUiState, currentSessionId };
+          const messages = {
+            ...state.messages,
+            [sessionId]: nextSessionMessages,
+          };
+          const trimmed = trimChatCacheToBudget(
+            state.sessions,
+            messages,
+            state.turns,
+            state.currentSessionId,
+            CACHE_BUDGET_BYTES
+          );
+
+          return {
+            messages: trimmed.messages,
+            turns: trimmed.turns,
+            cacheBytes: trimmed.estimatedBytes,
+          };
+        });
+      },
+
+      loadFullSessionMessages: async (sessionId, limit = DEFAULT_LOAD_LIMIT) => {
+        const existing = get().messages[sessionId] ?? [];
+        const firstMessage = existing[0];
+        const parsedCursor = firstMessage ? Number.parseInt(firstMessage.id, 10) : Number.NaN;
+
+        await get().loadSessionMessages(sessionId, {
+          range: "all",
+          cursor: Number.isFinite(parsedCursor) ? parsedCursor : undefined,
+          limit,
+        });
+      },
+
+      clearSessionCache: (sessionId) => {
+        set((state) => {
+          const messages = { ...state.messages, [sessionId]: [] };
+          const turns = { ...state.turns, [sessionId]: [] };
+          const trimmed = trimChatCacheToBudget(
+            state.sessions,
+            messages,
+            turns,
+            state.currentSessionId,
+            CACHE_BUDGET_BYTES
+          );
+          return {
+            messages: trimmed.messages,
+            turns: trimmed.turns,
+            cacheBytes: trimmed.estimatedBytes,
+          };
         });
       },
 
@@ -616,6 +815,10 @@ export const useChatStore = create<ChatState>()(
 
       setCurrentSession: (id) => {
         set({ currentSessionId: id });
+        void get().loadSessionMessages(id, {
+          range: "window_24h",
+          limit: DEFAULT_LOAD_LIMIT,
+        });
       },
 
       addMessage: (sessionId, message) => {
@@ -627,12 +830,24 @@ export const useChatStore = create<ChatState>()(
           createdAt: Date.now(),
         };
 
-        set((state) => ({
-          messages: {
+        set((state) => {
+          const messages = {
             ...state.messages,
             [sessionId]: [...(state.messages[sessionId] ?? []), newMessage],
-          },
-        }));
+          };
+          const trimmed = trimChatCacheToBudget(
+            state.sessions,
+            messages,
+            state.turns,
+            state.currentSessionId,
+            CACHE_BUDGET_BYTES
+          );
+          return {
+            messages: trimmed.messages,
+            turns: trimmed.turns,
+            cacheBytes: trimmed.estimatedBytes,
+          };
+        });
 
         return id;
       },
@@ -655,22 +870,42 @@ export const useChatStore = create<ChatState>()(
                 ...currentTurns[index],
                 requestMessageId,
               };
+              const turns = {
+                ...state.turns,
+                [sessionId]: currentTurns,
+              };
+              const trimmed = trimChatCacheToBudget(
+                state.sessions,
+                state.messages,
+                turns,
+                state.currentSessionId,
+                CACHE_BUDGET_BYTES
+              );
               return {
-                turns: {
-                  ...state.turns,
-                  [sessionId]: currentTurns,
-                },
+                messages: trimmed.messages,
+                turns: trimmed.turns,
+                cacheBytes: trimmed.estimatedBytes,
               };
             }
             return {};
           }
 
           currentTurns.push(createEmptyTurn(sessionId, turnId, requestMessageId));
+          const turns = {
+            ...state.turns,
+            [sessionId]: currentTurns,
+          };
+          const trimmed = trimChatCacheToBudget(
+            state.sessions,
+            state.messages,
+            turns,
+            state.currentSessionId,
+            CACHE_BUDGET_BYTES
+          );
           return {
-            turns: {
-              ...state.turns,
-              [sessionId]: currentTurns,
-            },
+            messages: trimmed.messages,
+            turns: trimmed.turns,
+            cacheBytes: trimmed.estimatedBytes,
           };
         });
       },
@@ -800,28 +1035,40 @@ export const useChatStore = create<ChatState>()(
             delete nextSessionUi[turnId];
           }
 
+          const messages = {
+            ...state.messages,
+            [sessionId]: keptMessages,
+          };
+          const turns = {
+            ...state.turns,
+            [sessionId]: keptTurns,
+          };
+          const sessions: ChatSession[] = state.sessions.map((session): ChatSession =>
+            session.id === sessionId
+              ? {
+                  ...session,
+                  status: "wait-input",
+                  updatedAt: Date.now(),
+                }
+              : session
+          );
+          const trimmed = trimChatCacheToBudget(
+            sessions,
+            messages,
+            turns,
+            state.currentSessionId,
+            CACHE_BUDGET_BYTES
+          );
+
           return {
-            sessions: state.sessions.map((session) =>
-              session.id === sessionId
-                ? {
-                    ...session,
-                    status: "wait-input",
-                    updatedAt: Date.now(),
-                  }
-                : session
-            ),
-            messages: {
-              ...state.messages,
-              [sessionId]: keptMessages,
-            },
-            turns: {
-              ...state.turns,
-              [sessionId]: keptTurns,
-            },
+            sessions,
+            messages: trimmed.messages,
+            turns: trimmed.turns,
             turnUiState: {
               ...state.turnUiState,
               [sessionId]: nextSessionUi,
             },
+            cacheBytes: trimmed.estimatedBytes,
           };
         });
       },
@@ -1102,113 +1349,24 @@ export const useChatStore = create<ChatState>()(
           }
 
           currentTurns[index] = turn;
+          const turns = {
+            ...state.turns,
+            [sessionId]: currentTurns,
+          };
+          const trimmed = trimChatCacheToBudget(
+            sessions,
+            state.messages,
+            turns,
+            state.currentSessionId,
+            CACHE_BUDGET_BYTES
+          );
 
           return {
             sessions,
-            turns: {
-              ...state.turns,
-              [sessionId]: currentTurns,
-            },
+            messages: trimmed.messages,
+            turns: trimmed.turns,
+            cacheBytes: trimmed.estimatedBytes,
           };
         });
       },
-    }),
-    {
-      name: "chat-storage",
-      version: 5,
-      partialize: ((state: ChatState) => ({
-        sessions: state.sessions,
-        currentSessionId: state.currentSessionId,
-        messages: state.messages,
-        turns: state.turns,
-        turnUiState: {},
-      })) as unknown as (state: ChatState) => PersistedChatState,
-      migrate: (persistedState: unknown) => {
-        const state = (persistedState ?? {}) as Partial<ChatState>;
-        // Reset transient streaming states after hydration to avoid stale "streaming" state
-        // This fixes the issue where refreshing the page leaves the UI in a streaming state
-        const turns = state.turns ?? {};
-        const resetTurns: typeof turns = {};
-        for (const sessionId in turns) {
-          resetTurns[sessionId] = (turns[sessionId] ?? []).map((turn) => {
-            const legacyReasoningStatus = String(
-              (turn.reasoning as { status?: unknown }).status ?? "idle"
-            );
-            const nextReasoningStatus: ReasoningVM["status"] =
-              legacyReasoningStatus === "thinking"
-                ? "streaming"
-                : legacyReasoningStatus === "done"
-                  ? "completed"
-                  : legacyReasoningStatus === "started" ||
-                      legacyReasoningStatus === "streaming" ||
-                      legacyReasoningStatus === "completed" ||
-                      legacyReasoningStatus === "error"
-                    ? legacyReasoningStatus
-                    : "idle";
-
-            return {
-              ...turn,
-              reasoning: {
-                ...turn.reasoning,
-                isStreaming: false,
-                status: nextReasoningStatus,
-                isExpanded: false,
-              },
-              queue: {
-                ...turn.queue,
-                items: (turn.queue?.items ?? []).map((item) => {
-                  const legacyQueueStatus = String(
-                    (item as { status?: unknown }).status ?? "waiting"
-                  );
-                  const nextQueueStatus: QueueItemVM["status"] =
-                    legacyQueueStatus === "queued" ||
-                    legacyQueueStatus === "waiting"
-                      ? "waiting"
-                      : legacyQueueStatus === "running" ||
-                          legacyQueueStatus === "completed" ||
-                          legacyQueueStatus === "failed"
-                        ? legacyQueueStatus
-                        : "waiting";
-                  return {
-                    ...item,
-                    status: nextQueueStatus,
-                  };
-                }),
-              },
-              terminal: {
-                ...turn.terminal,
-                isStreaming: false,
-              },
-              status: turn.status === "streaming" ? "done" : turn.status,
-              plan:
-                turn.plan !== undefined
-                  ? {
-                      ...turn.plan,
-                      isStreaming: false,
-                    }
-                  : undefined,
-              planSource: turn.plan ? "reasoning-fallback" : undefined,
-            };
-          });
-        }
-        // Also reset session statuses to "wait-input" to avoid stale streaming states
-        const sessions: ChatSession[] = (state.sessions ?? []).map((session) => ({
-          ...session,
-          status:
-            session.status === "thinking" ||
-            session.status === "tool-call" ||
-            session.status === "outputing"
-              ? "wait-input"
-              : session.status,
-        }));
-        return {
-          currentSessionId: state.currentSessionId ?? null,
-          messages: state.messages ?? {},
-          turns: resetTurns,
-          sessions,
-          turnUiState: {},
-        };
-      },
-    }
-  )
-);
+    }));

@@ -1,5 +1,6 @@
 import {
   type AvailableModel,
+  clearLlmRuntimeConfig,
   type LlmRuntimeConfig,
   type ProviderId,
   getLlmRuntimeConfig,
@@ -17,6 +18,7 @@ interface LlmRuntimeConfigState {
   error: string | null;
   bootstrap: () => Promise<void>;
   saveConfig: (nextConfig: LlmRuntimeConfig) => Promise<LlmRuntimeConfig>;
+  clearConfig: () => Promise<LlmRuntimeConfig>;
   refreshAvailableModels: () => Promise<void>;
   setSelected: (provider: ProviderId, model: string) => void;
 }
@@ -105,6 +107,25 @@ export const useLlmRuntimeConfigStore = create<LlmRuntimeConfigState>((set, get)
       return normalized;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save LLM config";
+      set({ loading: false, error: message });
+      throw error;
+    }
+  },
+
+  clearConfig: async () => {
+    set({ loading: true, error: null });
+    try {
+      const reset = await clearLlmRuntimeConfig();
+      const availableModels = await listAvailableModels();
+      set((state) => ({
+        config: reset,
+        availableModels,
+        selected: chooseSelected(availableModels, state.selected),
+        loading: false,
+      }));
+      return reset;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to clear LLM config";
       set({ loading: false, error: message });
       throw error;
     }

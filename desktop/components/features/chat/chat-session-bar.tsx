@@ -69,7 +69,9 @@ export function ChatSessionBar({ onHeightChange }: ChatSessionBarProps) {
           {sessions.map((session) => (
             <BadgeContextMenu
               key={session.id}
-              onDelete={() => deleteSession(session.id)}
+              onDelete={() => {
+                void deleteSession(session.id);
+              }}
               onRename={(title) => updateSession(session.id, { title })}
               session={session}
             >
@@ -89,7 +91,9 @@ export function ChatSessionBar({ onHeightChange }: ChatSessionBarProps) {
               "transition-colors duration-200 motion-reduce:transition-none",
               "hover:border-primary hover:bg-primary/10"
             )}
-            onClick={() => createSession()}
+            onClick={() => {
+              void createSession();
+            }}
             size="icon"
             variant="ghost"
           >

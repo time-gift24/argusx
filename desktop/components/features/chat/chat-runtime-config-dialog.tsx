@@ -66,7 +66,7 @@ export function ChatRuntimeConfigDialog({
   open,
   onOpenChange,
 }: ChatRuntimeConfigDialogProps) {
-  const { config, saveConfig, loading, error } = useLlmRuntimeConfigStore();
+  const { config, saveConfig, clearConfig, loading, error } = useLlmRuntimeConfigStore();
   const [draft, setDraft] = useState<LlmRuntimeConfig>(() => cloneConfig(config));
   const [activeTab, setActiveTab] = useState<ProviderId>("bigmodel");
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -95,13 +95,24 @@ export function ChatRuntimeConfigDialog({
     }
   };
 
+  const handleClear = async () => {
+    setSubmitError(null);
+    try {
+      const reset = await clearConfig();
+      setDraft(cloneConfig(reset));
+      onOpenChange(false);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to clear config");
+    }
+  };
+
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>LLM Runtime Configuration</DialogTitle>
           <DialogDescription>
-            Configure provider API keys, base URLs, models, and custom headers. Changes are runtime-only.
+            Configure provider API keys, base URLs, models, and custom headers. API keys are encrypted at rest in local SQLite.
           </DialogDescription>
         </DialogHeader>
 
@@ -279,6 +290,14 @@ export function ChatRuntimeConfigDialog({
         )}
 
         <DialogFooter>
+          <Button
+            onClick={handleClear}
+            type="button"
+            variant="ghost"
+            disabled={loading}
+          >
+            Clear Stored Credentials
+          </Button>
           <Button onClick={handleSave} type="button" disabled={loading}>
             Save Runtime Config
           </Button>
