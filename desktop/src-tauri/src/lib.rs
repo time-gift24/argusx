@@ -6,7 +6,7 @@ use std::sync::Arc;
 use agent_core::{
     new_id, InputEnvelope, RunEventStream, Runtime, SessionMeta, TurnRequest, UiEventStream,
 };
-use agent_session::{SessionConfig, SessionRuntime};
+use agent_session::{SessionConfig, SessionFilter, SessionRuntime, SqliteSessionStore};
 use agent_tool::AgentToolRuntime;
 use agent_turn::adapters::bigmodel::BigModelAdapterConfig;
 use agent_turn::BigModelModelAdapter;
@@ -26,6 +26,10 @@ mod secure_config;
 use llm_runtime_config::{
     list_available_models as derive_available_models, normalize_runtime_config,
     validate_turn_selection, AvailableModel, LlmRuntimeConfig, ProviderId,
+};
+use persistence::{
+    open_and_bootstrap, ChatMessageQuery, ChatMessageRange, ChatRepo, RuntimeConfigRepo,
+    RuntimeConfigRepoError,
 };
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -99,6 +103,8 @@ type RuntimeHandle = SessionRuntime<BigModelModelAdapter, AgentToolRuntime>;
 struct AppState {
     runtime: Arc<RuntimeHandle>,
     model_adapter: Arc<BigModelModelAdapter>,
+    chat_repo: Arc<ChatRepo>,
+    runtime_config_repo: Arc<RuntimeConfigRepo>,
     llm_runtime_config: Arc<RwLock<LlmRuntimeConfig>>,
     frontend_to_backend_session: Arc<RwLock<HashMap<String, String>>>,
 }
@@ -127,31 +133,106 @@ impl ProviderAdapter for UnconfiguredAdapter {
 }
 
 #[tauri::command]
-async fn create_chat_session(title: Option<String>) -> Result<ChatSession, String> {
-    let now = chrono::Utc::now().timestamp_millis();
-    Ok(ChatSession {
-        id: format!("s-{}", uuid::Uuid::new_v4()),
-        title: title.unwrap_or_else(|| "New Chat".to_string()),
-        color: "blue".to_string(),
-        created_at: now,
-        updated_at: now,
-        status: "active".to_string(),
-    })
+async fn create_chat_session(
+    state: State<'_, AppState>,
+    title: Option<String>,
+) -> Result<ChatSession, String> {
+    let backend_session_id = state
+        .runtime
+        .create_session(None, title)
+        .await
+        .map_err(|err| format!("failed to create session: {err}"))?;
+
+    let Some(info) = state
+        .runtime
+        .get_session(&backend_session_id)
+        .await
+        .map_err(|err| format!("failed to load session: {err}"))?
+    else {
+        return Err("failed to load just-created session".to_string());
+    };
+
+    state
+        .frontend_to_backend_session
+        .write()
+        .await
+        .insert(backend_session_id.clone(), backend_session_id.clone());
+
+    Ok(chat_session_from_info(info))
 }
 
 #[tauri::command]
-async fn list_chat_sessions() -> Result<Vec<ChatSession>, String> {
-    Ok(vec![])
+async fn list_chat_sessions(state: State<'_, AppState>) -> Result<Vec<ChatSession>, String> {
+    let sessions = state
+        .runtime
+        .list_sessions(SessionFilter::default())
+        .await
+        .map_err(|err| format!("failed to list sessions: {err}"))?;
+
+    let mut mapping = state.frontend_to_backend_session.write().await;
+    for session in &sessions {
+        mapping.insert(session.session_id.clone(), session.session_id.clone());
+    }
+
+    Ok(sessions.into_iter().map(chat_session_from_info).collect())
 }
 
 #[tauri::command]
-async fn delete_chat_session(_id: String) -> Result<(), String> {
+async fn delete_chat_session(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let backend_session_id = state
+        .frontend_to_backend_session
+        .read()
+        .await
+        .get(&id)
+        .cloned()
+        .unwrap_or(id.clone());
+
+    state
+        .runtime
+        .delete_session(&backend_session_id)
+        .await
+        .map_err(|err| format!("failed to delete session: {err}"))?;
+
+    let mut mapping = state.frontend_to_backend_session.write().await;
+    mapping.remove(&id);
+    if backend_session_id != id {
+        mapping.retain(|_, value| value != &backend_session_id);
+    }
     Ok(())
 }
 
 #[tauri::command]
-async fn get_chat_messages(_session_id: String) -> Result<Vec<ChatMessage>, String> {
-    Ok(vec![])
+async fn get_chat_messages(
+    state: State<'_, AppState>,
+    session_id: String,
+    range: Option<String>,
+    cursor: Option<i64>,
+    limit: Option<usize>,
+) -> Result<Vec<ChatMessage>, String> {
+    let query = ChatMessageQuery {
+        range: match range.as_deref() {
+            Some("all") => ChatMessageRange::All,
+            _ => ChatMessageRange::Last24Hours,
+        },
+        cursor,
+        limit: limit.unwrap_or(300).clamp(1, 2_000),
+    };
+
+    let messages = state
+        .chat_repo
+        .list_messages(&session_id, query)
+        .map_err(|err| format!("failed to query chat messages: {err}"))?;
+
+    Ok(messages
+        .into_iter()
+        .map(|message| ChatMessage {
+            id: message.id,
+            session_id: message.session_id,
+            role: message.role,
+            content: message.content,
+            created_at: message.created_at,
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -165,6 +246,24 @@ async fn set_llm_runtime_config(
     payload: LlmRuntimeConfig,
 ) -> Result<LlmRuntimeConfig, String> {
     let normalized = normalize_runtime_config(payload);
+    let persisted = state
+        .runtime_config_repo
+        .save(&normalized)
+        .map_err(map_runtime_config_repo_error)?;
+    let client = build_llm_client_from_runtime_config(&persisted)?;
+    state.model_adapter.set_client(Arc::new(client));
+    *state.llm_runtime_config.write().await = persisted.clone();
+    Ok(persisted)
+}
+
+#[tauri::command]
+async fn clear_llm_runtime_config(state: State<'_, AppState>) -> Result<LlmRuntimeConfig, String> {
+    state
+        .runtime_config_repo
+        .clear()
+        .map_err(map_runtime_config_repo_error)?;
+
+    let normalized = normalize_runtime_config(LlmRuntimeConfig::default());
     let client = build_llm_client_from_runtime_config(&normalized)?;
     state.model_adapter.set_client(Arc::new(client));
     *state.llm_runtime_config.write().await = normalized.clone();
@@ -352,6 +451,21 @@ async fn ensure_backend_session_id(
         return Ok(existing);
     }
 
+    let frontend_session_id_owned = frontend_session_id.to_string();
+    if state
+        .runtime
+        .get_session(&frontend_session_id_owned)
+        .await
+        .map_err(|err| format!("failed to check session existence: {err}"))?
+        .is_some()
+    {
+        state.frontend_to_backend_session.write().await.insert(
+            frontend_session_id.to_string(),
+            frontend_session_id.to_string(),
+        );
+        return Ok(frontend_session_id.to_string());
+    }
+
     let backend_session_id = state
         .runtime
         .create_session(
@@ -371,7 +485,20 @@ async fn ensure_backend_session_id(
 }
 
 fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
-    let runtime_cfg = normalize_runtime_config(LlmRuntimeConfig::default());
+    let _ =
+        open_and_bootstrap(&base_path).map_err(|err| format!("bootstrap schema failed: {err}"))?;
+    let runtime_config_repo =
+        RuntimeConfigRepo::new(base_path.clone()).map_err(map_runtime_config_repo_error)?;
+    let chat_repo = ChatRepo::new(base_path.clone())
+        .map_err(|err| format!("chat repo bootstrap failed: {err}"))?;
+    let runtime_cfg = match runtime_config_repo.load() {
+        Ok(Some(config)) => config,
+        Ok(None) => normalize_runtime_config(LlmRuntimeConfig::default()),
+        Err(RuntimeConfigRepoError::FingerprintMismatch) => {
+            normalize_runtime_config(LlmRuntimeConfig::default())
+        }
+        Err(err) => return Err(map_runtime_config_repo_error(err)),
+    };
     let llm_client = build_llm_client_from_runtime_config(&runtime_cfg)?;
 
     let mut model_config = BigModelAdapterConfig::default();
@@ -384,8 +511,12 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
     let tools = tauri::async_runtime::block_on(AgentToolRuntime::default_with_builtins());
     let model_adapter =
         Arc::new(BigModelModelAdapter::new(Arc::new(llm_client)).with_config(model_config));
-    let runtime = SessionRuntime::with_config(
-        base_path,
+    let sqlite_store = Arc::new(
+        SqliteSessionStore::new(base_path)
+            .map_err(|err| format!("failed to initialize sqlite session store: {err}"))?,
+    );
+    let runtime = SessionRuntime::with_store_and_config(
+        sqlite_store,
         Arc::clone(&model_adapter),
         Arc::new(tools),
         SessionConfig {
@@ -396,9 +527,35 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
     Ok(AppState {
         runtime: Arc::new(runtime),
         model_adapter,
+        chat_repo: Arc::new(chat_repo),
+        runtime_config_repo: Arc::new(runtime_config_repo),
         llm_runtime_config: Arc::new(RwLock::new(runtime_cfg)),
         frontend_to_backend_session: Arc::new(RwLock::new(HashMap::new())),
     })
+}
+
+fn map_runtime_config_repo_error(err: RuntimeConfigRepoError) -> String {
+    match err {
+        RuntimeConfigRepoError::FingerprintMismatch => {
+            "stored config bound to different machine fingerprint".to_string()
+        }
+        other => format!("runtime config persistence error: {other}"),
+    }
+}
+
+fn chat_session_from_info(info: agent_core::SessionInfo) -> ChatSession {
+    ChatSession {
+        id: info.session_id,
+        title: info.title,
+        color: "blue".to_string(),
+        created_at: info.created_at,
+        updated_at: info.updated_at,
+        status: match info.status {
+            agent_core::SessionStatus::Active => "active".to_string(),
+            agent_core::SessionStatus::Idle => "idle".to_string(),
+            agent_core::SessionStatus::Archived => "archived".to_string(),
+        },
+    }
 }
 
 fn build_llm_client_from_runtime_config(cfg: &LlmRuntimeConfig) -> Result<LlmClient, String> {
@@ -465,13 +622,13 @@ fn build_llm_client_from_runtime_config(cfg: &LlmRuntimeConfig) -> Result<LlmCli
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .setup(|app| {
-            let base_path = app
+            let app_data_dir = app
                 .path()
                 .app_data_dir()
-                .unwrap_or_else(|_| std::env::temp_dir().join("argusx-desktop-agent"))
-                .join("sessions");
-            std::fs::create_dir_all(&base_path)?;
-            let state = build_runtime_state(base_path).map_err(std::io::Error::other)?;
+                .unwrap_or_else(|_| std::env::temp_dir().join("argusx-desktop-agent"));
+            std::fs::create_dir_all(&app_data_dir)?;
+            let db_path = app_data_dir.join("desktop.sqlite3");
+            let state = build_runtime_state(db_path).map_err(std::io::Error::other)?;
             app.manage(state);
             Ok(())
         })
@@ -483,6 +640,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             get_chat_messages,
             get_llm_runtime_config,
             set_llm_runtime_config,
+            clear_llm_runtime_config,
             list_available_models,
             start_agent_turn,
             cancel_agent_turn,
