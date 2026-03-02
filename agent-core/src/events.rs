@@ -114,6 +114,16 @@ pub enum RunStreamEvent {
         stats: TurnStats,
         cancelled: bool,
     },
+    PostValidationStarted {
+        turn_id: Id,
+    },
+    PostValidationFailed {
+        turn_id: Id,
+        attempt: u8,
+        max_attempts: u8,
+        can_retry: bool,
+        error_message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -188,5 +198,15 @@ pub enum UiThreadEvent {
         turn_id: Id,
         summary: Option<String>,
         stats: TurnStats,
+    },
+    PostValidationStarted {
+        turn_id: Id,
+    },
+    PostValidationFailed {
+        turn_id: Id,
+        attempt: u8,
+        max_attempts: u8,
+        can_retry: bool,
+        error_message: String,
     },
 }
