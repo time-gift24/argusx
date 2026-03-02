@@ -142,11 +142,93 @@
 
 @layer components {
   [data-streamdown="code-block"] {
-    gap: 0;
+    position: relative;
+    gap: 0.25rem;
+    margin-block: 0.5rem;
+    padding: 0.35rem;
+    border-radius: var(--radius-md);
+  }
+
+  [data-streamdown="code-block-header"] {
+    height: 1.5rem;
+    padding-left: 0.4rem;
+    padding-right: 4.5rem;
+    font-size: 11px;
+    line-height: 1rem;
   }
 
   [data-streamdown="code-block"] > [data-streamdown="code-block-header"] + div {
-    top: 0 !important;
-    margin-top: -2rem !important;
+    position: absolute;
+    top: 0.2rem !important;
+    right: 0.25rem;
+    margin-top: 0 !important;
+    height: auto !important;
+    min-height: 0;
+    width: auto;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  [data-streamdown="code-block-actions"] {
+    border: none;
+    background: transparent;
+    padding: 0;
+    gap: 0.1rem;
+    margin: 0;
+    backdrop-filter: none;
+    box-shadow: none;
+    pointer-events: auto;
+  }
+
+  [data-streamdown="code-block-body"] {
+    border-radius: var(--radius-sm);
+    padding: 0.55rem;
+    font-size: 12px;
+  }
+
+  [data-streamdown="code-block-body"] pre {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  [data-streamdown="code-block-copy-button"],
+  [data-streamdown="code-block-download-button"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.2rem;
+    height: 1.2rem;
+    border-radius: 0.25rem;
+    padding: 0;
+    line-height: 1;
+  }
+
+  [data-streamdown="code-block-copy-button"] svg,
+  [data-streamdown="code-block-download-button"] svg {
+    width: 11px;
+    height: 11px;
+  }
+}
+
+.chat-config-trigger {
+  animation: chat-config-pulse 2.6s ease-in-out infinite;
+}
+
+@keyframes chat-config-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 oklch(from var(--primary) l c h / 0.14);
+  }
+  50% {
+    transform: scale(1.04);
+    box-shadow: 0 0 0 7px oklch(from var(--primary) l c h / 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-config-trigger {
+    animation: none;
   }
 }

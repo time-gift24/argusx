@@ -3,6 +3,9 @@ use agent_cli::cli::CliArgs;
 use agent_cli::event_loop::run_tui_loop;
 use agent_cli::skills::SkillCatalog;
 use clap::Parser;
+use llm_provider::bigmodel::{BigModelAdapter, BigModelConfig};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -11,8 +14,11 @@ async fn main() -> anyhow::Result<()> {
     let skills = std::sync::Arc::new(SkillCatalog::discover(&cwd));
     let system_prompt = skills.compose_system_prompt(args.system_prompt.clone());
 
+    let provider_cfg =
+        BigModelConfig::new(args.base_url.clone(), args.api_key.clone(), HashMap::new())?;
     let client = llm_client::LlmClient::builder()
-        .with_default_bigmodel(args.base_url.clone(), args.api_key.clone())?
+        .register_adapter(Arc::new(BigModelAdapter::new(provider_cfg)))
+        .default_adapter("bigmodel")
         .build()?;
 
     let model_cfg = agent_turn::adapters::bigmodel::BigModelAdapterConfig {

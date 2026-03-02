@@ -1,15 +1,12 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use agent_core::{
     new_id, AgentError, InputEnvelope, InputPart, InputSource, LanguageModel, ModelEventStream,
     ModelOutputEvent, ModelRequest, NoteLevel, ToolCall, TranscriptItem, TransientError, Usage,
 };
 use async_trait::async_trait;
-use bigmodel_api::{
-    FunctionDefinition, FunctionTool, Tool as BigModelTool,
-};
 use futures::StreamExt;
-use llm_client::{LlmChunk, LlmClient, LlmMessage, LlmRequest, LlmRole, LlmUsage};
+use llm_client::{LlmChunk, LlmClient, LlmMessage, LlmRequest, LlmRole};
 use llm_client::LlmError;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -36,15 +33,21 @@ impl Default for BigModelAdapterConfig {
 }
 
 pub struct BigModelModelAdapter {
-    client: Arc<LlmClient>,
+    client: Arc<RwLock<Arc<LlmClient>>>,
     config: BigModelAdapterConfig,
 }
 
 impl BigModelModelAdapter {
     pub fn new(client: Arc<LlmClient>) -> Self {
         Self {
-            client,
+            client: Arc::new(RwLock::new(client)),
             config: BigModelAdapterConfig::default(),
+        }
+    }
+
+    pub fn set_client(&self, client: Arc<LlmClient>) {
+        if let Ok(mut guard) = self.client.write() {
+            *guard = client;
         }
     }
 
@@ -61,12 +64,19 @@ impl LanguageModel for BigModelModelAdapter {
     }
 
     async fn stream(&self, request: ModelRequest) -> Result<ModelEventStream, AgentError> {
+        let provider = request.provider.clone();
         let request = convert_model_request(request, &self.config);
-        let client = Arc::clone(&self.client);
+        let client = self
+            .client
+            .read()
+            .map(|guard| Arc::clone(&guard))
+            .map_err(|_| AgentError::Internal {
+                message: "failed to acquire LlmClient lock".to_string(),
+            })?;
         let (tx, rx) = mpsc::unbounded_channel::<Result<ModelOutputEvent, AgentError>>();
 
         tokio::spawn(async move {
-            let stream_result = client.chat_stream(request);
+            let stream_result = client.chat_stream_with_adapter(provider, request);
             let mut stream = match stream_result {
                 Ok(s) => s,
                 Err(e) => {
@@ -153,6 +163,7 @@ fn extract_usage_from_chunk(chunk: &LlmChunk) -> Option<Usage> {
 
 fn convert_model_request(request: ModelRequest, cfg: &BigModelAdapterConfig) -> LlmRequest {
     let ModelRequest {
+        model,
         transcript,
         inputs,
         tools,
@@ -186,7 +197,7 @@ fn convert_model_request(request: ModelRequest, cfg: &BigModelAdapterConfig) -> 
     let llm_tools = if llm_tools.is_empty() { None } else { Some(llm_tools) };
 
     LlmRequest {
-        model: cfg.model.clone(),
+        model,
         messages,
         stream: true,
         max_tokens: cfg.max_tokens,
@@ -298,11 +309,14 @@ mod tests {
     use super::*;
     use agent_core::tools::ToolExecutionPolicy;
     use agent_core::{new_id, InputEnvelope, ToolResult};
+    use llm_client::LlmUsage;
 
     #[test]
     fn convert_request_includes_system_prompt_and_streaming() {
         let request = ModelRequest {
             epoch: 0,
+            provider: "openai".to_string(),
+            model: "gpt-4o".to_string(),
             transcript: vec![TranscriptItem::assistant_message("previous")],
             inputs: vec![InputEnvelope::user_text("hello")],
             tools: vec![],
@@ -317,7 +331,7 @@ mod tests {
 
         let converted = convert_model_request(request, &cfg);
 
-        assert_eq!(converted.model, "glm-test");
+        assert_eq!(converted.model, "gpt-4o");
         assert!(converted.stream);
         assert_eq!(converted.max_tokens, Some(512));
         assert_eq!(converted.temperature, Some(0.5));

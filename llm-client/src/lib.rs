@@ -8,41 +8,26 @@
 //!
 //! # Example
 //!
-//! ```no_run
+//! ```ignore
 //! use llm_client::LlmClient;
+//! use llm_client::ProviderAdapter;
+//! use std::sync::Arc;
 //!
-//! #[tokio::main]
-//! async fn main() {
+//! # async fn build_client(adapter: Arc<dyn ProviderAdapter>) -> llm_client::LlmClient {
 //!     let client = LlmClient::builder()
-//!         .with_default_bigmodel_from_env()
-//!         .expect("failed to create client")
+//!         .register_adapter(adapter)
+//!         .default_adapter("my-provider")
 //!         .build()
 //!         .expect("failed to build client");
 //!
-//!     let request = llm_client::LlmRequest {
-//!         model: "glm-5".to_string(),
-//!         messages: vec![llm_client::LlmMessage {
-//!             role: llm_client::LlmRole::User,
-//!             content: "Hello!".to_string(),
-//!         }],
-//!         stream: false,
-//!         max_tokens: None,
-//!         temperature: None,
-//!         top_p: None,
-//!         tools: None,
-//!     };
-//!
-//!     let response = client.chat(request).await.unwrap();
-//!     println!("{:?}", response);
-//! }
+//!     client
+//! # }
 //! ```
 
 pub mod adapter;
 pub mod client;
 pub mod config;
 pub mod error;
-pub(crate) mod mapping;
-pub(crate) mod providers;
 pub mod retry;
 pub mod sse;
 pub mod types;

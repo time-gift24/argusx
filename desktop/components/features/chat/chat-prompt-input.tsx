@@ -36,51 +36,28 @@ import {
   PromptInputTools,
   usePromptInputAttachments,
 } from "@/components/ai-elements/prompt-input";
-import { startAgentTurn } from "@/lib/api/chat";
+import { startAgentTurn, type ProviderId } from "@/lib/api/chat";
 import { useChatStore } from "@/lib/stores/chat-store";
+import { useLlmRuntimeConfigStore } from "@/lib/stores/llm-runtime-config-store";
 import { CheckIcon, SearchIcon } from "lucide-react";
 import type { FocusEvent } from "react";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 
-const models = [
-  {
-    chef: "OpenAI",
-    chefSlug: "openai",
-    id: "gpt-4o",
-    name: "GPT-4o",
-    providers: ["openai", "azure"],
-  },
-  {
-    chef: "OpenAI",
-    chefSlug: "openai",
-    id: "gpt-4o-mini",
-    name: "GPT-4o Mini",
-    providers: ["openai", "azure"],
-  },
-  {
-    chef: "Anthropic",
-    chefSlug: "anthropic",
-    id: "claude-opus-4-20250514",
-    name: "Claude 4 Opus",
-    providers: ["anthropic", "azure", "google", "amazon-bedrock"],
-  },
-  {
-    chef: "Anthropic",
-    chefSlug: "anthropic",
-    id: "claude-sonnet-4-20250514",
-    name: "Claude 4 Sonnet",
-    providers: ["anthropic", "azure", "google", "amazon-bedrock"],
-  },
-  {
-    chef: "Google",
-    chefSlug: "google",
-    id: "gemini-2.0-flash-exp",
-    name: "Gemini 2.0 Flash",
-    providers: ["google"],
-  },
-];
-
 import type { FileUIPart } from "@/types";
+
+type ModelOption = {
+  id: string;
+  name: string;
+  provider: ProviderId;
+  providerLabel: string;
+  providerIcon: string;
+};
+
+const PROVIDER_LABEL: Record<ProviderId, string> = {
+  bigmodel: "BigModel",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+};
 
 interface AttachmentItemProps {
   attachment: FileUIPart & { id: string };
@@ -103,7 +80,7 @@ const AttachmentItem = memo(({ attachment, onRemove }: AttachmentItemProps) => {
 AttachmentItem.displayName = "AttachmentItem";
 
 interface ModelItemProps {
-  m: (typeof models)[0];
+  m: ModelOption;
   selectedModel: string;
   onSelect: (id: string) => void;
 }
@@ -112,12 +89,10 @@ const ModelItem = memo(({ m, selectedModel, onSelect }: ModelItemProps) => {
   const handleSelect = useCallback(() => onSelect(m.id), [onSelect, m.id]);
   return (
     <ModelSelectorItem key={m.id} onSelect={handleSelect} value={m.id}>
-      <ModelSelectorLogo provider={m.chefSlug} />
+      <ModelSelectorLogo provider={m.providerIcon} />
       <ModelSelectorName>{m.name}</ModelSelectorName>
       <ModelSelectorLogoGroup>
-        {m.providers.map((provider) => (
-          <ModelSelectorLogo key={provider} provider={provider} />
-        ))}
+        <ModelSelectorLogo provider={m.providerIcon} />
       </ModelSelectorLogoGroup>
       {selectedModel === m.id ? (
         <CheckIcon className="ml-auto size-4" />
@@ -163,13 +138,49 @@ export function ChatPromptInput() {
     updateSessionStatus,
     ensureAgentTurn,
   } = useChatStore();
-  const [model, setModel] = useState<string>(models[0].id);
+  const {
+    availableModels,
+    selected,
+    setSelected,
+    error: runtimeConfigError,
+  } = useLlmRuntimeConfigStore();
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<
     "submitted" | "streaming" | "ready" | "error"
   >("ready");
-
-  const selectedModelData = models.find((m) => m.id === model);
+  const modelOptions = useMemo<ModelOption[]>(
+    () =>
+      availableModels.map((item) => ({
+        id: `${item.provider}:${item.model}`,
+        name: item.model,
+        provider: item.provider,
+        providerLabel: PROVIDER_LABEL[item.provider],
+        providerIcon: item.provider === "bigmodel" ? "zhipuai" : item.provider,
+      })),
+    [availableModels]
+  );
+  const hasAvailableModels = modelOptions.length > 0;
+  const selectedOption = useMemo(() => {
+    if (!selected) {
+      return modelOptions[0] ?? null;
+    }
+    return (
+      modelOptions.find(
+        (item) =>
+          item.provider === selected.provider && item.name === selected.model
+      ) ??
+      modelOptions[0] ??
+      null
+    );
+  }, [selected, modelOptions]);
+  const groupedModelOptions = useMemo(() => {
+    const byProvider: Record<string, ModelOption[]> = {};
+    for (const option of modelOptions) {
+      byProvider[option.providerLabel] ??= [];
+      byProvider[option.providerLabel].push(option);
+    }
+    return Object.entries(byProvider);
+  }, [modelOptions]);
   const currentSession = useMemo(
     () => sessions.find((session) => session.id === currentSessionId),
     [sessions, currentSessionId]
@@ -183,10 +194,19 @@ export function ChatPromptInput() {
         : "streaming";
   const [isPromptFocused, setIsPromptFocused] = useState(false);
 
+  useEffect(() => {
+    if (selectedOption) {
+      setSelected(selectedOption.provider, selectedOption.name);
+    }
+  }, [selectedOption, setSelected]);
+
   const handleModelSelect = useCallback((id: string) => {
-    setModel(id);
+    const option = modelOptions.find((item) => item.id === id);
+    if (option) {
+      setSelected(option.provider, option.name);
+    }
     setModelSelectorOpen(false);
-  }, []);
+  }, [modelOptions, setSelected]);
 
   const handlePromptFocusCapture = useCallback(() => {
     setIsPromptFocused(true);
@@ -221,8 +241,10 @@ export function ChatPromptInput() {
   const handleSubmit = useCallback(
     async (message: PromptInputMessage) => {
       const hasText = Boolean(message.text);
+      const provider = selectedOption?.provider;
+      const selectedModel = selectedOption?.name;
 
-      if (!hasText || !currentSessionId) {
+      if (!hasText || !currentSessionId || !provider || !selectedModel) {
         return;
       }
 
@@ -238,7 +260,8 @@ export function ChatPromptInput() {
         const { turnId } = await startAgentTurn({
           sessionId: currentSessionId,
           input: message.text,
-          model,
+          provider,
+          model: selectedModel,
           attachments: message.files,
         });
         ensureAgentTurn(currentSessionId, turnId, messageId);
@@ -253,7 +276,7 @@ export function ChatPromptInput() {
       currentSessionId,
       addMessage,
       ensureAgentTurn,
-      model,
+      selectedOption,
       updateSessionStatus,
     ]
   );
@@ -263,7 +286,7 @@ export function ChatPromptInput() {
       <PromptInput
         className="w-full"
         globalDrop
-        inputGroupClassName="rounded-2xl has-[textarea]:rounded-2xl has-data-[align=block-end]:rounded-2xl has-data-[align=block-start]:rounded-2xl border-white/55 bg-background/80 shadow-[0_1px_0_rgba(255,255,255,0.72)_inset,0_14px_36px_-24px_rgba(15,23,42,0.65),0_1px_3px_rgba(15,23,42,0.2)] backdrop-blur-2xl transition-[background-color,border-color,box-shadow] duration-200 motion-reduce:transition-none has-[[data-slot=input-group-control]:focus-visible]:border-primary/60 has-[[data-slot=input-group-control]:focus-visible]:ring-primary/25 dark:border-white/12 dark:bg-background/55 dark:shadow-[0_16px_36px_-24px_rgba(2,6,23,0.9),0_1px_2px_rgba(2,6,23,0.55)]"
+        inputGroupClassName="rounded-2xl has-[textarea]:rounded-2xl has-data-[align=block-end]:rounded-2xl has-data-[align=block-start]:rounded-2xl border-white/55 bg-background/80 p-1.5 shadow-[0_1px_0_rgba(255,255,255,0.72)_inset,0_14px_36px_-24px_rgba(15,23,42,0.65),0_1px_3px_rgba(15,23,42,0.2)] backdrop-blur-2xl transition-[background-color,border-color,box-shadow] duration-200 motion-reduce:transition-none has-[[data-slot=input-group-control]:focus-visible]:border-primary/60 has-[[data-slot=input-group-control]:focus-visible]:ring-primary/25 dark:border-white/12 dark:bg-background/55 dark:shadow-[0_16px_36px_-24px_rgba(2,6,23,0.9),0_1px_2px_rgba(2,6,23,0.55)]"
         multiple
         onBlurCapture={handlePromptBlurCapture}
         onFocusCapture={handlePromptFocusCapture}
@@ -271,17 +294,31 @@ export function ChatPromptInput() {
       >
         <PromptInputAttachmentsDisplay />
         <PromptInputBody>
-          <PromptInputTextarea placeholder="Send a message..." />
+          <PromptInputTextarea
+            className="px-3 py-2.5"
+            disabled={!hasAvailableModels}
+            placeholder={
+              hasAvailableModels
+                ? "Send a message..."
+                : "Configure provider models to enable chat"
+            }
+          />
         </PromptInputBody>
         <PromptInputFooter className="flex-wrap items-center gap-2">
           <PromptInputTools className="flex-wrap gap-1.5">
             <PromptInputActionMenu>
-              <PromptInputActionMenuTrigger className="transition-colors duration-200 motion-reduce:transition-none" />
+              <PromptInputActionMenuTrigger
+                className="transition-colors duration-200 motion-reduce:transition-none"
+                disabled={!hasAvailableModels}
+              />
               <PromptInputActionMenuContent>
                 <PromptInputActionAddAttachments />
               </PromptInputActionMenuContent>
             </PromptInputActionMenu>
-            <PromptInputButton className="transition-colors duration-200 motion-reduce:transition-none">
+            <PromptInputButton
+              className="transition-colors duration-200 motion-reduce:transition-none"
+              disabled={!hasAvailableModels}
+            >
               <SearchIcon size={16} />
               <span>Search</span>
             </PromptInputButton>
@@ -290,12 +327,24 @@ export function ChatPromptInput() {
               open={modelSelectorOpen}
             >
               <ModelSelectorTrigger asChild>
-                <PromptInputButton className="max-w-full transition-colors duration-200 motion-reduce:transition-none">
-                  {selectedModelData?.chefSlug && (
-                    <ModelSelectorLogo provider={selectedModelData.chefSlug} />
+                <PromptInputButton
+                  className={`max-w-full transition-colors duration-200 motion-reduce:transition-none ${
+                    hasAvailableModels
+                      ? ""
+                      : "border-destructive/60 text-destructive hover:bg-destructive/10"
+                  }`}
+                  disabled={!hasAvailableModels}
+                >
+                  {selectedOption?.providerIcon && (
+                    <ModelSelectorLogo provider={selectedOption.providerIcon} />
                   )}
-                  {selectedModelData?.name && (
-                    <ModelSelectorName className="max-w-28">{selectedModelData.name}</ModelSelectorName>
+                  {selectedOption?.name && (
+                    <ModelSelectorName className="max-w-28">{selectedOption.name}</ModelSelectorName>
+                  )}
+                  {!selectedOption && (
+                    <ModelSelectorName className="max-w-44 text-destructive">
+                      No available models
+                    </ModelSelectorName>
                   )}
                 </PromptInputButton>
               </ModelSelectorTrigger>
@@ -303,18 +352,16 @@ export function ChatPromptInput() {
                 <ModelSelectorInput placeholder="Search models..." />
                 <ModelSelectorList>
                   <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
-                  {["OpenAI", "Anthropic", "Google"].map((chef) => (
-                    <ModelSelectorGroup heading={chef} key={chef}>
-                      {models
-                        .filter((m) => m.chef === chef)
-                        .map((m) => (
-                          <ModelItem
-                            key={m.id}
-                            m={m}
-                            onSelect={handleModelSelect}
-                            selectedModel={model}
-                          />
-                        ))}
+                  {groupedModelOptions.map(([group, options]) => (
+                    <ModelSelectorGroup heading={group} key={group}>
+                      {options.map((m) => (
+                        <ModelItem
+                          key={m.id}
+                          m={m}
+                          onSelect={handleModelSelect}
+                          selectedModel={selectedOption?.id ?? ""}
+                        />
+                      ))}
                     </ModelSelectorGroup>
                   ))}
                 </ModelSelectorList>
@@ -323,8 +370,17 @@ export function ChatPromptInput() {
           </PromptInputTools>
           <PromptInputSubmit
             className="transition-colors duration-200 motion-reduce:transition-none"
+            disabled={!hasAvailableModels}
             status={status}
           />
+          {!hasAvailableModels && (
+            <p className="w-full text-xs text-red-500">
+              No available models. Please configure provider settings.
+            </p>
+          )}
+          {runtimeConfigError && (
+            <p className="w-full text-xs text-red-500">{runtimeConfigError}</p>
+          )}
         </PromptInputFooter>
       </PromptInput>
     </PromptInputProvider>

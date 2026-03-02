@@ -90,7 +90,7 @@ export const TerminalHeader = ({
 }: TerminalHeaderProps) => (
   <div
     className={cn(
-      "flex items-center justify-between border-zinc-800 border-b px-4 py-2",
+      "flex items-center justify-between border-zinc-800 border-b px-3 py-1.5",
       className
     )}
     {...props}
@@ -107,7 +107,7 @@ export const TerminalTitle = ({
   ...props
 }: TerminalTitleProps) => (
   <div
-    className={cn("flex items-center gap-2 text-sm text-zinc-400", className)}
+    className={cn("flex items-center gap-1.5 text-[12px] text-zinc-400", className)}
     {...props}
   >
     <TerminalIcon className="size-4" />
@@ -258,7 +258,7 @@ export const TerminalContent = ({
   return (
     <div
       className={cn(
-        "max-h-96 overflow-auto p-4 font-mono text-sm leading-relaxed",
+        "max-h-72 overflow-auto p-3 font-mono text-[12px] leading-5",
         className
       )}
       ref={containerRef}

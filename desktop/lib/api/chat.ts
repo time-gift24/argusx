@@ -34,10 +34,41 @@ export interface AgentStreamEnvelope {
   event: AgentEventPayload;
 }
 
+export type ProviderId = "bigmodel" | "openai" | "anthropic";
+
+export interface HeaderPair {
+  key: string;
+  value: string;
+}
+
+export interface ProviderRuntimeConfig {
+  apiKey: string;
+  baseUrl: string;
+  models: string[];
+  headers: HeaderPair[];
+}
+
+export interface ProviderConfigs {
+  bigmodel: ProviderRuntimeConfig;
+  openai: ProviderRuntimeConfig;
+  anthropic: ProviderRuntimeConfig;
+}
+
+export interface LlmRuntimeConfig {
+  defaultProvider?: ProviderId;
+  providers: ProviderConfigs;
+}
+
+export interface AvailableModel {
+  provider: ProviderId;
+  model: string;
+}
+
 export interface StartAgentTurnPayload {
   sessionId: string;
   input: string;
-  model?: string;
+  provider: ProviderId;
+  model: string;
   attachments?: unknown[];
 }
 
@@ -84,6 +115,32 @@ export async function startAgentTurn(
     return await invoke("start_agent_turn", { payload });
   } catch (error) {
     throw new Error(`Failed to start agent turn: ${error}`);
+  }
+}
+
+export async function getLlmRuntimeConfig(): Promise<LlmRuntimeConfig> {
+  try {
+    return await invoke("get_llm_runtime_config");
+  } catch (error) {
+    throw new Error(`Failed to get llm runtime config: ${error}`);
+  }
+}
+
+export async function setLlmRuntimeConfig(
+  payload: LlmRuntimeConfig
+): Promise<LlmRuntimeConfig> {
+  try {
+    return await invoke("set_llm_runtime_config", { payload });
+  } catch (error) {
+    throw new Error(`Failed to set llm runtime config: ${error}`);
+  }
+}
+
+export async function listAvailableModels(): Promise<AvailableModel[]> {
+  try {
+    return await invoke("list_available_models");
+  } catch (error) {
+    throw new Error(`Failed to list available models: ${error}`);
   }
 }
 

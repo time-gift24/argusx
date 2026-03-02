@@ -299,6 +299,8 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
             tr.state.last_request_inputs = inputs.clone();
             tr.add_effect(Effect::StartModel {
                 epoch: next_epoch,
+                provider: tr.state.provider.clone(),
+                model: tr.state.model.clone(),
                 transcript: tr.state.transcript.clone(),
                 inputs,
             });
@@ -377,6 +379,8 @@ fn start_model_from_pending(tr: &mut Transition, next_epoch: u64) {
     tr.state.last_request_inputs = inputs.clone();
     tr.add_effect(Effect::StartModel {
         epoch: next_epoch,
+        provider: tr.state.provider.clone(),
+        model: tr.state.model.clone(),
         transcript: tr.state.transcript.clone(),
         inputs,
     });

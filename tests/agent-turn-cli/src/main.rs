@@ -1,6 +1,7 @@
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::collections::HashMap;
 
 use agent::{AgentBuilder, AgentStream, AgentStreamEvent};
 use agent_core::{RunStreamEvent, UiThreadEvent};
@@ -8,6 +9,7 @@ use agent_turn::adapters::bigmodel::{BigModelAdapterConfig, BigModelModelAdapter
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 use futures::StreamExt;
+use llm_provider::bigmodel::{BigModelAdapter, BigModelConfig};
 use serde::Serialize;
 
 #[derive(Debug, Parser)]
@@ -22,8 +24,7 @@ struct Cli {
 
     #[arg(
         long,
-        env = "BIGMODEL_BASE_URL",
-        default_value = "https://open.bigmodel.cn/api/paas/v4"
+        env = "BIGMODEL_BASE_URL"
     )]
     base_url: String,
 
@@ -79,8 +80,10 @@ async fn main() -> Result<()> {
         eprintln!("[warning] --max-retries/--base-delay-ms are currently ignored in facade mode");
     }
 
+    let provider_cfg = BigModelConfig::new(cli.base_url, cli.api_key, HashMap::new())?;
     let client = llm_client::LlmClient::builder()
-        .with_default_bigmodel(cli.base_url, cli.api_key)?
+        .register_adapter(Arc::new(BigModelAdapter::new(provider_cfg)))
+        .default_adapter("bigmodel")
         .build()?;
 
     let model_cfg = BigModelAdapterConfig {
@@ -284,6 +287,7 @@ fn handle_ui_event(
             )
             .context("failed to write done stats")?;
         }
+        _ => {}
     }
 
     Ok(())

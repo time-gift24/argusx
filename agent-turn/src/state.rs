@@ -51,6 +51,8 @@ impl Default for TurnEngineConfig {
 #[derive(Debug, Clone)]
 pub struct TurnState {
     pub meta: SessionMeta,
+    pub provider: String,
+    pub model: String,
     pub lifecycle: Lifecycle,
     pub model_state: ModelState,
     pub epoch: u64,
@@ -71,9 +73,11 @@ pub struct TurnState {
 }
 
 impl TurnState {
-    pub fn new(meta: SessionMeta) -> Self {
+    pub fn new(meta: SessionMeta, provider: impl Into<String>, model: impl Into<String>) -> Self {
         Self {
             meta,
+            provider: provider.into(),
+            model: model.into(),
             lifecycle: Lifecycle::Active,
             model_state: ModelState::NotStarted,
             epoch: 0,

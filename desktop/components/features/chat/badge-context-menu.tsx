@@ -12,12 +12,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   Dialog,
   DialogContent,
@@ -34,23 +34,13 @@ interface BadgeContextMenuProps {
   session: ChatSession;
   children: React.ReactNode;
   onRename: (title: string) => void;
-  onChangeColor: (color: string) => void;
   onDelete: () => void;
 }
-
-const COLORS = [
-  { value: "chart-1", label: "Blue" },
-  { value: "chart-2", label: "Cyan" },
-  { value: "chart-3", label: "Teal" },
-  { value: "chart-4", label: "Indigo" },
-  { value: "chart-5", label: "Violet" },
-];
 
 export function BadgeContextMenu({
   session,
   children,
   onRename,
-  onChangeColor,
   onDelete,
 }: BadgeContextMenuProps) {
   const [showRenameDialog, setShowRenameDialog] = useState(false);
@@ -66,31 +56,26 @@ export function BadgeContextMenu({
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-        <DropdownMenuContent className="w-48">
-          <DropdownMenuItem onClick={() => setShowRenameDialog(true)}>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+        <ContextMenuContent className="w-48">
+          <ContextMenuItem
+            onSelect={() => {
+              setNewTitle(session.title);
+              setShowRenameDialog(true);
+            }}
+          >
             Rename
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {COLORS.map((color) => (
-            <DropdownMenuItem
-              key={color.value}
-              onClick={() => onChangeColor(color.value)}
-            >
-              <span className={`mr-2 size-3 rounded-full bg-${color.value}`} />
-              {color.label}
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
             className="text-destructive"
-            onClick={() => setShowDeleteDialog(true)}
+            onSelect={() => setShowDeleteDialog(true)}
           >
             Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
 
       {/* Rename Dialog */}
       <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>

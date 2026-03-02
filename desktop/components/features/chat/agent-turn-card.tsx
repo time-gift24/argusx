@@ -11,7 +11,13 @@ import {
   PlanTitle,
   PlanTrigger,
 } from "@/components/ai-elements/plan";
-import { Queue, QueueItem, QueueItemContent, QueueItemIndicator, QueueList } from "@/components/ai-elements/queue";
+import {
+  Queue,
+  QueueItem,
+  QueueItemContent,
+  QueueItemIndicator,
+  QueueList,
+} from "@/components/ai-elements/queue";
 import { Task, TaskContent, TaskItem, TaskTrigger } from "@/components/ai-elements/task";
 import { Terminal } from "@/components/ai-elements/terminal";
 import { Message, MessageResponse } from "@/components/ai-elements/message";
@@ -70,6 +76,7 @@ export function AgentTurnCard({ sessionId, turn }: AgentTurnCardProps) {
 
   const hasReasoning = turn.reasoning.text.trim().length > 0 || turn.reasoning.isStreaming;
   const hasTerminal = terminalOutput.trim().length > 0 || turn.terminal.isStreaming;
+  const summaryText = turn.assistantText.trim();
   const reasoningPreviewText = turn.reasoning.preview || "Streaming reasoning...";
   const reasoningPreviewLength = Array.from(reasoningPreviewText).length;
   const shouldShowReasoningToggle =
@@ -177,10 +184,10 @@ export function AgentTurnCard({ sessionId, turn }: AgentTurnCardProps) {
 
         {turn.queue.items.length > 0 && (
           <Queue>
-            <div className="px-1 py-1 font-medium text-muted-foreground text-xs uppercase tracking-wide">
+            <div className="px-1 py-0.5 font-medium text-muted-foreground text-xs uppercase tracking-wide">
               Tool Queue
             </div>
-            <QueueList>
+            <QueueList className="mt-0">
               {turn.queue.items.map((item) => (
                 <QueueItem key={item.callId}>
                   <div className="flex items-center gap-2">
@@ -216,10 +223,15 @@ export function AgentTurnCard({ sessionId, turn }: AgentTurnCardProps) {
           </Collapsible>
         )}
 
-        {turn.assistantText.trim().length > 0 && (
-          <MessageResponse className="text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
-            {turn.assistantText}
-          </MessageResponse>
+        {summaryText.length > 0 && (
+          <div>
+            <p className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+              Final Summary
+            </p>
+            <MessageResponse className="text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
+              {summaryText}
+            </MessageResponse>
+          </div>
         )}
 
         {turn.status === "failed" || turn.status === "cancelled" ? (

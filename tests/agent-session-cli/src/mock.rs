@@ -44,6 +44,8 @@ mod tests {
         let model = MockModel;
         let req = ModelRequest {
             epoch: 0,
+            provider: "bigmodel".to_string(),
+            model: "glm-5".to_string(),
             transcript: vec![],
             inputs: vec![],
             tools: vec![],

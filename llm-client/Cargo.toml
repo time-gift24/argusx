@@ -15,7 +15,6 @@ futures.workspace = true
 async-stream.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
-bigmodel-api = { path = "../bigmodel-api" }
 
 # For retry jitter
 rand = "0.8"

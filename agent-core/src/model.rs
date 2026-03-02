@@ -133,6 +133,8 @@ pub enum ModelOutputEvent {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelRequest {
     pub epoch: u64,
+    pub provider: String,
+    pub model: String,
     pub transcript: Vec<TranscriptItem>,
     pub inputs: Vec<InputEnvelope>,
     #[serde(default)]
@@ -142,15 +144,24 @@ pub struct ModelRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TurnRequest {
     pub meta: SessionMeta,
+    pub provider: String,
+    pub model: String,
     pub initial_input: InputEnvelope,
     #[serde(default)]
     pub transcript: Vec<TranscriptItem>,
 }
 
 impl TurnRequest {
-    pub fn new(meta: SessionMeta, initial_input: InputEnvelope) -> Self {
+    pub fn new(
+        meta: SessionMeta,
+        provider: impl Into<String>,
+        model: impl Into<String>,
+        initial_input: InputEnvelope,
+    ) -> Self {
         Self {
             meta,
+            provider: provider.into(),
+            model: model.into(),
             initial_input,
             transcript: Vec::new(),
         }

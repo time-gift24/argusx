@@ -622,6 +622,8 @@ mod tests {
         let first_streams = runtime
             .run_turn(TurnRequest {
                 meta: SessionMeta::new(session_id.clone(), first_turn_id),
+                provider: "bigmodel".to_string(),
+                model: "glm-5".to_string(),
                 initial_input: InputEnvelope::user_text("hello"),
                 transcript: Vec::new(),
             })
@@ -636,6 +638,8 @@ mod tests {
         let second_streams = runtime
             .run_turn(TurnRequest {
                 meta: SessionMeta::new(session_id.clone(), new_id()),
+                provider: "bigmodel".to_string(),
+                model: "glm-5".to_string(),
                 initial_input: InputEnvelope::user_text("hello again"),
                 transcript: Vec::new(),
             })
@@ -668,6 +672,8 @@ mod tests {
         runtime
             .run_turn(TurnRequest {
                 meta: SessionMeta::new(session_id.clone(), new_id()),
+                provider: "bigmodel".to_string(),
+                model: "glm-5".to_string(),
                 initial_input: InputEnvelope::user_text("first"),
                 transcript: Vec::new(),
             })
@@ -680,6 +686,8 @@ mod tests {
         runtime
             .run_turn(TurnRequest {
                 meta: SessionMeta::new(session_id, new_id()),
+                provider: "bigmodel".to_string(),
+                model: "glm-5".to_string(),
                 initial_input: InputEnvelope::user_text("second"),
                 transcript: Vec::new(),
             })
@@ -716,6 +724,8 @@ mod tests {
         runtime
             .run_turn(TurnRequest {
                 meta: SessionMeta::new(session_id.clone(), new_id()),
+                provider: "bigmodel".to_string(),
+                model: "glm-5".to_string(),
                 initial_input: InputEnvelope::user_text("persist me"),
                 transcript: Vec::new(),
             })
@@ -739,6 +749,8 @@ mod tests {
         runtime2
             .run_turn(TurnRequest {
                 meta: SessionMeta::new(session_id, new_id()),
+                provider: "bigmodel".to_string(),
+                model: "glm-5".to_string(),
                 initial_input: InputEnvelope::user_text("new turn"),
                 transcript: Vec::new(),
             })

@@ -15,6 +15,8 @@ use tokio::sync::{mpsc, Mutex as AsyncMutex, Semaphore};
 pub enum Effect {
     StartModel {
         epoch: u64,
+        provider: String,
+        model: String,
         transcript: Vec<TranscriptItem>,
         inputs: Vec<agent_core::InputEnvelope>,
     },
@@ -69,10 +71,12 @@ where
         match effect {
             Effect::StartModel {
                 epoch,
+                provider,
+                model,
                 transcript,
                 inputs,
             } => {
-                self.spawn_model_stream(epoch, transcript, inputs);
+                self.spawn_model_stream(epoch, provider, model, transcript, inputs);
             }
             Effect::ExecuteTool {
                 epoch,
@@ -95,10 +99,12 @@ where
     fn spawn_model_stream(
         &self,
         epoch: u64,
+        provider: String,
+        model: String,
         transcript: Vec<TranscriptItem>,
         inputs: Vec<agent_core::InputEnvelope>,
     ) {
-        let model = Arc::clone(&self.model);
+        let model_adapter = Arc::clone(&self.model);
         let tools = Arc::clone(&self.tools);
         let tx = self.tx.clone();
 
@@ -106,12 +112,14 @@ where
             let tool_specs = tools.list_tools().await;
             let request = ModelRequest {
                 epoch,
+                provider,
+                model,
                 transcript,
                 inputs,
                 tools: tool_specs,
             };
             let mut saw_completed = false;
-            match model.stream(request).await {
+            match model_adapter.stream(request).await {
                 Ok(mut stream) => {
                     while let Some(item) = stream.next().await {
                         match item {
