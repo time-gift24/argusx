@@ -36,8 +36,8 @@ export function SopTreeNav({ groups, activeStepId, onSelect }: SopTreeNavProps) 
                     type="button"
                     className={`w-full rounded-md border px-2 py-1 text-left text-sm ${
                       step.sop_step_id === activeStepId
-                        ? "border-emerald-500 bg-emerald-50"
-                        : "bg-background"
+                        ? "border-border bg-muted"
+                        : "border-border/60 bg-background hover:bg-muted/50"
                     }`}
                     onClick={() => onSelect(step.sop_step_id)}
                   >

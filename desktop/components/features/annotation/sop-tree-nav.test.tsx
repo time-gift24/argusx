@@ -48,4 +48,18 @@ describe("SopTreeNav", () => {
 
     expect(onSelect).toHaveBeenCalledWith(21);
   });
+
+  it("uses subtle neutral background for active step instead of emerald emphasis", () => {
+    render(
+      <SopTreeNav
+        groups={groups}
+        activeStepId={11}
+        onSelect={() => {}}
+      />,
+    );
+
+    const activeStep = screen.getByRole("button", { name: "检测A" });
+    expect(activeStep).toHaveClass("bg-muted");
+    expect(activeStep).not.toHaveClass("border-emerald-500");
+  });
 });
