@@ -7,6 +7,8 @@ import type { AnnotationLocation } from "@/lib/annotation/types";
 const FIELDS = [
   { key: "case_title", label: "案件标题", value: mockReviewData.basicInfo.case_title },
   { key: "case_summary", label: "案件摘要", value: mockReviewData.basicInfo.case_summary },
+  { key: "sop_id", label: "SOP ID", value: mockReviewData.sop?.sop_id ?? "" },
+  { key: "sop_name", label: "SOP 名称", value: mockReviewData.sop?.name ?? "" },
 ];
 
 function buildPlainLocation(fieldKey: string, selectedText: string): AnnotationLocation {
