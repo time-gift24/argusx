@@ -32,6 +32,12 @@ pub enum Effect {
     },
     PersistCheckpoint,
     CancelInflightTools,
+    ExecutePostValidator {
+        turn_id: String,
+        summary: String,
+        attempt: u8,
+        tool_name: String,
+    },
 }
 
 #[derive(Clone)]
@@ -93,6 +99,9 @@ where
                 self.spawn_retry_timer(delay_ms, next_epoch);
             }
             Effect::PersistCheckpoint | Effect::CancelInflightTools => {}
+            Effect::ExecutePostValidator { .. } => {
+                // TODO: Implement in Task 4
+            }
         }
     }
 

@@ -97,6 +97,22 @@ pub fn test_config() -> TurnEngineConfig {
     TurnEngineConfig::default()
 }
 
+/// Creates a TurnEngineConfig with post-validator enabled
+pub fn test_config_with_post_validator(
+    tool_name: impl Into<String>,
+    max_attempts: u8,
+) -> TurnEngineConfig {
+    use crate::state::PostValidatorConfig;
+    TurnEngineConfig {
+        max_parallel_tools: 4,
+        retry_policy: crate::state::RetryPolicy::default(),
+        post_validator: Some(PostValidatorConfig {
+            tool_name: tool_name.into(),
+            max_attempts,
+        }),
+    }
+}
+
 /// Generates a unique call ID
 pub fn make_call_id(n: u32) -> String {
     format!("{}{:03}", TEST_CALL_ID_PREFIX, n)
@@ -356,6 +372,7 @@ impl StateBuilder {
             usage: self.usage,
             done_emitted: self.done_emitted,
             retry_attempt: self.retry_attempt,
+            post_validation_attempt: 0,
             seen_event_ids: self.seen_event_ids,
             transcript: self.transcript,
             last_request_inputs: self.last_request_inputs,

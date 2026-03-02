@@ -6,6 +6,7 @@ use agent_core::{InputEnvelope, SessionMeta, ToolCall, TranscriptItem, Usage};
 pub enum Lifecycle {
     Active,
     Backoff,
+    PostProcessing,
     Done,
     Failed,
 }
@@ -34,9 +35,16 @@ impl Default for RetryPolicy {
 }
 
 #[derive(Debug, Clone)]
+pub struct PostValidatorConfig {
+    pub tool_name: String,
+    pub max_attempts: u8,
+}
+
+#[derive(Debug, Clone)]
 pub struct TurnEngineConfig {
     pub max_parallel_tools: usize,
     pub retry_policy: RetryPolicy,
+    pub post_validator: Option<PostValidatorConfig>,
 }
 
 impl Default for TurnEngineConfig {
@@ -44,6 +52,7 @@ impl Default for TurnEngineConfig {
         Self {
             max_parallel_tools: 4,
             retry_policy: RetryPolicy::default(),
+            post_validator: None,
         }
     }
 }
@@ -67,6 +76,7 @@ pub struct TurnState {
     pub usage: Usage,
     pub done_emitted: bool,
     pub retry_attempt: u32,
+    pub post_validation_attempt: u8,
     pub seen_event_ids: HashSet<String>,
     pub transcript: Vec<TranscriptItem>,
     pub last_request_inputs: Vec<InputEnvelope>,
@@ -92,6 +102,7 @@ impl TurnState {
             usage: Usage::default(),
             done_emitted: false,
             retry_attempt: 0,
+            post_validation_attempt: 0,
             seen_event_ids: HashSet::new(),
             transcript: Vec::new(),
             last_request_inputs: Vec::new(),

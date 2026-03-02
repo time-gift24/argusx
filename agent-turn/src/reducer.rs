@@ -355,9 +355,12 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
             fail_turn(&mut tr, message, true);
             tr.add_effect(Effect::CancelInflightTools);
         }
+        RuntimeEvent::PostValidatorSuccess { .. } | RuntimeEvent::PostValidatorFailed { .. } => {
+            // TODO: Implement in Task 3
+        }
     }
 
-    maybe_finalize(&mut tr);
+    maybe_finalize(&mut tr, config);
     tr
 }
 
@@ -437,7 +440,7 @@ fn on_tool_result(tr: &mut Transition, epoch: u64, result: ToolResult, is_error:
     }
 }
 
-fn maybe_finalize(tr: &mut Transition) {
+fn maybe_finalize(tr: &mut Transition, config: &TurnEngineConfig) {
     if !tr.state.can_finish() {
         return;
     }
@@ -458,6 +461,25 @@ fn maybe_finalize(tr: &mut Transition) {
         ));
     }
 
+    // If post-validator is configured, enter PostProcessing instead of Done
+    if let Some(ref validator_config) = config.post_validator {
+        tr.state.lifecycle = Lifecycle::PostProcessing;
+        tr.add_effect(Effect::ExecutePostValidator {
+            turn_id: tr.state.meta.turn_id.clone(),
+            summary: tr.state.output_buffer.clone(),
+            attempt: tr.state.post_validation_attempt,
+            tool_name: validator_config.tool_name.clone(),
+        });
+        tr.add_run_event(RunStreamEvent::PostValidationStarted {
+            turn_id: tr.state.meta.turn_id.clone(),
+        });
+        tr.add_ui_event(UiThreadEvent::PostValidationStarted {
+            turn_id: tr.state.meta.turn_id.clone(),
+        });
+        return;
+    }
+
+    // No post-validator: finalize directly
     tr.state.done_emitted = true;
     tr.state.lifecycle = Lifecycle::Done;
 
@@ -1666,6 +1688,7 @@ mod sequence_tests {
     use crate::effect::Effect;
     use crate::state::{Lifecycle, ModelState};
     use crate::test_helpers::*;
+    use agent_core::Usage;
 
     // -------------------------------------------------------------------------
     // Simple Conversation Flow
@@ -2098,5 +2121,74 @@ mod sequence_tests {
 
         // Then: Completed
         assert_eq!(state.lifecycle, Lifecycle::Done);
+    }
+
+    #[test]
+    fn model_completed_without_post_validator_finishes_directly() {
+        let state = StateBuilder::new("s1", "t1").build();
+        let cfg = test_config(); // No post_validator configured
+
+        let state = reduce(
+            state,
+            EventBuilder::turn_started("t1", user_input("test")).build(),
+            &cfg,
+        )
+        .state;
+        let state = reduce(
+            state,
+            EventBuilder::model_completed()
+                .with_epoch(0)
+                .with_usage(Usage {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    total_tokens: 2,
+                })
+                .build(),
+            &cfg,
+        )
+        .state;
+
+        // Then: Turn completes directly (no PostProcessing lifecycle)
+        assert_eq!(state.lifecycle, Lifecycle::Done);
+        assert!(state.done_emitted);
+    }
+
+    #[test]
+    fn model_completed_with_post_validator_enters_postprocessing() {
+        let state = StateBuilder::new("s1", "t1").build();
+        let cfg = test_config_with_post_validator("validator-tool", 3);
+
+        let result = reduce(
+            state,
+            EventBuilder::turn_started("t1", user_input("test")).build(),
+            &cfg,
+        );
+
+        // Check state before ModelCompleted
+        assert_eq!(result.state.lifecycle, Lifecycle::Active);
+
+        let state = reduce(
+            result.state,
+            EventBuilder::model_completed()
+                .with_epoch(0)
+                .with_usage(Usage {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    total_tokens: 2,
+                })
+                .build(),
+            &cfg,
+        );
+
+        // Then: Enters PostProcessing and emits ExecutePostValidator effect
+        assert_eq!(state.state.lifecycle, Lifecycle::PostProcessing);
+        assert!(state
+            .effects
+            .iter()
+            .any(|e| matches!(e, Effect::ExecutePostValidator { .. })));
+        assert!(!state
+            .run_events
+            .iter()
+            .any(|e| matches!(e, RunStreamEvent::TurnDone { .. })));
     }
 }
