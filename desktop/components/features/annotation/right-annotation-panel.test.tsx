@@ -1,12 +1,29 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AnnotationWorkspace } from "@/components/features/annotation/annotation-workspace";
 import { initialAnnotationState } from "@/lib/annotation/reducer";
 import { useAnnotationStore } from "@/lib/stores/annotation-store";
 
+const { toastSuccess, toastError, toastInfo } = vi.hoisted(() => ({
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
+  toastInfo: vi.fn(),
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    info: toastInfo,
+    success: toastSuccess,
+    error: toastError,
+  },
+}));
+
 describe("RightAnnotationPanel", () => {
   beforeEach(() => {
+    toastSuccess.mockReset();
+    toastError.mockReset();
+    toastInfo.mockReset();
     useAnnotationStore.setState((current) => ({
       ...current,
       state: initialAnnotationState,
@@ -83,5 +100,43 @@ describe("RightAnnotationPanel", () => {
     expect(screen.getByDisplayValue("2")).toBeInTheDocument();
     expect(screen.getByDisplayValue("5")).toBeInTheDocument();
     expect(screen.getByDisplayValue("CDE")).toBeInTheDocument();
+  });
+
+  it("submits after required fields are complete and shows submitted state", async () => {
+    const user = userEvent.setup();
+    render(<AnnotationWorkspace />);
+
+    await user.click(screen.getByTestId("annotatable-field-case_title"));
+    await user.click(screen.getByRole("combobox", { name: "违规检查项" }));
+    await user.click(screen.getByRole("option", { name: "事实一致性" }));
+
+    const submitButton = screen.getByRole("button", { name: "提交标注" });
+    expect(submitButton).toBeDisabled();
+
+    await user.type(screen.getByLabelText("问题说明"), "事实描述和原文不一致");
+    expect(submitButton).toBeEnabled();
+
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(
+        useAnnotationStore
+          .getState()
+          .state.items.find((item) => item.id === useAnnotationStore.getState().state.activeId)?.status,
+      ).toBe("submitted");
+    });
+
+    expect(screen.getByRole("button", { name: "已提交" })).toBeDisabled();
+    expect(toastSuccess).toHaveBeenCalledWith("标注已提交");
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("uses shared Button component for submit action", async () => {
+    const user = userEvent.setup();
+    render(<AnnotationWorkspace />);
+
+    await user.click(screen.getByTestId("annotatable-field-case_title"));
+
+    expect(screen.getByRole("button", { name: "提交标注" })).toHaveAttribute("data-slot", "button");
   });
 });

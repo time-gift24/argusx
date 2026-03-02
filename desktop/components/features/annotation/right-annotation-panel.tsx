@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
+import { Button } from "@/components/ui/button";
 import { fallbackRules } from "@/lib/annotation/rules-fallback";
 import { useAnnotationStore } from "@/lib/stores/annotation-store";
+import { toast } from "sonner";
 import { RuleDynamicFields } from "./rule-dynamic-fields";
 
 function LocationReadonlyField({
@@ -31,6 +33,7 @@ export function RightAnnotationPanel() {
   const submitActive = useAnnotationStore((store) => store.submitActive);
   const listboxId = React.useId();
   const [isOpen, setIsOpen] = React.useState(false);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const active = state.items.find((item) => item.id === state.activeId);
   const hasActiveTarget = Boolean(active);
@@ -40,14 +43,20 @@ export function RightAnnotationPanel() {
   const effectivePayload = active?.payload ?? {};
   const location = active?.location;
   const isRichSelection = location?.source_type === "rich_text_selection";
+  const isSubmitted = active?.status === "submitted";
 
-  const isSubmitDisabled = !hasActiveTarget || !selectedRule || selectedRule.schema.some((field) => {
-    if (!field.required) return false;
-    return !(effectivePayload[field.key] ?? "").trim();
-  });
+  const isSubmitDisabled = isSubmitting
+    || isSubmitted
+    || !hasActiveTarget
+    || !selectedRule
+    || selectedRule.schema.some((field) => {
+      if (!field.required) return false;
+      return !(effectivePayload[field.key] ?? "").trim();
+    });
 
   React.useEffect(() => {
     setIsOpen(false);
+    setIsSubmitting(false);
   }, [state.activeId]);
 
   function handleSelectRule(code: string) {
@@ -56,6 +65,22 @@ export function RightAnnotationPanel() {
     }
     setIsOpen(false);
     dispatch({ type: "UPDATE_RULE", ruleCode: code });
+  }
+
+  async function handleSubmit() {
+    if (isSubmitDisabled) {
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await submitActive();
+      toast.success("标注已提交");
+    } catch {
+      toast.error("提交失败，请稍后重试");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -153,16 +178,16 @@ export function RightAnnotationPanel() {
         />
       ) : null}
 
-      <button
+      <Button
         type="button"
-        className="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+        size="lg"
         disabled={isSubmitDisabled}
         onClick={() => {
-          void submitActive();
+          void handleSubmit();
         }}
       >
-        提交标注
-      </button>
+        {isSubmitted ? "已提交" : isSubmitting ? "提交中..." : "提交标注"}
+      </Button>
     </div>
   );
 }
