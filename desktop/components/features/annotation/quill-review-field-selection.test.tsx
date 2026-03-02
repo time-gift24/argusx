@@ -7,6 +7,9 @@ import { useAnnotationStore } from "@/lib/stores/annotation-store";
 const { mockQuillInstances } = vi.hoisted(() => ({
   mockQuillInstances: [] as MockQuillInstance[],
 }));
+const { toastInfoMock } = vi.hoisted(() => ({
+  toastInfoMock: vi.fn(),
+}));
 
 type MockRange = { index: number; length: number };
 
@@ -98,9 +101,16 @@ vi.mock("quill", () => {
   };
 });
 
+vi.mock("sonner", () => ({
+  toast: {
+    info: toastInfoMock,
+  },
+}));
+
 describe("QuillReviewField selection mapping", () => {
   beforeEach(() => {
     mockQuillInstances.length = 0;
+    toastInfoMock.mockReset();
     useAnnotationStore.setState((current) => ({
       ...current,
       state: initialAnnotationState,
@@ -144,6 +154,9 @@ describe("QuillReviewField selection mapping", () => {
     expect(current.location.start_offset).toBe(2);
     expect(current.location.end_offset).toBe(5);
     expect(current.location.selected_text).toBe("CDE");
+    expect(toastInfoMock).toHaveBeenCalledWith("新的标注事件", {
+      description: "段落摘要 [2, 5)",
+    });
   });
 
   it("applies text highlights for all ranges and stronger color for active", async () => {

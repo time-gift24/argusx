@@ -6,6 +6,7 @@ import {
   SidebarProvider,
   SidebarInset,
 } from "@/components/ui/sidebar";
+import { Toaster } from "@/components/ui/sonner";
 import "../../app/globals.css";
 import { AppSidebar } from "./sidebar/app-sidebar";
 import { ChatSidebar } from "./sidebar/chat-sidebar";
@@ -49,6 +50,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </SidebarInset>
         {!isChatRoute ? <ChatSidebar variant="sidebar" side="right" /> : null}
       </SidebarProvider>
+      <Toaster position="top-right" richColors />
     </TooltipProvider>
   );
 }

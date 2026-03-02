@@ -5,6 +5,7 @@ import { useQuillSelectionAnchor } from "@/hooks/use-quill-selection-anchor";
 import { useAnnotationStore } from "@/lib/stores/annotation-store";
 import type { AnnotationLocation } from "@/lib/annotation/types";
 import type Quill from "quill";
+import { toast } from "sonner";
 
 type QuillReviewFieldProps = {
   sectionId: string;
@@ -122,6 +123,10 @@ export function QuillReviewField({
           end,
           selectedText,
         }),
+      });
+
+      toast.info("新的标注事件", {
+        description: `${label} [${start}, ${end})`,
       });
     },
   });
