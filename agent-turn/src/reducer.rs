@@ -355,8 +355,117 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
             fail_turn(&mut tr, message, true);
             tr.add_effect(Effect::CancelInflightTools);
         }
-        RuntimeEvent::PostValidatorSuccess { .. } | RuntimeEvent::PostValidatorFailed { .. } => {
-            // TODO: Implement in Task 3
+        RuntimeEvent::PostValidatorSuccess { summary, .. } => {
+            // Only handle in PostProcessing state
+            if tr.state.lifecycle != Lifecycle::PostProcessing {
+                return tr;
+            }
+
+            // Emit final reasoning if needed
+            emit_reasoning_completed_if_needed(&mut tr);
+
+            // Add reasoning and output to transcript
+            if !tr.state.reasoning_buffer.is_empty() {
+                tr.add_item(TranscriptItem::reasoning_with_meta(
+                    tr.state.reasoning_buffer.clone(),
+                    tr.state.reasoning_truncated,
+                    tr.state.reasoning_char_count,
+                ));
+            }
+
+            if !tr.state.output_buffer.is_empty() {
+                tr.add_item(TranscriptItem::assistant_message(
+                    tr.state.output_buffer.clone(),
+                ));
+            }
+
+            // Use validator summary if present, otherwise fall back to output buffer
+            let final_message = summary.clone().or_else(|| {
+                (!tr.state.output_buffer.is_empty()).then_some(tr.state.output_buffer.clone())
+            });
+
+            // Mark as done
+            tr.state.done_emitted = true;
+            tr.state.lifecycle = Lifecycle::Done;
+
+            let stats = TurnStats {
+                tool_calls_count: tr.state.tool_calls_count(),
+                total_input_tokens: tr.state.usage.input_tokens,
+                total_output_tokens: tr.state.usage.output_tokens,
+            };
+
+            tr.add_run_event(RunStreamEvent::TurnDone {
+                turn_id: tr.state.meta.turn_id.clone(),
+                epoch: tr.state.epoch,
+                final_message: final_message.clone(),
+                usage: tr.state.usage.clone(),
+                stats: stats.clone(),
+            });
+
+            tr.add_ui_event(UiThreadEvent::Done {
+                turn_id: tr.state.meta.turn_id.clone(),
+                summary: final_message,
+                stats,
+            });
+
+            tr.add_effect(Effect::PersistCheckpoint);
+        }
+        RuntimeEvent::PostValidatorFailed { error_message, .. } => {
+            // Only handle in PostProcessing state
+            if tr.state.lifecycle != Lifecycle::PostProcessing {
+                return tr;
+            }
+
+            // Check if we can retry
+            let validator_config = match config.post_validator {
+                Some(ref cfg) => cfg,
+                None => {
+                    // No validator configured, fail the turn
+                    fail_turn(&mut tr, error_message.clone(), false);
+                    return tr;
+                }
+            };
+
+            // Check if we've exhausted our attempts
+            // max_attempts = 3 means allow attempts 0, 1, 2 (3 total)
+            // So we fail if current attempt >= max_attempts - 1
+            if tr.state.post_validation_attempt >= validator_config.max_attempts - 1 {
+                // Max attempts reached, fail the turn
+                fail_turn(&mut tr, error_message.clone(), false);
+                return tr;
+            }
+
+            // Increment attempt counter
+            tr.state.post_validation_attempt += 1;
+
+            // Can retry: emit PostValidationFailed event
+            tr.add_run_event(RunStreamEvent::PostValidationFailed {
+                turn_id: tr.state.meta.turn_id.clone(),
+                attempt: tr.state.post_validation_attempt,
+                max_attempts: validator_config.max_attempts,
+                can_retry: true,
+                error_message: error_message.clone(),
+            });
+
+            tr.add_ui_event(UiThreadEvent::PostValidationFailed {
+                turn_id: tr.state.meta.turn_id.clone(),
+                attempt: tr.state.post_validation_attempt,
+                max_attempts: validator_config.max_attempts,
+                can_retry: true,
+                error_message: error_message.clone(),
+            });
+
+            // Inject fix prompt and restart model
+            let fix_prompt = InputEnvelope::user_text(format!(
+                "[System] Post-validation failed: {}\n\nPlease fix the issues and try again.",
+                error_message
+            ));
+
+            tr.state.enqueue_input(fix_prompt);
+
+            // Restart model with incremented epoch
+            let next_epoch = tr.state.epoch + 1;
+            start_model_from_pending(&mut tr, next_epoch);
         }
     }
 
@@ -1688,7 +1797,7 @@ mod sequence_tests {
     use crate::effect::Effect;
     use crate::state::{Lifecycle, ModelState};
     use crate::test_helpers::*;
-    use agent_core::Usage;
+    use agent_core::{new_id, Usage};
 
     // -------------------------------------------------------------------------
     // Simple Conversation Flow
@@ -2190,5 +2299,129 @@ mod sequence_tests {
             .run_events
             .iter()
             .any(|e| matches!(e, RunStreamEvent::TurnDone { .. })));
+    }
+
+    #[test]
+    fn post_validator_success_emits_turn_done_with_summary_precedence() {
+        let state = StateBuilder::new("s1", "t1")
+            .with_lifecycle(Lifecycle::PostProcessing)
+            .with_output_buffer("original output")
+            .with_post_validation_attempt(1)
+            .build();
+        let cfg = test_config_with_post_validator("validator-tool", 3);
+
+        let result = reduce(
+            state,
+            RuntimeEvent::PostValidatorSuccess {
+                event_id: new_id(),
+                summary: Some("validator summary".to_string()),
+            },
+            &cfg,
+        );
+
+        // Then: Transition to Done with validator summary taking precedence
+        assert_eq!(result.state.lifecycle, Lifecycle::Done);
+        assert!(result.state.done_emitted);
+        assert!(result.run_events.iter().any(|e| matches!(
+            e,
+            RunStreamEvent::TurnDone {
+                final_message: Some(msg),
+                ..
+            } if msg == "validator summary"
+        )));
+        assert!(result.ui_events.iter().any(|e| matches!(
+            e,
+            UiThreadEvent::Done {
+                summary: Some(msg),
+                ..
+            } if msg == "validator summary"
+        )));
+    }
+
+    #[test]
+    fn post_validator_failed_requeues_fix_prompt_and_restarts_model() {
+        let state = StateBuilder::new("s1", "t1")
+            .with_lifecycle(Lifecycle::PostProcessing)
+            .with_output_buffer("bad output")
+            .with_post_validation_attempt(0)
+            .build();
+        let cfg = test_config_with_post_validator("validator-tool", 3);
+
+        let result = reduce(
+            state,
+            RuntimeEvent::PostValidatorFailed {
+                event_id: new_id(),
+                error_message: "validation failed".to_string(),
+            },
+            &cfg,
+        );
+
+        // Then: Restart model with fix prompt
+        assert_eq!(result.state.lifecycle, Lifecycle::Active);
+        assert_eq!(result.state.epoch, 1); // Epoch incremented
+        assert_eq!(result.state.model_state, ModelState::Streaming);
+        // Fix prompt was enqueued but drained by start_model_from_pending
+        assert!(result.effects.iter().any(|e| matches!(e, Effect::StartModel { .. })));
+        assert!(result.run_events.iter().any(|e| matches!(
+            e,
+            RunStreamEvent::PostValidationFailed {
+                can_retry: true,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn post_validator_failed_hits_max_attempts_and_fails_turn() {
+        let state = StateBuilder::new("s1", "t1")
+            .with_lifecycle(Lifecycle::PostProcessing)
+            .with_output_buffer("bad output")
+            .with_post_validation_attempt(2) // Already at attempt 2 (0-indexed)
+            .build();
+        let cfg = test_config_with_post_validator("validator-tool", 3);
+
+        let result = reduce(
+            state,
+            RuntimeEvent::PostValidatorFailed {
+                event_id: new_id(),
+                error_message: "validation failed".to_string(),
+            },
+            &cfg,
+        );
+
+        // Then: Turn fails (max attempts = 3, current attempt = 2, next would be 3)
+        assert_eq!(result.state.lifecycle, Lifecycle::Failed);
+        assert!(result.run_events.iter().any(|e| matches!(
+            e,
+            RunStreamEvent::TurnFailed { .. }
+        )));
+    }
+
+    #[test]
+    fn cancel_requested_in_postprocessing_fails_turn() {
+        let state = StateBuilder::new("s1", "t1")
+            .with_lifecycle(Lifecycle::PostProcessing)
+            .with_output_buffer("output")
+            .build();
+        let cfg = test_config_with_post_validator("validator-tool", 3);
+
+        let result = reduce(
+            state,
+            RuntimeEvent::CancelRequested {
+                event_id: new_id(),
+                reason: Some("user cancelled".to_string()),
+            },
+            &cfg,
+        );
+
+        // Then: Turn fails with cancelled=true
+        assert_eq!(result.state.lifecycle, Lifecycle::Failed);
+        assert!(result.run_events.iter().any(|e| matches!(
+            e,
+            RunStreamEvent::TurnFailed {
+                cancelled: true,
+                ..
+            }
+        )));
     }
 }
