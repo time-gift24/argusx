@@ -30,8 +30,8 @@ async fn bigmodel_adapter_retries_and_chats() {
         .mount(&mock_server)
         .await;
 
-    let cfg = BigModelConfig::new(mock_server.uri(), "test-key", HashMap::new())
-        .expect("valid config");
+    let cfg =
+        BigModelConfig::new(mock_server.uri(), "test-key", HashMap::new()).expect("valid config");
     let adapter = Arc::new(BigModelAdapter::new(cfg));
 
     let client = LlmClient::builder()

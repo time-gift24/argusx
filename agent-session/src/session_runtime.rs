@@ -165,6 +165,12 @@ where
         self.store.get(session_id).await
     }
 
+    pub async fn list_turn_summaries(&self, session_id: &SessionId) -> Result<Vec<TurnSummary>> {
+        self.ensure_session_loaded(session_id)
+            .await
+            .map(|state| state.turns)
+    }
+
     pub async fn delete_session(&self, session_id: &SessionId) -> Result<()> {
         // Remove from memory
         {
@@ -419,15 +425,12 @@ where
         };
 
         if should_persist {
-            if let Err(err) = store.save_turn_summary(&session_id, &summary).await {
+            if let Err(err) = store
+                .persist_turn_completion(&session_id, &summary, &updated_info)
+                .await
+            {
                 warn!(
-                    "failed to persist turn summary for session {} turn {}: {}",
-                    session_id, turn_id, err
-                );
-            }
-            if let Err(err) = store.update(&updated_info).await {
-                warn!(
-                    "failed to persist idle session state for session {} after turn {}: {}",
+                    "failed to persist turn completion state for session {} turn {}: {}",
                     session_id, turn_id, err
                 );
             }

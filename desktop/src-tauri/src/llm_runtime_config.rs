@@ -128,10 +128,14 @@ impl LlmRuntimeConfig {
     }
 
     pub fn configured_providers(&self) -> Vec<ProviderId> {
-        [ProviderId::Bigmodel, ProviderId::Openai, ProviderId::Anthropic]
-            .into_iter()
-            .filter(|provider| self.provider(provider).is_available())
-            .collect()
+        [
+            ProviderId::Bigmodel,
+            ProviderId::Openai,
+            ProviderId::Anthropic,
+        ]
+        .into_iter()
+        .filter(|provider| self.provider(provider).is_available())
+        .collect()
     }
 }
 
@@ -156,7 +160,11 @@ pub fn normalize_runtime_config(mut cfg: LlmRuntimeConfig) -> LlmRuntimeConfig {
 
 pub fn list_available_models(cfg: &LlmRuntimeConfig) -> Vec<AvailableModel> {
     let mut models = Vec::new();
-    for provider in [ProviderId::Bigmodel, ProviderId::Openai, ProviderId::Anthropic] {
+    for provider in [
+        ProviderId::Bigmodel,
+        ProviderId::Openai,
+        ProviderId::Anthropic,
+    ] {
         let provider_cfg = cfg.provider(&provider);
         if !provider_cfg.is_available() {
             continue;
@@ -231,7 +239,10 @@ mod tests {
 
         let normalized = normalize_runtime_config(cfg);
         assert_eq!(normalized.default_provider, Some(ProviderId::Openai));
-        assert_eq!(normalized.providers.openai.base_url, "https://openai.provider.test/v1");
+        assert_eq!(
+            normalized.providers.openai.base_url,
+            "https://openai.provider.test/v1"
+        );
         assert_eq!(normalized.providers.openai.models, vec!["gpt-4o"]);
         assert_eq!(normalized.providers.openai.headers.len(), 1);
         assert_eq!(normalized.providers.openai.headers[0].key, "X-Test");

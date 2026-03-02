@@ -18,6 +18,15 @@ export interface ChatMessage {
   created_at: number;
 }
 
+export interface ChatTurnSummary {
+  id: string;
+  session_id: string;
+  status: "running" | "done" | "failed" | "cancelled";
+  final_message?: string;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface GetChatMessagesOptions {
   range?: "window_24h" | "all";
   cursor?: number;
@@ -129,6 +138,16 @@ export async function getChatMessages(
     });
   } catch (error) {
     throw new Error(`Failed to get chat messages: ${error}`);
+  }
+}
+
+export async function getChatTurnSummaries(
+  sessionId: string
+): Promise<ChatTurnSummary[]> {
+  try {
+    return await invoke("get_chat_turn_summaries", { session_id: sessionId });
+  } catch (error) {
+    throw new Error(`Failed to get chat turn summaries: ${error}`);
   }
 }
 

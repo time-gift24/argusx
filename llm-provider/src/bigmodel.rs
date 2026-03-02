@@ -71,7 +71,11 @@ impl BigModelHttpClient {
         Self::with_options(config, RetryPolicy::default(), TimeoutConfig::default())
     }
 
-    pub fn with_options(config: BigModelConfig, retry: RetryPolicy, timeout: TimeoutConfig) -> Self {
+    pub fn with_options(
+        config: BigModelConfig,
+        retry: RetryPolicy,
+        timeout: TimeoutConfig,
+    ) -> Self {
         let http = reqwest::Client::builder()
             .connect_timeout(timeout.connect_timeout)
             .timeout(timeout.request_timeout)
@@ -287,7 +291,10 @@ pub fn to_llm_response(resp: &ChatResponse) -> LlmResponse {
 
     if let Some(reasoning) = first_choice.and_then(|c| c.message.reasoning_content.clone()) {
         if let Some(obj) = extensions.as_object_mut() {
-            obj.insert("reasoning_content".to_string(), serde_json::Value::String(reasoning));
+            obj.insert(
+                "reasoning_content".to_string(),
+                serde_json::Value::String(reasoning),
+            );
         }
     }
 

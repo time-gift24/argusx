@@ -42,7 +42,10 @@ fn to_llm_request(req: bigmodel_api::ChatRequest) -> Result<LlmRequest, (StatusC
         if !matches!(m.content, bigmodel_api::Content::Text(_)) {
             return Err((
                 StatusCode::BAD_REQUEST,
-                format!("Unsupported message content type: only text content is supported, got {:?}", std::mem::discriminant(&m.content)),
+                format!(
+                    "Unsupported message content type: only text content is supported, got {:?}",
+                    std::mem::discriminant(&m.content)
+                ),
             ));
         }
     }
@@ -60,7 +63,10 @@ fn to_llm_request(req: bigmodel_api::ChatRequest) -> Result<LlmRequest, (StatusC
                 other => {
                     return Err((
                         StatusCode::BAD_REQUEST,
-                        format!("Unsupported tool type: only function tools are supported, got {:?}", std::mem::discriminant(&other)),
+                        format!(
+                            "Unsupported tool type: only function tools are supported, got {:?}",
+                            std::mem::discriminant(&other)
+                        ),
                     ));
                 }
             }
@@ -70,19 +76,23 @@ fn to_llm_request(req: bigmodel_api::ChatRequest) -> Result<LlmRequest, (StatusC
         None
     };
 
-    let messages: Vec<LlmMessage> = req.messages.into_iter().map(|m| {
-        let role = match m.role {
-            bigmodel_api::Role::System => LlmRole::System,
-            bigmodel_api::Role::User => LlmRole::User,
-            bigmodel_api::Role::Assistant => LlmRole::Assistant,
-            bigmodel_api::Role::Tool => LlmRole::Tool,
-        };
-        let content = match m.content {
-            bigmodel_api::Content::Text(s) => s,
-            _ => String::new(), // This should never happen due to validation above
-        };
-        LlmMessage { role, content }
-    }).collect();
+    let messages: Vec<LlmMessage> = req
+        .messages
+        .into_iter()
+        .map(|m| {
+            let role = match m.role {
+                bigmodel_api::Role::System => LlmRole::System,
+                bigmodel_api::Role::User => LlmRole::User,
+                bigmodel_api::Role::Assistant => LlmRole::Assistant,
+                bigmodel_api::Role::Tool => LlmRole::Tool,
+            };
+            let content = match m.content {
+                bigmodel_api::Content::Text(s) => s,
+                _ => String::new(), // This should never happen due to validation above
+            };
+            LlmMessage { role, content }
+        })
+        .collect();
 
     Ok(LlmRequest {
         model: req.model,
@@ -99,13 +109,16 @@ fn to_llm_request(req: bigmodel_api::ChatRequest) -> Result<LlmRequest, (StatusC
 fn to_chat_response(resp: llm_client::LlmResponse) -> bigmodel_api::ChatResponse {
     // Extract extensions
     let extensions = resp.extensions;
-    let web_search: Vec<bigmodel_api::WebSearchResult> = extensions.get("web_search")
+    let web_search: Vec<bigmodel_api::WebSearchResult> = extensions
+        .get("web_search")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
-    let video_result: Vec<bigmodel_api::VideoResult> = extensions.get("video_result")
+    let video_result: Vec<bigmodel_api::VideoResult> = extensions
+        .get("video_result")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
-    let content_filter: Vec<serde_json::Value> = extensions.get("content_filter")
+    let content_filter: Vec<serde_json::Value> = extensions
+        .get("content_filter")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
 
@@ -138,8 +151,9 @@ fn to_chat_response(resp: llm_client::LlmResponse) -> bigmodel_api::ChatResponse
 fn to_chunk_response(chunk: llm_client::LlmChunk) -> bigmodel_api::ChatResponseChunk {
     // Convert generic tool calls to BigModel's DeltaToolCall
     let tool_calls = chunk.delta_tool_calls.map(|calls| {
-        calls.into_iter().map(|tc| {
-            bigmodel_api::DeltaToolCall {
+        calls
+            .into_iter()
+            .map(|tc| bigmodel_api::DeltaToolCall {
                 id: tc.call_id,
                 type_field: Some("function".to_string()),
                 function: Some(bigmodel_api::DeltaToolFunction {
@@ -147,8 +161,8 @@ fn to_chunk_response(chunk: llm_client::LlmChunk) -> bigmodel_api::ChatResponseC
                     arguments: tc.arguments,
                 }),
                 index: None,
-            }
-        }).collect()
+            })
+            .collect()
     });
 
     bigmodel_api::ChatResponseChunk {
@@ -455,13 +469,11 @@ mod tests {
         let mut req = ChatRequest::new("glm-5", vec![]);
         req.messages.push(bigmodel_api::Message {
             role: bigmodel_api::Role::User,
-            content: bigmodel_api::Content::Multimodal(vec![
-                bigmodel_api::ContentPart::ImageUrl {
-                    image_url: bigmodel_api::ImageUrl {
-                        url: "https://example.com/image.jpg".to_string(),
-                    },
+            content: bigmodel_api::Content::Multimodal(vec![bigmodel_api::ContentPart::ImageUrl {
+                image_url: bigmodel_api::ImageUrl {
+                    url: "https://example.com/image.jpg".to_string(),
                 },
-            ]),
+            }]),
             reasoning_content: None,
         });
 

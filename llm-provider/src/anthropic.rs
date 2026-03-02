@@ -144,9 +144,10 @@ impl AnthropicAdapter {
             return Err(LlmError::from_http_status(status.as_u16(), body, &headers));
         }
 
-        let body: AnthropicResponse = response.json().await.map_err(|err| LlmError::ParseError {
-            message: err.to_string(),
-        })?;
+        let body: AnthropicResponse =
+            response.json().await.map_err(|err| LlmError::ParseError {
+                message: err.to_string(),
+            })?;
 
         let output_text = body
             .content

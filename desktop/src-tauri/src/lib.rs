@@ -4,7 +4,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use agent_core::{
-    new_id, InputEnvelope, RunEventStream, Runtime, SessionMeta, TurnRequest, UiEventStream,
+    new_id, InputEnvelope, RunEventStream, Runtime, SessionMeta, TurnRequest, TurnStatus,
+    UiEventStream,
 };
 use agent_session::{SessionConfig, SessionFilter, SessionRuntime, SqliteSessionStore};
 use agent_tool::AgentToolRuntime;
@@ -49,6 +50,16 @@ pub struct ChatMessage {
     pub role: String,
     pub content: String,
     pub created_at: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ChatTurnSummary {
+    pub id: String,
+    pub session_id: String,
+    pub status: String,
+    pub final_message: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -106,6 +117,7 @@ struct AppState {
     chat_repo: Arc<ChatRepo>,
     runtime_config_repo: Arc<RuntimeConfigRepo>,
     llm_runtime_config: Arc<RwLock<LlmRuntimeConfig>>,
+    runtime_config_bootstrap_error: Arc<RwLock<Option<String>>>,
     frontend_to_backend_session: Arc<RwLock<HashMap<String, String>>>,
 }
 
@@ -209,6 +221,14 @@ async fn get_chat_messages(
     cursor: Option<i64>,
     limit: Option<usize>,
 ) -> Result<Vec<ChatMessage>, String> {
+    let backend_session_id = state
+        .frontend_to_backend_session
+        .read()
+        .await
+        .get(&session_id)
+        .cloned()
+        .unwrap_or(session_id.clone());
+
     let query = ChatMessageQuery {
         range: match range.as_deref() {
             Some("all") => ChatMessageRange::All,
@@ -220,7 +240,7 @@ async fn get_chat_messages(
 
     let messages = state
         .chat_repo
-        .list_messages(&session_id, query)
+        .list_messages(&backend_session_id, query)
         .map_err(|err| format!("failed to query chat messages: {err}"))?;
 
     Ok(messages
@@ -236,7 +256,42 @@ async fn get_chat_messages(
 }
 
 #[tauri::command]
+async fn get_chat_turn_summaries(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<Vec<ChatTurnSummary>, String> {
+    let backend_session_id = state
+        .frontend_to_backend_session
+        .read()
+        .await
+        .get(&session_id)
+        .cloned()
+        .unwrap_or(session_id.clone());
+
+    let summaries = state
+        .runtime
+        .list_turn_summaries(&backend_session_id)
+        .await
+        .map_err(|err| format!("failed to query turn summaries: {err}"))?;
+
+    Ok(summaries
+        .into_iter()
+        .map(|summary| ChatTurnSummary {
+            id: summary.turn_id,
+            session_id: backend_session_id.clone(),
+            status: map_turn_status(summary.status),
+            final_message: summary.final_message,
+            created_at: summary.started_at,
+            updated_at: summary.ended_at.unwrap_or(summary.started_at),
+        })
+        .collect())
+}
+
+#[tauri::command]
 async fn get_llm_runtime_config(state: State<'_, AppState>) -> Result<LlmRuntimeConfig, String> {
+    if let Some(error) = state.runtime_config_bootstrap_error.read().await.clone() {
+        return Err(error);
+    }
     Ok(state.llm_runtime_config.read().await.clone())
 }
 
@@ -253,6 +308,7 @@ async fn set_llm_runtime_config(
     let client = build_llm_client_from_runtime_config(&persisted)?;
     state.model_adapter.set_client(Arc::new(client));
     *state.llm_runtime_config.write().await = persisted.clone();
+    *state.runtime_config_bootstrap_error.write().await = None;
     Ok(persisted)
 }
 
@@ -267,6 +323,7 @@ async fn clear_llm_runtime_config(state: State<'_, AppState>) -> Result<LlmRunti
     let client = build_llm_client_from_runtime_config(&normalized)?;
     state.model_adapter.set_client(Arc::new(client));
     *state.llm_runtime_config.write().await = normalized.clone();
+    *state.runtime_config_bootstrap_error.write().await = None;
     Ok(normalized)
 }
 
@@ -491,12 +548,13 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
         RuntimeConfigRepo::new(base_path.clone()).map_err(map_runtime_config_repo_error)?;
     let chat_repo = ChatRepo::new(base_path.clone())
         .map_err(|err| format!("chat repo bootstrap failed: {err}"))?;
-    let runtime_cfg = match runtime_config_repo.load() {
-        Ok(Some(config)) => config,
-        Ok(None) => normalize_runtime_config(LlmRuntimeConfig::default()),
-        Err(RuntimeConfigRepoError::FingerprintMismatch) => {
-            normalize_runtime_config(LlmRuntimeConfig::default())
-        }
+    let (runtime_cfg, runtime_config_bootstrap_error) = match runtime_config_repo.load() {
+        Ok(Some(config)) => (config, None),
+        Ok(None) => (normalize_runtime_config(LlmRuntimeConfig::default()), None),
+        Err(RuntimeConfigRepoError::FingerprintMismatch) => (
+            normalize_runtime_config(LlmRuntimeConfig::default()),
+            Some(fingerprint_mismatch_user_message()),
+        ),
         Err(err) => return Err(map_runtime_config_repo_error(err)),
     };
     let llm_client = build_llm_client_from_runtime_config(&runtime_cfg)?;
@@ -530,17 +588,30 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
         chat_repo: Arc::new(chat_repo),
         runtime_config_repo: Arc::new(runtime_config_repo),
         llm_runtime_config: Arc::new(RwLock::new(runtime_cfg)),
+        runtime_config_bootstrap_error: Arc::new(RwLock::new(runtime_config_bootstrap_error)),
         frontend_to_backend_session: Arc::new(RwLock::new(HashMap::new())),
     })
 }
 
+fn fingerprint_mismatch_user_message() -> String {
+    "Stored runtime credentials are bound to a different machine fingerprint. Clear stored credentials and re-enter API keys.".to_string()
+}
+
 fn map_runtime_config_repo_error(err: RuntimeConfigRepoError) -> String {
     match err {
-        RuntimeConfigRepoError::FingerprintMismatch => {
-            "stored config bound to different machine fingerprint".to_string()
-        }
+        RuntimeConfigRepoError::FingerprintMismatch => fingerprint_mismatch_user_message(),
         other => format!("runtime config persistence error: {other}"),
     }
+}
+
+fn map_turn_status(status: TurnStatus) -> String {
+    match status {
+        TurnStatus::Running => "running",
+        TurnStatus::Done => "done",
+        TurnStatus::Failed => "failed",
+        TurnStatus::Cancelled => "cancelled",
+    }
+    .to_string()
 }
 
 fn chat_session_from_info(info: agent_core::SessionInfo) -> ChatSession {
@@ -638,6 +709,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             list_chat_sessions,
             delete_chat_session,
             get_chat_messages,
+            get_chat_turn_summaries,
             get_llm_runtime_config,
             set_llm_runtime_config,
             clear_llm_runtime_config,
@@ -648,4 +720,24 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .run(tauri::generate_context!())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fingerprint_message_is_actionable() {
+        let message = fingerprint_mismatch_user_message();
+        assert!(message.contains("fingerprint"));
+        assert!(message.contains("Clear stored credentials"));
+    }
+
+    #[test]
+    fn map_runtime_error_uses_actionable_fingerprint_message() {
+        assert_eq!(
+            map_runtime_config_repo_error(RuntimeConfigRepoError::FingerprintMismatch),
+            fingerprint_mismatch_user_message()
+        );
+    }
 }

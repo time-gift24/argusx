@@ -267,7 +267,9 @@ pub fn response_to_llm(resp: ChatCompletionsResponse) -> LlmResponse {
     let mut extensions = serde_json::Value::Object(resp.extensions);
     if let Some(obj) = extensions.as_object_mut() {
         obj.insert("tool_calls".to_string(), Value::Array(tool_calls));
-        if let Some(reasoning) = first_choice.and_then(|choice| choice.message.reasoning_content.clone()) {
+        if let Some(reasoning) =
+            first_choice.and_then(|choice| choice.message.reasoning_content.clone())
+        {
             obj.insert("reasoning_content".to_string(), Value::String(reasoning));
         }
     }

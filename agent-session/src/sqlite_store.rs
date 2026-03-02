@@ -510,6 +510,78 @@ impl SessionArtifactStore for SqliteSessionStore {
     async fn find_session_id_by_turn_id(&self, turn_id: &str) -> Result<Option<String>> {
         SqliteSessionStore::find_session_id_by_turn_id(self, turn_id).await
     }
+
+    async fn persist_turn_completion(
+        &self,
+        session_id: &str,
+        summary: &TurnSummary,
+        session_info: &SessionInfo,
+    ) -> Result<()> {
+        let conn = self.open_connection()?;
+        let tx = conn.unchecked_transaction()?;
+
+        tx.execute(
+            r#"
+INSERT INTO turns (
+  turn_id, session_id, epoch, started_at_ms, ended_at_ms, status, final_message,
+  tool_calls_count, input_tokens, output_tokens
+)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+ON CONFLICT(turn_id) DO UPDATE SET
+  session_id = excluded.session_id,
+  epoch = excluded.epoch,
+  started_at_ms = excluded.started_at_ms,
+  ended_at_ms = excluded.ended_at_ms,
+  status = excluded.status,
+  final_message = excluded.final_message,
+  tool_calls_count = excluded.tool_calls_count,
+  input_tokens = excluded.input_tokens,
+  output_tokens = excluded.output_tokens
+"#,
+            params![
+                summary.turn_id,
+                session_id,
+                summary.epoch as i64,
+                summary.started_at,
+                summary.ended_at,
+                turn_status_to_str(summary.status),
+                summary.final_message,
+                summary.tool_calls_count as i64,
+                summary.input_tokens as i64,
+                summary.output_tokens as i64
+            ],
+        )?;
+
+        let affected = tx.execute(
+            r#"
+UPDATE sessions SET
+  user_id = ?2,
+  parent_id = ?3,
+  title = ?4,
+  status = ?5,
+  created_at_ms = ?6,
+  updated_at_ms = ?7,
+  archived_at_ms = ?8
+WHERE session_id = ?1
+"#,
+            params![
+                session_info.session_id,
+                session_info.user_id,
+                session_info.parent_id,
+                session_info.title,
+                session_status_to_str(session_info.status),
+                session_info.created_at,
+                session_info.updated_at,
+                session_info.archived_at
+            ],
+        )?;
+        if affected == 0 {
+            anyhow::bail!("Session not found: {}", session_info.session_id);
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
 }
 
 fn session_status_to_str(status: SessionStatus) -> &'static str {

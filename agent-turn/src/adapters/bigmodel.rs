@@ -6,8 +6,8 @@ use agent_core::{
 };
 use async_trait::async_trait;
 use futures::StreamExt;
-use llm_client::{LlmChunk, LlmClient, LlmMessage, LlmRequest, LlmRole};
 use llm_client::LlmError;
+use llm_client::{LlmChunk, LlmClient, LlmMessage, LlmRequest, LlmRole};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -105,10 +105,7 @@ impl LanguageModel for BigModelModelAdapter {
     }
 }
 
-fn emit_chunk(
-    chunk: LlmChunk,
-    tx: &mpsc::UnboundedSender<Result<ModelOutputEvent, AgentError>>,
-) {
+fn emit_chunk(chunk: LlmChunk, tx: &mpsc::UnboundedSender<Result<ModelOutputEvent, AgentError>>) {
     // Emit reasoning delta
     if let Some(reasoning_delta) = chunk.delta_reasoning {
         if !reasoning_delta.is_empty() {
@@ -138,7 +135,8 @@ fn emit_chunk(
             }
 
             // Parse arguments as JSON, fall back to empty object on parse failure
-            let arguments = tc.arguments
+            let arguments = tc
+                .arguments
                 .as_ref()
                 .and_then(|args| serde_json::from_str(args).ok())
                 .unwrap_or_else(|| serde_json::json!({}));
@@ -189,12 +187,19 @@ fn convert_model_request(request: ModelRequest, cfg: &BigModelAdapterConfig) -> 
     }
 
     // Map tools from ModelRequest to LlmRequest
-    let llm_tools = tools.into_iter().map(|t| llm_client::LlmTool {
-        name: t.name,
-        description: t.description,
-        parameters: t.input_schema,
-    }).collect::<Vec<_>>();
-    let llm_tools = if llm_tools.is_empty() { None } else { Some(llm_tools) };
+    let llm_tools = tools
+        .into_iter()
+        .map(|t| llm_client::LlmTool {
+            name: t.name,
+            description: t.description,
+            parameters: t.input_schema,
+        })
+        .collect::<Vec<_>>();
+    let llm_tools = if llm_tools.is_empty() {
+        None
+    } else {
+        Some(llm_tools)
+    };
 
     LlmRequest {
         model,
@@ -408,13 +413,11 @@ mod tests {
             model: "glm-test".to_string(),
             delta_text: None,
             delta_reasoning: None,
-            delta_tool_calls: Some(vec![
-                LlmToolCall {
-                    call_id: Some("call-123".to_string()),
-                    tool_name: Some("echo".to_string()),
-                    arguments: Some(r#"{"text":"hello"}"#.to_string()),
-                },
-            ]),
+            delta_tool_calls: Some(vec![LlmToolCall {
+                call_id: Some("call-123".to_string()),
+                tool_name: Some("echo".to_string()),
+                arguments: Some(r#"{"text":"hello"}"#.to_string()),
+            }]),
             finish_reason: None,
             usage: None,
         };
@@ -443,13 +446,11 @@ mod tests {
             model: "glm-test".to_string(),
             delta_text: None,
             delta_reasoning: None,
-            delta_tool_calls: Some(vec![
-                LlmToolCall {
-                    call_id: Some("call-456".to_string()),
-                    tool_name: Some("bad_json".to_string()),
-                    arguments: Some("invalid json {".to_string()),
-                },
-            ]),
+            delta_tool_calls: Some(vec![LlmToolCall {
+                call_id: Some("call-456".to_string()),
+                tool_name: Some("bad_json".to_string()),
+                arguments: Some("invalid json {".to_string()),
+            }]),
             finish_reason: None,
             usage: None,
         };

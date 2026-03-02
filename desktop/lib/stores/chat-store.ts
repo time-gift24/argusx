@@ -3,12 +3,14 @@ import type {
   AgentStreamEnvelope,
   ChatMessage as BackendChatMessage,
   ChatSession as BackendChatSession,
+  ChatTurnSummary as BackendChatTurnSummary,
   GetChatMessagesOptions,
 } from "@/lib/api/chat";
 import {
   createChatSession as createChatSessionApi,
   deleteChatSession as deleteChatSessionApi,
   getChatMessages,
+  getChatTurnSummaries,
   listChatSessions,
 } from "@/lib/api/chat";
 import { trimChatCacheToBudget } from "@/lib/stores/chat-cache-budget";
@@ -148,6 +150,7 @@ interface ChatState {
     sessionId: string,
     options?: GetChatMessagesOptions
   ) => Promise<void>;
+  loadSessionTurns: (sessionId: string) => Promise<void>;
   loadFullSessionMessages: (sessionId: string, limit?: number) => Promise<void>;
   clearSessionCache: (sessionId: string) => void;
   updateSession: (id: string, updates: Partial<Pick<ChatSession, "title" | "color">>) => void;
@@ -605,6 +608,55 @@ const toStoreMessage = (message: BackendChatMessage): ChatMessage => ({
   createdAt: message.created_at,
 });
 
+const isBackendMessageId = (id: string): boolean => /^\d+$/.test(id);
+
+const isInFlightSessionStatus = (status: ChatStatus | undefined): boolean =>
+  status === "thinking" || status === "tool-call" || status === "outputing";
+
+const mapBackendTurnStatus = (
+  status: BackendChatTurnSummary["status"]
+): AgentTurnStatus => {
+  if (status === "done") {
+    return "done";
+  }
+  if (status === "failed") {
+    return "failed";
+  }
+  if (status === "cancelled") {
+    return "cancelled";
+  }
+  return "started";
+};
+
+const toStoreTurn = (turn: BackendChatTurnSummary): AgentTurnVM => ({
+  id: turn.id,
+  sessionId: turn.session_id,
+  createdAt: turn.created_at,
+  updatedAt: turn.updated_at,
+  status: mapBackendTurnStatus(turn.status),
+  assistantText: turn.final_message ?? "",
+  reasoning: {
+    isStreaming: false,
+    isExpanded: false,
+    preview: "",
+    text: "",
+    charCount: 0,
+    truncated: false,
+    updatedAt: turn.updated_at,
+    status: "idle",
+  },
+  tools: [],
+  queue: { items: [] },
+  terminal: {
+    stdout: "",
+    stderr: "",
+    output: "",
+    isStreaming: false,
+    updatedAt: turn.updated_at,
+  },
+  lastSeq: 0,
+});
+
 export const useChatStore = create<ChatState>((set, get) => ({
       sessions: [],
       currentSessionId: null,
@@ -653,10 +705,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
 
         if (currentSessionId) {
-          await get().loadSessionMessages(currentSessionId, {
-            range: "window_24h",
-            limit: DEFAULT_LOAD_LIMIT,
-          });
+          await Promise.all([
+            get().loadSessionMessages(currentSessionId, {
+              range: "window_24h",
+              limit: DEFAULT_LOAD_LIMIT,
+            }),
+            get().loadSessionTurns(currentSessionId),
+          ]);
         }
       },
 
@@ -751,7 +806,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
               })
               .sort((a, b) => a.createdAt - b.createdAt);
           } else {
-            nextSessionMessages = incoming;
+            const sessionStatus = state.sessions.find((session) => session.id === sessionId)?.status;
+            const preservedLocal = isInFlightSessionStatus(sessionStatus)
+              ? existing.filter((message) => !isBackendMessageId(message.id))
+              : [];
+            nextSessionMessages = [...incoming, ...preservedLocal].sort(
+              (a, b) => a.createdAt - b.createdAt
+            );
           }
 
           const messages = {
@@ -762,6 +823,42 @@ export const useChatStore = create<ChatState>((set, get) => ({
             state.sessions,
             messages,
             state.turns,
+            state.currentSessionId,
+            CACHE_BUDGET_BYTES
+          );
+
+          return {
+            messages: trimmed.messages,
+            turns: trimmed.turns,
+            cacheBytes: trimmed.estimatedBytes,
+          };
+        });
+      },
+
+      loadSessionTurns: async (sessionId) => {
+        const remote = await getChatTurnSummaries(sessionId);
+        const incoming = remote.map(toStoreTurn).sort((a, b) => a.createdAt - b.createdAt);
+
+        set((state) => {
+          const existing = state.turns[sessionId] ?? [];
+          const incomingIds = new Set(incoming.map((turn) => turn.id));
+          const preservedInFlight = existing.filter(
+            (turn) =>
+              (turn.status === "started" || turn.status === "streaming") &&
+              !incomingIds.has(turn.id)
+          );
+          const nextSessionTurns = [...incoming, ...preservedInFlight].sort(
+            (a, b) => a.createdAt - b.createdAt
+          );
+
+          const turns = {
+            ...state.turns,
+            [sessionId]: nextSessionTurns,
+          };
+          const trimmed = trimChatCacheToBudget(
+            state.sessions,
+            state.messages,
+            turns,
             state.currentSessionId,
             CACHE_BUDGET_BYTES
           );
@@ -819,6 +916,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           range: "window_24h",
           limit: DEFAULT_LOAD_LIMIT,
         });
+        void get().loadSessionTurns(id);
       },
 
       addMessage: (sessionId, message) => {

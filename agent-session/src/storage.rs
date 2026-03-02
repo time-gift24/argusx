@@ -66,6 +66,15 @@ pub trait SessionArtifactStore: SessionStore {
         turn_id: &str,
     ) -> Result<Vec<TranscriptItem>>;
     async fn find_session_id_by_turn_id(&self, turn_id: &str) -> Result<Option<String>>;
+    async fn persist_turn_completion(
+        &self,
+        session_id: &str,
+        summary: &TurnSummary,
+        session_info: &SessionInfo,
+    ) -> Result<()> {
+        self.save_turn_summary(session_id, summary).await?;
+        self.update(session_info).await
+    }
 }
 
 pub struct FileSessionStore {

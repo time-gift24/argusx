@@ -78,9 +78,10 @@ SELECT
   ti.turn_id,
   ti.seq,
   ti.payload_json,
-  COALESCE(t.ended_at_ms, t.started_at_ms, 0) AS turn_time
+  COALESCE(t.ended_at_ms, t.started_at_ms, tc.started_at_ms, 0) AS turn_time
 FROM transcript_items ti
 LEFT JOIN turns t ON t.turn_id = ti.turn_id AND t.session_id = ti.session_id
+LEFT JOIN turn_contexts tc ON tc.turn_id = ti.turn_id AND tc.session_id = ti.session_id
 WHERE ti.session_id = ?
 "#,
         );
@@ -88,7 +89,7 @@ WHERE ti.session_id = ?
 
         if matches!(query.range, ChatMessageRange::Last24Hours) {
             let since = chrono::Utc::now().timestamp_millis() - DAY_MS;
-            sql.push_str(" AND COALESCE(t.ended_at_ms, t.started_at_ms, 0) >= ? ");
+            sql.push_str(" AND COALESCE(t.ended_at_ms, t.started_at_ms, tc.started_at_ms, 0) >= ? ");
             binds.push(Box::new(since));
         }
 
@@ -200,6 +201,22 @@ INSERT INTO turns (
 ) VALUES (?1, ?2, 0, ?3, ?4, 'done', NULL, 0, 0, 0)
 "#,
             params![turn_id, session_id, started_at_ms, ended_at_ms],
+        )?;
+        Ok(())
+    }
+
+    fn insert_turn_context(
+        conn: &rusqlite::Connection,
+        session_id: &str,
+        turn_id: &str,
+        started_at_ms: i64,
+    ) -> rusqlite::Result<()> {
+        conn.execute(
+            r#"
+INSERT INTO turn_contexts (turn_id, session_id, epoch, started_at_ms)
+VALUES (?1, ?2, 0, ?3)
+"#,
+            params![turn_id, session_id, started_at_ms],
         )?;
         Ok(())
     }
@@ -325,5 +342,34 @@ INSERT INTO turns (
 
         assert_eq!(second_page.len(), 1);
         assert_eq!(second_page[0].content, "m1");
+    }
+
+    #[test]
+    fn chat_repo_default_query_includes_running_turn_context_within_24h() {
+        let temp = tempdir().expect("create tempdir");
+        let db_path = temp.path().join("chat.db");
+        let repo = ChatRepo::new(db_path.clone()).expect("create repo");
+        let conn = open_and_bootstrap(&db_path).expect("open db");
+        let now = chrono::Utc::now().timestamp_millis();
+        let recent = now - (15 * 60 * 1000);
+
+        insert_session(&conn, "s1", now).expect("insert session");
+        insert_turn_context(&conn, "s1", "t-running", recent).expect("insert running turn context");
+        insert_transcript_item(
+            &conn,
+            "s1",
+            "t-running",
+            0,
+            TranscriptItem::user_message(InputEnvelope::user_text("running message")),
+        )
+        .expect("insert running transcript");
+
+        let messages = repo
+            .list_messages("s1", ChatMessageQuery::default())
+            .expect("query messages");
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[0].content, "running message");
     }
 }

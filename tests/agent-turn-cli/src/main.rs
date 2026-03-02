@@ -1,7 +1,7 @@
+use std::collections::HashMap;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::collections::HashMap;
 
 use agent::{AgentBuilder, AgentStream, AgentStreamEvent};
 use agent_core::{RunStreamEvent, UiThreadEvent};
@@ -22,10 +22,7 @@ struct Cli {
     #[arg(long, env = "BIGMODEL_API_KEY")]
     api_key: String,
 
-    #[arg(
-        long,
-        env = "BIGMODEL_BASE_URL"
-    )]
+    #[arg(long, env = "BIGMODEL_BASE_URL")]
     base_url: String,
 
     #[arg(long, default_value = "glm-5")]

@@ -72,11 +72,7 @@ impl TranscriptItem {
         }
     }
 
-    pub fn reasoning_with_meta(
-        text: impl Into<String>,
-        truncated: bool,
-        char_count: u32,
-    ) -> Self {
+    pub fn reasoning_with_meta(text: impl Into<String>, truncated: bool, char_count: u32) -> Self {
         Self::Reasoning {
             id: new_id(),
             text: text.into(),

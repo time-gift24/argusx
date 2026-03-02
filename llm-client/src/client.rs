@@ -34,7 +34,10 @@ impl fmt::Debug for LlmClientBuilder {
 
 impl LlmClient {
     pub fn builder() -> LlmClientBuilder {
-        LlmClientBuilder { registry: HashMap::new(), default_adapter: None }
+        LlmClientBuilder {
+            registry: HashMap::new(),
+            default_adapter: None,
+        }
     }
 
     pub async fn chat(&self, req: LlmRequest) -> Result<LlmResponse, LlmError> {
@@ -50,12 +53,12 @@ impl LlmClient {
         adapter_id: impl AsRef<str>,
         req: LlmRequest,
     ) -> Result<LlmResponse, LlmError> {
-        let adapter = self
-            .registry
-            .get(adapter_id.as_ref())
-            .ok_or_else(|| LlmError::InvalidRequest {
-                message: format!("adapter '{}' not found", adapter_id.as_ref()),
-            })?;
+        let adapter =
+            self.registry
+                .get(adapter_id.as_ref())
+                .ok_or_else(|| LlmError::InvalidRequest {
+                    message: format!("adapter '{}' not found", adapter_id.as_ref()),
+                })?;
         adapter.chat(req).await
     }
 
@@ -64,12 +67,12 @@ impl LlmClient {
         adapter_id: impl AsRef<str>,
         req: LlmRequest,
     ) -> Result<LlmChunkStream, LlmError> {
-        let adapter = self
-            .registry
-            .get(adapter_id.as_ref())
-            .ok_or_else(|| LlmError::InvalidRequest {
-                message: format!("adapter '{}' not found", adapter_id.as_ref()),
-            })?;
+        let adapter =
+            self.registry
+                .get(adapter_id.as_ref())
+                .ok_or_else(|| LlmError::InvalidRequest {
+                    message: format!("adapter '{}' not found", adapter_id.as_ref()),
+                })?;
         Ok(adapter.chat_stream(req))
     }
 }
@@ -86,16 +89,24 @@ impl LlmClientBuilder {
     }
 
     pub fn build(self) -> Result<LlmClient, LlmError> {
-        let default_adapter = self.default_adapter.ok_or_else(|| LlmError::InvalidRequest {
-            message: "default adapter is required".to_string(),
-        })?;
+        let default_adapter = self
+            .default_adapter
+            .ok_or_else(|| LlmError::InvalidRequest {
+                message: "default adapter is required".to_string(),
+            })?;
 
         if !self.registry.contains_key(&default_adapter) {
             return Err(LlmError::InvalidRequest {
-                message: format!("default adapter '{}' not found in registry", default_adapter),
+                message: format!(
+                    "default adapter '{}' not found in registry",
+                    default_adapter
+                ),
             });
         }
 
-        Ok(LlmClient { registry: self.registry, default_adapter })
+        Ok(LlmClient {
+            registry: self.registry,
+            default_adapter,
+        })
     }
 }

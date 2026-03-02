@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use llm_client::{
-    LlmChunkStream, LlmClient, LlmError, LlmRequest, LlmResponse, ProviderAdapter,
-};
+use llm_client::{LlmChunkStream, LlmClient, LlmError, LlmRequest, LlmResponse, ProviderAdapter};
 
 struct TestAdapter;
 

@@ -30,7 +30,8 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let model = std::sync::Arc::new(
-        agent_turn::adapters::bigmodel::BigModelModelAdapter::new(std::sync::Arc::new(client)).with_config(model_cfg),
+        agent_turn::adapters::bigmodel::BigModelModelAdapter::new(std::sync::Arc::new(client))
+            .with_config(model_cfg),
     );
 
     let mut builder = agent::AgentBuilder::new().model(model);

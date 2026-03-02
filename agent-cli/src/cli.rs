@@ -5,10 +5,7 @@ use clap::Parser;
 pub struct CliArgs {
     #[arg(long, env = "BIGMODEL_API_KEY")]
     pub api_key: String,
-    #[arg(
-        long,
-        env = "BIGMODEL_BASE_URL"
-    )]
+    #[arg(long, env = "BIGMODEL_BASE_URL")]
     pub base_url: String,
     #[arg(long, default_value = "glm-5")]
     pub model: String,
@@ -34,7 +31,13 @@ mod tests {
 
     #[test]
     fn parse_defaults_to_new_session_mode() {
-        let args = ["agent-cli", "--api-key", "k", "--base-url", "https://provider.test/v1"];
+        let args = [
+            "agent-cli",
+            "--api-key",
+            "k",
+            "--base-url",
+            "https://provider.test/v1",
+        ];
         let cfg = CliArgs::parse_from(args);
         assert!(cfg.session.is_none());
     }

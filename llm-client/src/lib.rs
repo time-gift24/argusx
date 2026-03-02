@@ -40,6 +40,6 @@ pub use error::LlmError;
 pub use retry::run_with_retry;
 
 pub use types::{
-    LlmChunk, LlmChunkStream, LlmMessage, LlmRequest, LlmResponse, LlmRole, LlmTool,
-    LlmToolCall, LlmUsage,
+    LlmChunk, LlmChunkStream, LlmMessage, LlmRequest, LlmResponse, LlmRole, LlmTool, LlmToolCall,
+    LlmUsage,
 };

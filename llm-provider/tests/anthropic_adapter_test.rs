@@ -25,8 +25,8 @@ async fn anthropic_adapter_can_chat() {
         .mount(&mock_server)
         .await;
 
-    let cfg = AnthropicConfig::new(mock_server.uri(), "test-key", HashMap::new())
-        .expect("valid config");
+    let cfg =
+        AnthropicConfig::new(mock_server.uri(), "test-key", HashMap::new()).expect("valid config");
     let adapter = Arc::new(AnthropicAdapter::new(cfg));
 
     let client = LlmClient::builder()
