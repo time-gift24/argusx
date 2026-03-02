@@ -1,7 +1,10 @@
 use std::net::SocketAddr;
+use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use llm_gateway::{GatewayState, app};
+use llm_provider::bigmodel::{BigModelAdapter, BigModelConfig};
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -12,9 +15,14 @@ async fn main() -> Result<()> {
         .parse::<SocketAddr>()
         .context("invalid GATEWAY_LISTEN_ADDR")?;
 
+    let api_key = std::env::var("BIGMODEL_API_KEY").context("BIGMODEL_API_KEY is required")?;
+    let base_url = std::env::var("BIGMODEL_BASE_URL").context("BIGMODEL_BASE_URL is required")?;
+    let provider_cfg = BigModelConfig::new(base_url, api_key, HashMap::new())
+        .context("failed to create BigModel config")?;
+
     let client = llm_client::LlmClient::builder()
-        .with_default_bigmodel_from_env()
-        .context("failed to create LLM client")?
+        .register_adapter(Arc::new(BigModelAdapter::new(provider_cfg)))
+        .default_adapter("bigmodel")
         .build()
         .context("failed to build LLM client")?;
 

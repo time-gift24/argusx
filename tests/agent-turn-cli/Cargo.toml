@@ -10,6 +10,7 @@ agent = { path = "../../agent" }
 agent-core = { path = "../../agent-core" }
 agent-turn = { path = "../../agent-turn" }
 llm-client = { path = "../../llm-client" }
+llm-provider = { path = "../../llm-provider" }
 anyhow.workspace = true
 clap.workspace = true
 futures.workspace = true

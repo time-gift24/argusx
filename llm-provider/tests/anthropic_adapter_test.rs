@@ -1,5 +1,8 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use llm_client::{LlmClient, LlmMessage, LlmRequest, LlmRole};
+use llm_provider::anthropic::{AnthropicAdapter, AnthropicConfig};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -11,10 +14,8 @@ async fn anthropic_adapter_can_chat() {
         .and(path("/messages"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "msg_1",
-            "model": "claude-sonnet-4-20250514",
-            "content": [
-                {"type": "text", "text": "hello from anthropic"}
-            ],
+            "model": "claude-test",
+            "content": [{"type": "text", "text": "hello from anthropic"}],
             "stop_reason": "end_turn",
             "usage": {
                 "input_tokens": 12,
@@ -24,17 +25,20 @@ async fn anthropic_adapter_can_chat() {
         .mount(&mock_server)
         .await;
 
-    let client = llm_client::LlmClient::builder()
-        .with_anthropic_adapter(mock_server.uri(), "test-key", HashMap::new())
-        .unwrap()
+    let cfg = AnthropicConfig::new(mock_server.uri(), "test-key", HashMap::new())
+        .expect("valid config");
+    let adapter = Arc::new(AnthropicAdapter::new(cfg));
+
+    let client = LlmClient::builder()
+        .register_adapter(adapter)
         .default_adapter("anthropic")
         .build()
         .unwrap();
 
-    let req = llm_client::LlmRequest {
-        model: "claude-sonnet-4-20250514".to_string(),
-        messages: vec![llm_client::LlmMessage {
-            role: llm_client::LlmRole::User,
+    let req = LlmRequest {
+        model: "claude-test".to_string(),
+        messages: vec![LlmMessage {
+            role: LlmRole::User,
             content: "hello".to_string(),
         }],
         stream: false,
@@ -50,4 +54,10 @@ async fn anthropic_adapter_can_chat() {
     assert_eq!(usage.input_tokens, 12);
     assert_eq!(usage.output_tokens, 8);
     assert_eq!(usage.total_tokens, 20);
+}
+
+#[test]
+fn config_requires_base_url() {
+    let err = AnthropicConfig::new("", "k", HashMap::new()).unwrap_err();
+    assert!(err.to_string().contains("base_url"));
 }

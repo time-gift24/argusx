@@ -206,13 +206,13 @@ mod tests {
             providers: ProviderConfigs {
                 bigmodel: ProviderRuntimeConfig {
                     api_key: "".into(),
-                    base_url: "https://open.bigmodel.cn/api/paas/v4".into(),
+                    base_url: "https://bigmodel.provider.test/v1".into(),
                     models: vec!["glm-5".into()],
                     headers: vec![],
                 },
                 openai: ProviderRuntimeConfig {
                     api_key: " sk ".into(),
-                    base_url: " https://api.openai.com/v1/ ".into(),
+                    base_url: " https://openai.provider.test/v1/ ".into(),
                     models: vec![" gpt-4o ".into(), "gpt-4o".into()],
                     headers: vec![
                         HeaderPair {
@@ -231,7 +231,7 @@ mod tests {
 
         let normalized = normalize_runtime_config(cfg);
         assert_eq!(normalized.default_provider, Some(ProviderId::Openai));
-        assert_eq!(normalized.providers.openai.base_url, "https://api.openai.com/v1");
+        assert_eq!(normalized.providers.openai.base_url, "https://openai.provider.test/v1");
         assert_eq!(normalized.providers.openai.models, vec!["gpt-4o"]);
         assert_eq!(normalized.providers.openai.headers.len(), 1);
         assert_eq!(normalized.providers.openai.headers[0].key, "X-Test");
@@ -250,7 +250,7 @@ mod tests {
             providers: ProviderConfigs {
                 openai: ProviderRuntimeConfig {
                     api_key: "sk".into(),
-                    base_url: "https://api.openai.com/v1".into(),
+                    base_url: "https://openai.provider.test/v1".into(),
                     models: vec!["gpt-4o".into()],
                     headers: vec![],
                 },

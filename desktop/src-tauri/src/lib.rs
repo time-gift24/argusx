@@ -12,6 +12,9 @@ use agent_turn::adapters::bigmodel::BigModelAdapterConfig;
 use agent_turn::BigModelModelAdapter;
 use futures::StreamExt;
 use llm_client::{LlmChunkStream, LlmClient, LlmError, LlmRequest, LlmResponse, ProviderAdapter};
+use llm_provider::anthropic::{AnthropicAdapter, AnthropicConfig};
+use llm_provider::bigmodel::{BigModelAdapter, BigModelConfig};
+use llm_provider::openai_compat::{ChatCompletionsConfig, OpenAiCompatAdapter};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -336,39 +339,39 @@ fn build_llm_client_from_runtime_config(cfg: &LlmRuntimeConfig) -> Result<LlmCli
         .map(ToString::to_string);
 
     if cfg.providers.bigmodel.is_available() {
-        builder = builder
-            .with_bigmodel_adapter(
-                cfg.providers.bigmodel.base_url.clone(),
-                cfg.providers.bigmodel.api_key.clone(),
-                cfg.providers.bigmodel.header_map(),
-            )
-            .map_err(|err| format!("failed to configure bigmodel adapter: {err}"))?;
+        let provider_cfg = BigModelConfig::new(
+            cfg.providers.bigmodel.base_url.clone(),
+            cfg.providers.bigmodel.api_key.clone(),
+            cfg.providers.bigmodel.header_map(),
+        )
+        .map_err(|err| format!("failed to create bigmodel config: {err}"))?;
+        builder = builder.register_adapter(Arc::new(BigModelAdapter::new(provider_cfg)));
         if default_adapter.is_none() {
             default_adapter = Some("bigmodel".to_string());
         }
     }
 
     if cfg.providers.openai.is_available() {
-        builder = builder
-            .with_openai_adapter(
-                cfg.providers.openai.base_url.clone(),
-                cfg.providers.openai.api_key.clone(),
-                cfg.providers.openai.header_map(),
-            )
-            .map_err(|err| format!("failed to configure openai adapter: {err}"))?;
+        let provider_cfg = ChatCompletionsConfig::new(
+            cfg.providers.openai.base_url.clone(),
+            cfg.providers.openai.api_key.clone(),
+            cfg.providers.openai.header_map(),
+        )
+        .map_err(|err| format!("failed to create openai config: {err}"))?;
+        builder = builder.register_adapter(Arc::new(OpenAiCompatAdapter::new(provider_cfg)));
         if default_adapter.is_none() {
             default_adapter = Some("openai".to_string());
         }
     }
 
     if cfg.providers.anthropic.is_available() {
-        builder = builder
-            .with_anthropic_adapter(
-                cfg.providers.anthropic.base_url.clone(),
-                cfg.providers.anthropic.api_key.clone(),
-                cfg.providers.anthropic.header_map(),
-            )
-            .map_err(|err| format!("failed to configure anthropic adapter: {err}"))?;
+        let provider_cfg = AnthropicConfig::new(
+            cfg.providers.anthropic.base_url.clone(),
+            cfg.providers.anthropic.api_key.clone(),
+            cfg.providers.anthropic.header_map(),
+        )
+        .map_err(|err| format!("failed to create anthropic config: {err}"))?;
+        builder = builder.register_adapter(Arc::new(AnthropicAdapter::new(provider_cfg)));
         if default_adapter.is_none() {
             default_adapter = Some("anthropic".to_string());
         }

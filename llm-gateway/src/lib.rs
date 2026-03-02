@@ -270,6 +270,9 @@ mod tests {
     use axum::http::{Method, Request, header};
     use bigmodel_api::models::{ChatRequest, Message};
     use http_body_util::BodyExt;
+    use llm_provider::bigmodel::{BigModelAdapter, BigModelConfig};
+    use std::collections::HashMap;
+    use std::sync::Arc;
     use tower::ServiceExt;
     use wiremock::matchers::{header as wm_header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -278,6 +281,15 @@ mod tests {
         let mut req = ChatRequest::new("glm-5", vec![Message::user("hello")]);
         req.stream = stream;
         req
+    }
+
+    fn build_test_client(base_url: String) -> llm_client::LlmClient {
+        let cfg = BigModelConfig::new(base_url, "test-key", HashMap::new()).expect("valid cfg");
+        llm_client::LlmClient::builder()
+            .register_adapter(Arc::new(BigModelAdapter::new(cfg)))
+            .default_adapter("bigmodel")
+            .build()
+            .expect("build client")
     }
 
     #[tokio::test]
@@ -303,11 +315,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = llm_client::LlmClient::builder()
-            .with_default_bigmodel(mock_server.uri(), "test-key")
-            .unwrap()
-            .build()
-            .unwrap();
+        let client = build_test_client(mock_server.uri());
         let state = GatewayState::new(client);
 
         let request_payload = serde_json::to_vec(&build_test_request(false)).unwrap();
@@ -349,11 +357,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = llm_client::LlmClient::builder()
-            .with_default_bigmodel(mock_server.uri(), "test-key")
-            .unwrap()
-            .build()
-            .unwrap();
+        let client = build_test_client(mock_server.uri());
         let state = GatewayState::new(client);
 
         let request_payload = serde_json::to_vec(&build_test_request(true)).unwrap();
@@ -412,11 +416,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = llm_client::LlmClient::builder()
-            .with_default_bigmodel(mock_server.uri(), "test-key")
-            .unwrap()
-            .build()
-            .unwrap();
+        let client = build_test_client(mock_server.uri());
         let state = GatewayState::new(client);
 
         let request_payload = serde_json::to_vec(&build_test_request(false)).unwrap();
@@ -448,11 +448,7 @@ mod tests {
     #[tokio::test]
     async fn non_text_content_returns_400() {
         let mock_server = MockServer::start().await;
-        let client = llm_client::LlmClient::builder()
-            .with_default_bigmodel(mock_server.uri(), "test-key")
-            .unwrap()
-            .build()
-            .unwrap();
+        let client = build_test_client(mock_server.uri());
         let state = GatewayState::new(client);
 
         // Create request with multimodal content (non-text)
@@ -497,11 +493,7 @@ mod tests {
     #[tokio::test]
     async fn non_function_tool_returns_400() {
         let mock_server = MockServer::start().await;
-        let client = llm_client::LlmClient::builder()
-            .with_default_bigmodel(mock_server.uri(), "test-key")
-            .unwrap()
-            .build()
-            .unwrap();
+        let client = build_test_client(mock_server.uri());
         let state = GatewayState::new(client);
 
         // Create request with a retrieval tool (non-function)

@@ -4,9 +4,6 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::adapter::{AdapterId, ProviderAdapter};
-use crate::providers::anthropic::{AnthropicAdapter, AnthropicConfig};
-use crate::providers::bigmodel::{BigModelAdapter, BigModelConfig};
-use crate::providers::openai::{OpenAiAdapter, OpenAiConfig};
 use crate::{LlmChunkStream, LlmError, LlmRequest, LlmResponse};
 
 pub struct LlmClient {
@@ -86,75 +83,6 @@ impl LlmClientBuilder {
     pub fn default_adapter(mut self, id: impl Into<String>) -> Self {
         self.default_adapter = Some(id.into());
         self
-    }
-
-    /// Register BigModel as the default adapter with explicit base URL and API key.
-    pub fn with_default_bigmodel(
-        mut self,
-        base_url: impl Into<String>,
-        api_key: impl Into<String>,
-    ) -> Result<Self, LlmError> {
-        self = self.with_bigmodel_adapter(base_url, api_key, HashMap::new())?;
-        self.default_adapter = Some("bigmodel".to_string());
-        Ok(self)
-    }
-
-    pub fn with_bigmodel_adapter(
-        mut self,
-        base_url: impl Into<String>,
-        api_key: impl Into<String>,
-        headers: HashMap<String, String>,
-    ) -> Result<Self, LlmError> {
-        let config = BigModelConfig {
-            base_url: base_url.into(),
-            api_key: api_key.into(),
-            headers,
-        };
-        let adapter = Arc::new(BigModelAdapter::new(config)) as Arc<dyn ProviderAdapter>;
-        self.registry.insert("bigmodel".to_string(), adapter);
-        Ok(self)
-    }
-
-    pub fn with_openai_adapter(
-        mut self,
-        base_url: impl Into<String>,
-        api_key: impl Into<String>,
-        headers: HashMap<String, String>,
-    ) -> Result<Self, LlmError> {
-        let config = OpenAiConfig {
-            base_url: base_url.into(),
-            api_key: api_key.into(),
-            headers,
-        };
-        let adapter = Arc::new(OpenAiAdapter::new(config)) as Arc<dyn ProviderAdapter>;
-        self.registry.insert("openai".to_string(), adapter);
-        Ok(self)
-    }
-
-    pub fn with_anthropic_adapter(
-        mut self,
-        base_url: impl Into<String>,
-        api_key: impl Into<String>,
-        headers: HashMap<String, String>,
-    ) -> Result<Self, LlmError> {
-        let config = AnthropicConfig {
-            base_url: base_url.into(),
-            api_key: api_key.into(),
-            headers,
-        };
-        let adapter = Arc::new(AnthropicAdapter::new(config)) as Arc<dyn ProviderAdapter>;
-        self.registry.insert("anthropic".to_string(), adapter);
-        Ok(self)
-    }
-
-    /// Register BigModel as the default adapter using environment variables.
-    /// Reads BIGMODEL_API_KEY and optionally BIGMODEL_BASE_URL.
-    pub fn with_default_bigmodel_from_env(self) -> Result<Self, LlmError> {
-        let api_key = std::env::var("BIGMODEL_API_KEY")
-            .map_err(|_| LlmError::InvalidRequest { message: "BIGMODEL_API_KEY is required".to_string() })?;
-        let base_url = std::env::var("BIGMODEL_BASE_URL")
-            .unwrap_or_else(|_| "https://open.bigmodel.cn/api/paas/v4".to_string());
-        self.with_default_bigmodel(base_url, api_key)
     }
 
     pub fn build(self) -> Result<LlmClient, LlmError> {

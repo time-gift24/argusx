@@ -7,8 +7,7 @@ pub struct CliArgs {
     pub api_key: String,
     #[arg(
         long,
-        env = "BIGMODEL_BASE_URL",
-        default_value = "https://open.bigmodel.cn/api/paas/v4"
+        env = "BIGMODEL_BASE_URL"
     )]
     pub base_url: String,
     #[arg(long, default_value = "glm-5")]
@@ -35,14 +34,22 @@ mod tests {
 
     #[test]
     fn parse_defaults_to_new_session_mode() {
-        let args = ["agent-cli", "--api-key", "k"];
+        let args = ["agent-cli", "--api-key", "k", "--base-url", "https://provider.test/v1"];
         let cfg = CliArgs::parse_from(args);
         assert!(cfg.session.is_none());
     }
 
     #[test]
     fn parse_accepts_session_resume() {
-        let args = ["agent-cli", "--api-key", "k", "--session", "s-1"];
+        let args = [
+            "agent-cli",
+            "--api-key",
+            "k",
+            "--base-url",
+            "https://provider.test/v1",
+            "--session",
+            "s-1",
+        ];
         let cfg = CliArgs::parse_from(args);
         assert_eq!(cfg.session.as_deref(), Some("s-1"));
     }

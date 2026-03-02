@@ -1,8 +1,12 @@
-use crate::error::LlmError;
-use crate::{LlmChunk, LlmChunkStream, LlmMessage, LlmRequest, LlmResponse, LlmRole, LlmUsage};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use llm_client::error::LlmError;
+use llm_client::{
+    LlmChunk, LlmChunkStream, LlmMessage, LlmRequest, LlmResponse, LlmRole, LlmUsage,
+    ProviderAdapter,
+};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct AnthropicConfig {
@@ -11,13 +15,31 @@ pub struct AnthropicConfig {
     pub headers: HashMap<String, String>,
 }
 
-impl Default for AnthropicConfig {
-    fn default() -> Self {
-        Self {
-            base_url: "https://api.anthropic.com/v1".to_string(),
-            api_key: String::new(),
-            headers: HashMap::new(),
+impl AnthropicConfig {
+    pub fn new(
+        base_url: impl Into<String>,
+        api_key: impl Into<String>,
+        headers: HashMap<String, String>,
+    ) -> Result<Self, LlmError> {
+        let base_url = base_url.into().trim().trim_end_matches('/').to_string();
+        if base_url.is_empty() {
+            return Err(LlmError::InvalidRequest {
+                message: "base_url is required".to_string(),
+            });
         }
+
+        let api_key = api_key.into().trim().to_string();
+        if api_key.is_empty() {
+            return Err(LlmError::InvalidRequest {
+                message: "api_key is required".to_string(),
+            });
+        }
+
+        Ok(Self {
+            base_url,
+            api_key,
+            headers,
+        })
     }
 }
 
@@ -63,24 +85,24 @@ struct AnthropicUsage {
     output_tokens: u64,
 }
 
-pub(crate) struct AnthropicAdapter {
+pub struct AnthropicAdapter {
     http: reqwest::Client,
     config: AnthropicConfig,
 }
 
 impl AnthropicAdapter {
-    pub(crate) fn new(config: AnthropicConfig) -> Self {
+    pub fn new(config: AnthropicConfig) -> Self {
         let http = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(10))
             .timeout(std::time::Duration::from_secs(120))
             .build()
-            .expect("Failed to build Anthropic HTTP client");
+            .expect("failed to build Anthropic HTTP client");
 
         Self { http, config }
     }
 
     async fn chat_inner(&self, req: LlmRequest) -> Result<LlmResponse, LlmError> {
-        let url = format!("{}/messages", self.config.base_url.trim_end_matches('/'));
+        let url = format!("{}/messages", self.config.base_url);
 
         let mut system_messages = Vec::new();
         let mut messages = Vec::new();
@@ -141,6 +163,7 @@ impl AnthropicAdapter {
 
         Ok(LlmResponse {
             id: body.id,
+            request_id: None,
             created: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs() as i64)
@@ -148,7 +171,6 @@ impl AnthropicAdapter {
             model: body.model,
             output_text,
             finish_reason: body.stop_reason,
-            request_id: None,
             usage: body.usage.map(|u| LlmUsage {
                 input_tokens: u.input_tokens,
                 output_tokens: u.output_tokens,
@@ -186,7 +208,7 @@ fn to_header_map(headers: &HashMap<String, String>) -> reqwest::header::HeaderMa
 }
 
 #[async_trait::async_trait]
-impl crate::ProviderAdapter for AnthropicAdapter {
+impl ProviderAdapter for AnthropicAdapter {
     fn id(&self) -> &str {
         "anthropic"
     }

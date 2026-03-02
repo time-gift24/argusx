@@ -7,8 +7,8 @@ edition = "2021"
 agent = { path = "../agent" }
 agent-core = { path = "../agent-core" }
 agent-turn = { path = "../agent-turn" }
-bigmodel-api = { path = "../bigmodel-api" }
 llm-client = { path = "../llm-client" }
+llm-provider = { path = "../llm-provider" }
 anyhow.workspace = true
 async-trait.workspace = true
 clap.workspace = true
