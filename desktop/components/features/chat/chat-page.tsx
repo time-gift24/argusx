@@ -5,6 +5,7 @@ import { listenAgentStream } from "@/lib/api/chat";
 import { CHAT_SIDEBAR_MIN_WIDTH } from "@/lib/layout/chat-layout";
 import { useChatStore } from "@/lib/stores/chat-store";
 import { useLlmRuntimeConfigStore } from "@/lib/stores/llm-runtime-config-store";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Settings2Icon } from "lucide-react";
 import { ConversationView } from "./conversation-view";
@@ -14,9 +15,13 @@ import { ChatRuntimeConfigDialog } from "./chat-runtime-config-dialog";
 export function ChatPage() {
   const { sessions, currentSessionId, createSession } = useChatStore();
   const bootstrapLlmConfig = useLlmRuntimeConfigStore((state) => state.bootstrap);
+  const availableModels = useLlmRuntimeConfigStore((state) => state.availableModels);
+  const isConfigLoading = useLlmRuntimeConfigStore((state) => state.loading);
   const [composerHeight, setComposerHeight] = useState(180);
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [configDialogSeed, setConfigDialogSeed] = useState(0);
+  const hasAvailableModels = availableModels.length > 0;
+  const showNoModelHint = !isConfigLoading && !hasAvailableModels;
 
   // 如果没有会话，自动创建一个
   useEffect(() => {
@@ -73,10 +78,18 @@ export function ChatPage() {
         <div className="relative">
           <span
             aria-hidden
-            className="pointer-events-none absolute inset-0 rounded-full bg-primary/30 animate-ping motion-reduce:animate-none"
+            className={cn(
+              "pointer-events-none absolute inset-0 rounded-full motion-reduce:animate-none",
+              showNoModelHint ? "bg-orange-500/30 animate-ping" : "bg-primary/30"
+            )}
           />
           <Button
-            className="relative border-primary/40 bg-background/90 shadow-sm hover:bg-background"
+            className={cn(
+              "relative border bg-background/90 shadow-sm hover:bg-background",
+              showNoModelHint
+                ? "border-orange-500/40 text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300"
+                : "border-primary/40 text-primary hover:text-primary"
+            )}
             onClick={handleOpenConfigDialog}
             size="icon-sm"
             type="button"
