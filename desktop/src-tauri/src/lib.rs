@@ -21,6 +21,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, RwLock};
 
 mod llm_runtime_config;
+mod secure_config;
 use llm_runtime_config::{
     list_available_models as derive_available_models, normalize_runtime_config,
     validate_turn_selection, AvailableModel, LlmRuntimeConfig, ProviderId,

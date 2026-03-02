@@ -30,6 +30,14 @@ futures = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 tempfile = { workspace = true }
+thiserror = { workspace = true }
+aes-gcm = "0.10"
+base64 = "0.22"
+hkdf = "0.12"
+sha2 = "0.10"
+rand = "0.8"
+hostname = "0.4"
+mac_address = "1"
 
 # Workspace dependencies
 common = { path = "../../common" }
