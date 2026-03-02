@@ -15,6 +15,13 @@ Cargo.lock
 .DS_Store
 .venv
 
+# Python intermediates
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
 # Vendor code (external, not committed)
 .vendor/
 
