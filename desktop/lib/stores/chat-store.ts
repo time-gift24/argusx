@@ -866,6 +866,9 @@ export const useChatStore = create<ChatState>()(
                   : JSON.stringify(result.output, null, 2);
               turn.terminal.output = output;
             }
+            if (!turn.terminal.output && isError && errorText) {
+              turn.terminal.output = errorText;
+            }
             turn.terminal.updatedAt = now;
           }
           applyStructuredPlanOrTaskEvent(turn, eventType, event);
@@ -875,6 +878,21 @@ export const useChatStore = create<ChatState>()(
             }
             if (typeof event.final_message === "string" && !turn.assistantText) {
               turn.assistantText = event.final_message;
+            }
+            if (!turn.assistantText) {
+              const latestToolText = [...turn.tools]
+                .reverse()
+                .map((tool) => tool.output)
+                .find(
+                  (output): output is string =>
+                    typeof output === "string" &&
+                    output.trim().length > 0
+                );
+              if (latestToolText) {
+                turn.assistantText = latestToolText;
+              } else if (turn.terminal.output.trim().length > 0) {
+                turn.assistantText = turn.terminal.output;
+              }
             }
             turn.status = "done";
             turn.reasoning.isStreaming = false;
