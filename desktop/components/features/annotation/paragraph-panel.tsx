@@ -5,8 +5,11 @@ import { SopTreeNav } from "./sop-tree-nav";
 import {
   pickDefaultSopStep,
   type SopGroups,
+  type SopSection,
   type SopStepLite,
 } from "@/lib/annotation/sop-view-model";
+
+type SopStepDetailText = Partial<Record<SopSection, string>>;
 
 function findStepById(groups: SopGroups, stepId: number): SopStepLite | null {
   for (const category of ["detect", "handle", "verification", "rollback"] as const) {
@@ -30,7 +33,10 @@ export function ParagraphPanel() {
   const [activeStepId, setActiveStepId] = useState<number | null>(() => pickDefaultSopStep(groups)?.sop_step_id ?? null);
 
   const activeStep = activeStepId === null ? null : findStepById(groups, activeStepId);
-  const activeDetail = activeStepId === null ? null : mockReviewData.sop?.step_details?.[activeStepId];
+  const stepDetails = mockReviewData.sop?.step_details as
+    | Record<number, SopStepDetailText>
+    | undefined;
+  const activeDetail = activeStepId === null ? null : stepDetails?.[activeStepId] ?? null;
 
   if (!activeStep || !activeDetail) {
     return (
