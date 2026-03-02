@@ -38,6 +38,7 @@ sha2 = "0.10"
 rand = "0.8"
 hostname = "0.4"
 mac_address = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 # Workspace dependencies
 common = { path = "../../common" }
