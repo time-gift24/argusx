@@ -276,14 +276,14 @@ const CodeBlockBody = memo(
     return (
       <pre
         className={cn(
-          "dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)] m-0 p-4 text-sm",
+          "dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)] m-0 p-3 text-[12px] leading-5",
           className
         )}
         style={preStyle}
       >
         <code
           className={cn(
-            "font-mono text-sm",
+            "font-mono text-[12px] leading-5",
             showLineNumbers && "[counter-increment:line_0] [counter-reset:line]"
           )}
         >

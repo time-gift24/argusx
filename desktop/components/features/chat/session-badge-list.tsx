@@ -22,7 +22,6 @@ export function SessionBadgeList() {
       {sessions.map((session) => (
         <BadgeContextMenu
           key={session.id}
-          onChangeColor={(color) => updateSession(session.id, { color })}
           onDelete={() => deleteSession(session.id)}
           onRename={(title) => updateSession(session.id, { title })}
           session={session}

@@ -70,16 +70,22 @@ export function ChatPage() {
       style={{ minWidth: `${CHAT_SIDEBAR_MIN_WIDTH}px` }}
     >
       <div className="absolute right-3 top-3 z-50">
-        <Button
-          className="chat-config-trigger border-primary/40 bg-background/90 shadow-sm hover:bg-background"
-          onClick={handleOpenConfigDialog}
-          size="icon-sm"
-          type="button"
-          variant="outline"
-        >
-          <Settings2Icon className="size-4" />
-          <span className="sr-only">Open runtime config</span>
-        </Button>
+        <div className="relative">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 rounded-full bg-primary/30 animate-ping motion-reduce:animate-none"
+          />
+          <Button
+            className="relative border-primary/40 bg-background/90 shadow-sm hover:bg-background"
+            onClick={handleOpenConfigDialog}
+            size="icon-sm"
+            type="button"
+            variant="outline"
+          >
+            <Settings2Icon className="size-4" />
+            <span className="sr-only">Open runtime config</span>
+          </Button>
+        </div>
       </div>
       {/* 主内容区域 - 消息列表 */}
       <div
