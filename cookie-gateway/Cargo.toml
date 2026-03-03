@@ -13,6 +13,7 @@ axum = "0.8"
 hyper = "1.0"
 hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", "http2", "tokio"] }
 hyper-tls = "0.6"
+http-body-util = "0.1"
 url = "2.5"
 tower = "0.5"
 thiserror = { workspace = true }
@@ -20,4 +21,3 @@ thiserror = { workspace = true }
 [dev-dependencies]
 tokio-test = "0.4"
 tower = "0.5"
-http-body-util = "0.1"

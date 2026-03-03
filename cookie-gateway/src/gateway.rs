@@ -1,10 +1,11 @@
 // HTTP gateway module for cookie-gateway
-use axum::{Router, routing::{get, post}, Json, extract::{State, Query}, http::StatusCode};
+use axum::{Router, routing::{get, post}, Json, extract::{State, Query}, response::IntoResponse};
 use std::sync::Arc;
 use crate::CookieStore;
 use serde::{Deserialize, Serialize};
 use crate::CookieData;
 use crate::error::CookieGatewayError;
+use crate::proxy;
 
 #[derive(Clone)]
 pub struct GatewayState {
@@ -65,13 +66,14 @@ async fn upload_cookies(
     }
 
     // Store cookies
+    let count = payload.cookies.len();
     store.store_cookies(&payload.domain, payload.cookies).await;
 
     Ok(Json(serde_json::json!({
         "status": "ok",
         "domain": payload.domain,
-        "count": payload.cookies.len(),
-    }))
+        "count": count,
+    })))
 }
 
 async fn get_cookies(

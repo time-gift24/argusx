@@ -27,6 +27,7 @@ async fn test_health_endpoint() {
 #[tokio::test]
 async fn test_upload_cookies() {
     let store = CookieStore::new();
+    store.set_opt_in(true).await;  // Enable opt-in for testing
     let state = GatewayState { store: Arc::new(store) };
     let app = app(state);
 
@@ -95,6 +96,7 @@ async fn test_upload_cookies_rejects_non_whitelisted_domain() {
 #[tokio::test]
 async fn test_get_cookies() {
     let store = CookieStore::new();
+    store.set_opt_in(true).await;  // Enable opt-in for testing
     let state = GatewayState { store: Arc::new(store) };
     let app = app(state);
 
@@ -112,7 +114,7 @@ async fn test_get_cookies() {
         }]
     });
 
-    app.clone()
+    let _ = app.clone()  // Handle the Result
         .oneshot(
             Request::builder()
                 .method(Method::POST)
