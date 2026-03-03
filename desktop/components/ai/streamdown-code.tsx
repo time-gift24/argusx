@@ -59,7 +59,7 @@ export function StreamdownCode({
   }
 
   // Block code - extract language from className
-  const languageMatch = className?.match(/language-(\w+)/);
+  const languageMatch = className?.match(/language-([A-Za-z0-9_+-]+)/);
   const language = languageMatch?.[1] || "text";
 
   // Children should be the code content as string

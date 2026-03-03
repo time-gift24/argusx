@@ -1,9 +1,9 @@
 @layer components {
-  .chat-text pre {
+  .llm-chat-markdown pre {
     white-space: pre-wrap;
   }
 
-  .chat-text :not(pre) > code {
+  .llm-chat-markdown :not(pre) > code {
     white-space: normal;
   }
 
