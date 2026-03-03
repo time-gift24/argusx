@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useChatStore } from "@/lib/stores/chat-store";
+import { selectSessionMessages } from "@/lib/stores/chat-selectors";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,9 +26,7 @@ export function ChatFullInfoDialog({
 }: ChatFullInfoDialogProps) {
   const loadSessionMessages = useChatStore((state) => state.loadSessionMessages);
   const loadFullSessionMessages = useChatStore((state) => state.loadFullSessionMessages);
-  const messages = useChatStore((state) =>
-    sessionId ? (state.messages[sessionId] ?? []) : []
-  );
+  const messages = useChatStore(selectSessionMessages(sessionId));
   const [loading, setLoading] = useState(false);
 
   const sortedMessages = useMemo(

@@ -131,7 +131,7 @@ export async function getChatMessages(
 ): Promise<ChatMessage[]> {
   try {
     return await invoke("get_chat_messages", {
-      session_id: sessionId,
+      sessionId,
       range: options?.range,
       cursor: options?.cursor,
       limit: options?.limit,
@@ -145,7 +145,7 @@ export async function getChatTurnSummaries(
   sessionId: string
 ): Promise<ChatTurnSummary[]> {
   try {
-    return await invoke("get_chat_turn_summaries", { session_id: sessionId });
+    return await invoke("get_chat_turn_summaries", { sessionId });
   } catch (error) {
     throw new Error(`Failed to get chat turn summaries: ${error}`);
   }
