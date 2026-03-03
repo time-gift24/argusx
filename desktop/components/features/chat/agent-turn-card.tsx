@@ -2,7 +2,7 @@
 
 import type { AgentTurnVM } from "@/lib/stores/chat-store";
 
-import { Message, MessageResponse } from "@/components/ai-elements/message";
+import { Message, MessageResponse } from "@/components/ai/message";
 
 import { TurnProcessCard } from "./turn-process-card";
 import { sanitizeAssistantMarkdown } from "./sanitize-assistant-markdown";

@@ -12,12 +12,12 @@ import {
   CodeBlockFilename,
   CodeBlockHeader,
   CodeBlockTitle,
-} from "@/components/ai-elements/code-block";
+} from "@/components/ai/code-block";
 import {
   Terminal,
   TerminalContent,
   TerminalCopyButton,
-} from "@/components/ai-elements/terminal";
+} from "@/components/ai/terminal";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CheckIcon, CopyIcon } from "lucide-react";

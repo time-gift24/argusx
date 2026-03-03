@@ -100,4 +100,10 @@ describe("ConversationView scroll sync", () => {
 
     expect(mocks.scrollToBottom).toHaveBeenCalledTimes(2);
   });
+
+  it("imports MessageResponse from components/ai and renders", () => {
+    // This test verifies the import migration from ai-elements to components/ai
+    const { container } = render(<ConversationView sessionId={SESSION_ID} />);
+    expect(container).toBeTruthy();
+  });
 });

@@ -7,7 +7,7 @@ import {
   CodeBlockFilename,
   CodeBlockHeader,
   CodeBlockTitle,
-} from "@/components/ai-elements/code-block";
+} from "@/components/ai/code-block";
 import {
   Plan,
   PlanAction,
@@ -16,20 +16,20 @@ import {
   PlanHeader,
   PlanTitle,
   PlanTrigger,
-} from "@/components/ai-elements/plan";
+} from "@/components/ai/plan";
 import { TaskItem } from "@/components/ai-elements/task";
 import {
   Terminal,
   TerminalContent,
   TerminalCopyButton,
-} from "@/components/ai-elements/terminal";
+} from "@/components/ai/terminal";
 import {
   Tool,
   ToolContent,
   ToolHeader,
   ToolInput,
   ToolOutput,
-} from "@/components/ai-elements/tool";
+} from "@/components/ai/tool";
 import { SURFACE_ICON_GHOST_BUTTON_CLASS } from "@/components/ai-elements/class-names";
 import { STREAMDOWN_PLUGINS, StreamdownCode } from "@/components/ai";
 import { useChatStore } from "@/lib/stores/chat-store";
