@@ -1,5 +1,17 @@
 use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
-use anyhow::{anyhow, Result};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum GuardError {
+    #[error("Maximum concurrent agents exceeded")]
+    MaxConcurrentExceeded,
+
+    #[error("Maximum depth exceeded: parent_depth={parent_depth}, max_depth={max_depth}")]
+    MaxDepthExceeded {
+        parent_depth: u32,
+        max_depth: u32,
+    },
+}
 
 pub struct SpawnGuards {
     max_concurrent: usize,
@@ -7,6 +19,7 @@ pub struct SpawnGuards {
     running: Arc<AtomicUsize>,
 }
 
+#[derive(Debug)]
 pub struct SpawnReservation {
     running: Arc<AtomicUsize>,
 }
@@ -20,15 +33,18 @@ impl SpawnGuards {
         }
     }
 
-    pub fn reserve(&self, parent_depth: u32) -> Result<SpawnReservation> {
+    pub fn reserve(&self, parent_depth: u32) -> Result<SpawnReservation, GuardError> {
         if parent_depth >= self.max_depth {
-            return Err(anyhow!("max depth exceeded"));
+            return Err(GuardError::MaxDepthExceeded {
+                parent_depth,
+                max_depth: self.max_depth,
+            });
         }
 
         let current = self.running.fetch_add(1, Ordering::SeqCst);
         if current >= self.max_concurrent {
             self.running.fetch_sub(1, Ordering::SeqCst);
-            return Err(anyhow!("max concurrent exceeded"));
+            return Err(GuardError::MaxConcurrentExceeded);
         }
 
         Ok(SpawnReservation {
