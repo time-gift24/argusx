@@ -8,6 +8,7 @@ use super::models::ThreadRow;
 
 pub trait ThreadStore {
     fn upsert_thread(&self, thread: &ThreadRow) -> Result<()>;
+    fn get_thread(&self, id: &str) -> Result<Option<ThreadRow>>;
     fn get_by_dedup(&self, parent_thread_id: &str, key: &str) -> Result<Option<String>>;
     fn insert_dedup(&self, parent_thread_id: &str, key: &str, thread_id: &str) -> Result<()>;
 }
@@ -44,6 +45,31 @@ impl ThreadStore for SqliteThreadStore {
             ],
         )?;
         Ok(())
+    }
+
+    fn get_thread(&self, id: &str) -> Result<Option<ThreadRow>> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn.query_row(
+            "SELECT id, parent_thread_id, status, agent_name, created_at FROM threads WHERE id = ?1",
+            rusqlite::params![id],
+            |row| {
+                Ok(ThreadRow {
+                    id: row.get(0)?,
+                    parent_thread_id: row.get(1)?,
+                    status: row.get(2)?,
+                    agent_name: row.get(3)?,
+                    created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?,
+                })
+            },
+        );
+
+        match result {
+            Ok(thread) => Ok(Some(thread)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 
     fn get_by_dedup(&self, parent_thread_id: &str, key: &str) -> Result<Option<String>> {

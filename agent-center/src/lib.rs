@@ -73,6 +73,65 @@ impl AgentCenter {
 
         Ok(api::center::SpawnResponse { thread_id })
     }
+
+    pub async fn wait(&self, req: api::center::WaitRequest) -> anyhow::Result<api::center::WaitResponse> {
+        // Clamp timeout to [1000, 300000] ms
+        let timeout_ms = req.timeout_ms.clamp(1000, 300000);
+        let timeout = tokio::time::Duration::from_millis(timeout_ms);
+
+        let result = tokio::time::timeout(timeout, async {
+            loop {
+                // Query all thread statuses
+                let mut statuses = std::collections::HashMap::new();
+                let mut all_terminal = true;
+                let mut any_terminal = false;
+
+                for thread_id in &req.thread_ids {
+                    if let Some(thread) = self.store.get_thread(thread_id)? {
+                        let is_terminal = matches!(
+                            thread.status.as_str(),
+                            "Succeeded" | "Failed" | "Cancelled" | "Closed"
+                        );
+                        statuses.insert(thread_id.clone(), thread.status.clone());
+                        all_terminal = all_terminal && is_terminal;
+                        any_terminal = any_terminal || is_terminal;
+                    } else {
+                        statuses.insert(thread_id.clone(), "NotFound".to_string());
+                    }
+                }
+
+                // Check if condition satisfied
+                let satisfied = match req.mode {
+                    api::center::WaitMode::Any => any_terminal,
+                    api::center::WaitMode::All => all_terminal,
+                };
+
+                if satisfied {
+                    return Ok((false, statuses));
+                }
+
+                // Sleep briefly to avoid busy loop (100ms polling interval)
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+        }).await;
+
+        match result {
+            Ok(Ok((timed_out, statuses))) => Ok(api::center::WaitResponse { timed_out, statuses }),
+            Ok(Err(e)) => Err(e),
+            Err(_) => {
+                // Timeout - collect final statuses
+                let mut statuses = std::collections::HashMap::new();
+                for thread_id in &req.thread_ids {
+                    if let Some(thread) = self.store.get_thread(thread_id)? {
+                        statuses.insert(thread_id.clone(), thread.status.clone());
+                    } else {
+                        statuses.insert(thread_id.clone(), "NotFound".to_string());
+                    }
+                }
+                Ok(api::center::WaitResponse { timed_out: true, statuses })
+            }
+        }
+    }
 }
 
 impl AgentCenterBuilder {
