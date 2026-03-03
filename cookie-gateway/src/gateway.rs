@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crate::CookieStore;
 use serde::{Deserialize, Serialize};
 use crate::CookieData;
+use crate::error::CookieGatewayError;
 
 #[derive(Clone)]
 pub struct GatewayState {
@@ -50,32 +51,38 @@ async fn health() -> Json<serde_json::Value> {
 async fn upload_cookies(
     State(state): State<GatewayState>,
     Json(payload): Json<UploadCookiesRequest>,
-) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+) -> Result<Json<serde_json::Value>, impl IntoResponse> {
     let store = state.store.clone();
 
     // Validate whitelist
     if !store.is_whitelisted(&payload.domain) {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({"error": "Domain not whitelisted"})),
-        ));
+        return Err(CookieGatewayError::DomainNotWhitelisted { domain: payload.domain.clone() });
+    }
+
+    // Check opt-in
+    if !store.is_opted_in().await {
+        return Err(CookieGatewayError::UserNotOptedIn);
     }
 
     // Store cookies
     store.store_cookies(&payload.domain, payload.cookies).await;
 
-    Ok(Json(serde_json::json!({"status": "ok"})))
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "domain": payload.domain,
+        "count": payload.cookies.len(),
+    }))
 }
 
 async fn get_cookies(
     Query(query): Query<GetCookiesQuery>,
     State(state): State<GatewayState>,
-) -> Result<Json<GetCookiesResponse>, StatusCode> {
+) -> Result<Json<GetCookiesResponse>, impl IntoResponse> {
     let store = state.store.clone();
 
     // Validate whitelist
     if !store.is_whitelisted(&query.domain) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err(CookieGatewayError::DomainNotWhitelisted { domain: query.domain.clone() });
     }
 
     // Retrieve cookies
