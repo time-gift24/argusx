@@ -31,8 +31,7 @@ import {
   ToolOutput,
 } from "@/components/ai-elements/tool";
 import { SURFACE_ICON_GHOST_BUTTON_CLASS } from "@/components/ai-elements/class-names";
-import { STREAMDOWN_PLUGINS } from "@/components/ai-elements/streamdown-plugins";
-import { StreamdownCode } from "@/components/ai-elements/streamdown-code";
+import { STREAMDOWN_PLUGINS, StreamdownCode } from "@/components/ai";
 import { useChatStore } from "@/lib/stores/chat-store";
 import { cn } from "@/lib/utils";
 import { Streamdown } from "streamdown";

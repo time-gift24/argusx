@@ -1,4 +1,12 @@
 @layer components {
+  .chat-text pre {
+    white-space: pre-wrap;
+  }
+
+  .chat-text :not(pre) > code {
+    white-space: normal;
+  }
+
   .llm-chat-markdown [data-streamdown="code-block-download-button"] {
     display: none !important;
   }
