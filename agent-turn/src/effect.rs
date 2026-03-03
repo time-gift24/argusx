@@ -32,6 +32,12 @@ pub enum Effect {
     },
     PersistCheckpoint,
     CancelInflightTools,
+    ExecutePostValidator {
+        turn_id: String,
+        summary: String,
+        attempt: u8,
+        tool_name: String,
+    },
 }
 
 #[derive(Clone)]
@@ -93,6 +99,14 @@ where
                 self.spawn_retry_timer(delay_ms, next_epoch);
             }
             Effect::PersistCheckpoint | Effect::CancelInflightTools => {}
+            Effect::ExecutePostValidator {
+                turn_id,
+                summary,
+                attempt,
+                tool_name,
+            } => {
+                self.spawn_post_validator_execution(turn_id, summary, attempt, tool_name);
+            }
         }
     }
 
@@ -309,6 +323,92 @@ where
             });
         });
     }
+
+    fn spawn_post_validator_execution(
+        &self,
+        turn_id: String,
+        summary: String,
+        attempt: u8,
+        tool_name: String,
+    ) {
+        let tx = self.tx.clone();
+        let tools = Arc::clone(&self.tools);
+
+        tokio::spawn(async move {
+            // Create a tool call for the validator
+            let call = ToolCall::new(
+                &tool_name,
+                serde_json::json!({
+                    "summary": summary,
+                    "attempt": attempt,
+                }),
+            );
+
+            let ctx = ToolExecutionContext {
+                session_id: String::new(),
+                turn_id: turn_id.clone(),
+                epoch: 0,
+                cwd: None,
+            };
+
+            // Execute the validator tool
+            let result = tools.execute_tool(call, ctx).await;
+
+            match result {
+                Ok(tool_result) => {
+                    // Check if result.is_error first
+                    if tool_result.is_error {
+                        let _ = tx.send(RuntimeEvent::PostValidatorFailed {
+                            event_id: new_id(),
+                            error_message: "Validator tool returned error".to_string(),
+                        });
+                        return;
+                    }
+
+                    // Try to parse the JSON protocol from tool output
+                    // Expected format: {"ok": bool, "summary": Optional<String>}
+                    match serde_json::from_value::<serde_json::Value>(tool_result.output.clone()) {
+                        Ok(json) => {
+                            let ok = json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+                            let summary = json
+                                .get("summary")
+                                .and_then(|v| v.as_str())
+                                .map(String::from);
+
+                            if ok {
+                                let _ = tx.send(RuntimeEvent::PostValidatorSuccess {
+                                    event_id: new_id(),
+                                    summary,
+                                });
+                            } else {
+                                let error_message = json
+                                    .get("error")
+                                    .and_then(|v| v.as_str())
+                                    .map(String::from)
+                                    .unwrap_or_else(|| "Validation failed".to_string());
+                                let _ = tx.send(RuntimeEvent::PostValidatorFailed {
+                                    event_id: new_id(),
+                                    error_message,
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            let _ = tx.send(RuntimeEvent::PostValidatorFailed {
+                                event_id: new_id(),
+                                error_message: format!("Failed to parse validator output as JSON: {}", e),
+                            });
+                        }
+                    }
+                }
+                Err(err) => {
+                    let _ = tx.send(RuntimeEvent::PostValidatorFailed {
+                        event_id: new_id(),
+                        error_message: format!("Validator tool execution failed: {}", err.message),
+                    });
+                }
+            }
+        });
+    }
 }
 
 fn map_agent_error(epoch: u64, err: AgentError) -> RuntimeEvent {
@@ -462,6 +562,108 @@ mod tests {
         }
     }
 
+    struct ValidatorTool {
+        ok: bool,
+        summary: Option<String>,
+    }
+
+    impl ValidatorTool {
+        fn new(ok: bool, summary: Option<String>) -> Self {
+            Self { ok, summary }
+        }
+    }
+
+    #[async_trait]
+    impl ToolExecutor for ValidatorTool {
+        async fn execute_tool(
+            &self,
+            call: ToolCall,
+            _ctx: ToolExecutionContext,
+        ) -> Result<ToolResult, agent_core::tools::ToolExecutionError> {
+            let output = if self.ok {
+                serde_json::json!({
+                    "ok": true,
+                    "summary": self.summary,
+                })
+            } else {
+                serde_json::json!({
+                    "ok": false,
+                    "error": "Validation failed",
+                })
+            };
+            Ok(ToolResult::ok(call.call_id, output))
+        }
+    }
+
+    #[async_trait]
+    impl ToolCatalog for ValidatorTool {
+        async fn list_tools(&self) -> Vec<ToolSpec> {
+            vec![self.spec_for("validator")]
+        }
+
+        async fn tool_spec(&self, name: &str) -> Option<ToolSpec> {
+            (name == "validator").then(|| self.spec_for(name))
+        }
+    }
+
+    impl ValidatorTool {
+        fn spec_for(&self, name: &str) -> ToolSpec {
+            ToolSpec {
+                name: name.to_string(),
+                description: "validator tool".to_string(),
+                input_schema: serde_json::json!({"type": "object"}),
+                execution_policy: ToolExecutionPolicy {
+                    parallel_mode: ToolParallelMode::ParallelSafe,
+                    timeout_ms: None,
+                    retry: None,
+                },
+            }
+        }
+    }
+
+    struct InvalidJsonValidatorTool;
+
+    #[async_trait]
+    impl ToolExecutor for InvalidJsonValidatorTool {
+        async fn execute_tool(
+            &self,
+            call: ToolCall,
+            _ctx: ToolExecutionContext,
+        ) -> Result<ToolResult, agent_core::tools::ToolExecutionError> {
+            // Return valid JSON but with wrong structure (missing "ok" field)
+            Ok(ToolResult::ok(
+                call.call_id,
+                serde_json::json!({"invalid": "structure"}),
+            ))
+        }
+    }
+
+    #[async_trait]
+    impl ToolCatalog for InvalidJsonValidatorTool {
+        async fn list_tools(&self) -> Vec<ToolSpec> {
+            vec![self.spec_for("validator")]
+        }
+
+        async fn tool_spec(&self, name: &str) -> Option<ToolSpec> {
+            (name == "validator").then(|| self.spec_for(name))
+        }
+    }
+
+    impl InvalidJsonValidatorTool {
+        fn spec_for(&self, name: &str) -> ToolSpec {
+            ToolSpec {
+                name: name.to_string(),
+                description: "validator tool".to_string(),
+                input_schema: serde_json::json!({"type": "object"}),
+                execution_policy: ToolExecutionPolicy {
+                    parallel_mode: ToolParallelMode::ParallelSafe,
+                    timeout_ms: None,
+                    retry: None,
+                },
+            }
+        }
+    }
+
     #[tokio::test]
     async fn tool_execution_respects_parallel_limit() {
         let (tx, mut rx) = mpsc::unbounded_channel();
@@ -560,5 +762,102 @@ mod tests {
         }
 
         assert_eq!(max_seen.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn post_validator_effect_emits_success_event_on_ok_json() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        let exec = EffectExecutor::new(
+            Arc::new(DummyModel),
+            Arc::new(ValidatorTool::new(true, Some("normalized output".to_string()))),
+            tx,
+            4,
+        );
+
+        exec.execute(Effect::ExecutePostValidator {
+            turn_id: "t1".to_string(),
+            summary: "original output".to_string(),
+            attempt: 0,
+            tool_name: "validator".to_string(),
+        })
+        .await;
+
+        // Should receive PostValidatorSuccess event
+        if let Some(ev) = rx.recv().await {
+            match ev {
+                RuntimeEvent::PostValidatorSuccess { summary, .. } => {
+                    assert_eq!(summary, Some("normalized output".to_string()));
+                }
+                _ => panic!("Expected PostValidatorSuccess event, got {:?}", ev),
+            }
+        } else {
+            panic!("No event received");
+        }
+    }
+
+    #[tokio::test]
+    async fn post_validator_effect_emits_failed_event_on_nonzero_exit() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        let exec = EffectExecutor::new(
+            Arc::new(DummyModel),
+            Arc::new(ValidatorTool::new(false, None)),
+            tx,
+            4,
+        );
+
+        exec.execute(Effect::ExecutePostValidator {
+            turn_id: "t1".to_string(),
+            summary: "bad output".to_string(),
+            attempt: 0,
+            tool_name: "validator".to_string(),
+        })
+        .await;
+
+        // Should receive PostValidatorFailed event
+        if let Some(ev) = rx.recv().await {
+            match ev {
+                RuntimeEvent::PostValidatorFailed { error_message, .. } => {
+                    assert!(!error_message.is_empty());
+                }
+                _ => panic!("Expected PostValidatorFailed event, got {:?}", ev),
+            }
+        } else {
+            panic!("No event received");
+        }
+    }
+
+    #[tokio::test]
+    async fn post_validator_effect_emits_failed_event_on_invalid_json() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        let exec = EffectExecutor::new(
+            Arc::new(DummyModel),
+            Arc::new(InvalidJsonValidatorTool),
+            tx,
+            4,
+        );
+
+        exec.execute(Effect::ExecutePostValidator {
+            turn_id: "t1".to_string(),
+            summary: "output".to_string(),
+            attempt: 0,
+            tool_name: "validator".to_string(),
+        })
+        .await;
+
+        // Should receive PostValidatorFailed event
+        if let Some(ev) = rx.recv().await {
+            match ev {
+                RuntimeEvent::PostValidatorFailed { error_message, .. } => {
+                    // Since the JSON is valid but missing "ok" field, it defaults to ok=false
+                    assert!(!error_message.is_empty());
+                }
+                _ => panic!("Expected PostValidatorFailed event, got {:?}", ev),
+            }
+        } else {
+            panic!("No event received");
+        }
     }
 }

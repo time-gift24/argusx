@@ -98,6 +98,14 @@ pub enum RuntimeEvent {
         event_id: Id,
         reason: Option<String>,
     },
+    PostValidatorSuccess {
+        event_id: Id,
+        summary: Option<String>,
+    },
+    PostValidatorFailed {
+        event_id: Id,
+        error_message: String,
+    },
 }
 
 impl RuntimeEvent {
@@ -120,7 +128,9 @@ impl RuntimeEvent {
             | RuntimeEvent::RetryTimerFired { event_id, .. }
             | RuntimeEvent::TransientError { event_id, .. }
             | RuntimeEvent::FatalError { event_id, .. }
-            | RuntimeEvent::CancelRequested { event_id, .. } => event_id,
+            | RuntimeEvent::CancelRequested { event_id, .. }
+            | RuntimeEvent::PostValidatorSuccess { event_id, .. }
+            | RuntimeEvent::PostValidatorFailed { event_id, .. } => event_id,
         }
     }
 
@@ -253,6 +263,16 @@ impl RuntimeEvent {
                 event_id: eid,
                 reason,
             },
+            RuntimeEvent::PostValidatorSuccess { summary, .. } => RuntimeEvent::PostValidatorSuccess {
+                event_id: eid,
+                summary,
+            },
+            RuntimeEvent::PostValidatorFailed { error_message, .. } => {
+                RuntimeEvent::PostValidatorFailed {
+                    event_id: eid,
+                    error_message,
+                }
+            }
         }
     }
 }

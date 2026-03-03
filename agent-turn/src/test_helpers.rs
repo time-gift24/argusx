@@ -97,6 +97,22 @@ pub fn test_config() -> TurnEngineConfig {
     TurnEngineConfig::default()
 }
 
+/// Creates a TurnEngineConfig with post-validator enabled
+pub fn test_config_with_post_validator(
+    tool_name: impl Into<String>,
+    max_attempts: u8,
+) -> TurnEngineConfig {
+    use crate::state::PostValidatorConfig;
+    TurnEngineConfig {
+        max_parallel_tools: 4,
+        retry_policy: crate::state::RetryPolicy::default(),
+        post_validator: Some(PostValidatorConfig {
+            tool_name: tool_name.into(),
+            max_attempts,
+        }),
+    }
+}
+
 /// Generates a unique call ID
 pub fn make_call_id(n: u32) -> String {
     format!("{}{:03}", TEST_CALL_ID_PREFIX, n)
@@ -145,6 +161,7 @@ pub struct StateBuilder {
     usage: Usage,
     done_emitted: bool,
     retry_attempt: u32,
+    post_validation_attempt: u8,
     seen_event_ids: HashSet<String>,
     transcript: Vec<TranscriptItem>,
     last_request_inputs: Vec<InputEnvelope>,
@@ -172,6 +189,7 @@ impl StateBuilder {
             usage: Usage::default(),
             done_emitted: false,
             retry_attempt: 0,
+            post_validation_attempt: 0,
             seen_event_ids: HashSet::new(),
             transcript: Vec::new(),
             last_request_inputs: Vec::new(),
@@ -199,6 +217,7 @@ impl StateBuilder {
             usage: state.usage,
             done_emitted: state.done_emitted,
             retry_attempt: state.retry_attempt,
+            post_validation_attempt: state.post_validation_attempt,
             seen_event_ids: state.seen_event_ids,
             transcript: state.transcript,
             last_request_inputs: state.last_request_inputs,
@@ -336,6 +355,12 @@ impl StateBuilder {
         self
     }
 
+    /// Sets post_validation_attempt
+    pub fn with_post_validation_attempt(mut self, attempt: u8) -> Self {
+        self.post_validation_attempt = attempt;
+        self
+    }
+
     /// Builds the TurnState
     pub fn build(self) -> TurnState {
         TurnState {
@@ -356,6 +381,7 @@ impl StateBuilder {
             usage: self.usage,
             done_emitted: self.done_emitted,
             retry_attempt: self.retry_attempt,
+            post_validation_attempt: self.post_validation_attempt,
             seen_event_ids: self.seen_event_ids,
             transcript: self.transcript,
             last_request_inputs: self.last_request_inputs,

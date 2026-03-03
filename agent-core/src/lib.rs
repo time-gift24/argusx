@@ -41,11 +41,43 @@ mod tests {
     }
 
     #[test]
+    fn runtime_event_roundtrip_post_validator_json() {
+        let ev = RuntimeEvent::PostValidatorSuccess {
+            event_id: new_id(),
+            summary: Some("clean summary".to_string()),
+        };
+        let raw = serde_json::to_string(&ev).expect("serialize runtime event");
+        let got: RuntimeEvent = serde_json::from_str(&raw).expect("deserialize runtime event");
+        assert_eq!(ev, got);
+    }
+
+    #[test]
     fn transcript_item_roundtrip_json() {
         let item = TranscriptItem::assistant_message("done");
         let raw = serde_json::to_string(&item).expect("serialize transcript item");
         let got: TranscriptItem = serde_json::from_str(&raw).expect("deserialize transcript item");
         assert_eq!(item, got);
+    }
+
+    #[test]
+    fn run_stream_event_post_validation_started_roundtrip() {
+        use crate::events::RunStreamEvent;
+        let ev = RunStreamEvent::PostValidationStarted {
+            turn_id: new_id(),
+        };
+        let raw = serde_json::to_string(&ev).expect("serialize run stream event");
+        let got: RunStreamEvent = serde_json::from_str(&raw).expect("deserialize run stream event");
+        assert_eq!(ev, got);
+    }
+
+    #[test]
+    fn ui_thread_event_post_validation_started_roundtrip() {
+        let ev = UiThreadEvent::PostValidationStarted {
+            turn_id: new_id(),
+        };
+        let raw = serde_json::to_string(&ev).expect("serialize ui thread event");
+        let got: UiThreadEvent = serde_json::from_str(&raw).expect("deserialize ui thread event");
+        assert_eq!(ev, got);
     }
 
     struct DummyRuntime;

@@ -119,6 +119,8 @@ export interface AgentTurnVM {
   planSource?: "structured" | "reasoning-fallback";
   error?: string;
   lastSeq: number;
+  postValidationAttempt?: number;
+  postValidationMaxAttempts?: number;
 }
 
 interface ChatState {
@@ -1045,6 +1047,31 @@ export const useChatStore = create<ChatState>()(
             turn.terminal.updatedAt = now;
           }
           applyStructuredPlanOrTaskEvent(turn, eventType, event);
+          if (eventType === "post_validation_started") {
+            // Session shows "thinking", turn shows "streaming"
+            sessions = updateSessionStatus("thinking");
+            turn.status = "streaming";
+            // Initialize post-validation tracking
+            if (turn.postValidationAttempt === undefined) {
+              turn.postValidationAttempt = 0;
+            }
+          }
+          if (eventType === "post_validation_failed") {
+            // Update turn with warning/error but don't terminate if can_retry
+            const canRetry = Boolean(event.can_retry);
+            const attempt = typeof event.attempt === "number" ? event.attempt : 0;
+            const maxAttempts = typeof event.max_attempts === "number" ? event.max_attempts : 3;
+            const errorMessage = String(event.error_message ?? "Validation failed");
+
+            turn.postValidationAttempt = attempt;
+            turn.postValidationMaxAttempts = maxAttempts;
+
+            if (!canRetry) {
+              // No more retries, will fail the turn
+              turn.error = errorMessage;
+            }
+            // Keep streaming status while retrying
+          }
           if (eventType === "done" || eventType === "turn_done") {
             if (typeof event.summary === "string" && !turn.assistantText) {
               turn.assistantText = event.summary;
