@@ -135,7 +135,7 @@ export function RuntimeCodeSurface({
         code={code}
         compact
         language={(language || "text") as BundledLanguage}
-        showLineNumbers
+        showLineNumbers={false}
         {...props}
       >
         <CodeBlockHeader>

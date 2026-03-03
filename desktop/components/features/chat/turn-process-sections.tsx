@@ -114,7 +114,10 @@ export function TurnProcessSections({
       detail={section.headerDetail}
       contentClassName="llm-chat-markdown px-[var(--chat-runtime-code-padding-x)] py-[var(--chat-runtime-code-padding-y)] text-[13px] leading-5 text-foreground/90"
     >
-      <Streamdown BlockComponent={RuntimeMarkdownBlock} plugins={STREAMDOWN_PLUGINS}>
+      <Streamdown
+        components={{ code: StreamdownCode }}
+        plugins={STREAMDOWN_PLUGINS}
+      >
         {turn.reasoning.text || "Streaming reasoning..."}
       </Streamdown>
     </RuntimeProcessSection>

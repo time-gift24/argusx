@@ -1,13 +1,10 @@
 "use client";
 
-import type { HTMLAttributes } from "react";
+import type { ExtraProps } from "streamdown";
+import { useIsCodeFenceIncomplete } from "streamdown";
 
 import { RuntimeCodeSurface } from "@/components/features/chat/runtime-code-surface";
 import { cn } from "@/lib/utils";
-
-interface StreamdownCodeProps extends HTMLAttributes<HTMLElement> {
-  children?: React.ReactNode;
-}
 
 const TERMINAL_FENCE_LANGUAGES = new Set([
   "terminal",
@@ -25,6 +22,7 @@ const TERMINAL_FENCE_LANGUAGES = new Set([
  * code rendering was nested inside RuntimeMarkdownBlock's RuntimeCodeSurface.
  *
  * Detection logic:
+ * - Uses official useIsCodeFenceIncomplete hook for streaming code blocks
  * - Code blocks have className="language-xxx" from Streamdown's rehype processing
  * - Inline code has no className or different styling
  */
@@ -32,10 +30,16 @@ export function StreamdownCode({
   children,
   className,
   ...props
-}: StreamdownCodeProps) {
+}: React.HTMLAttributes<HTMLElement> & ExtraProps) {
+  // Official Streamdown hook: detects incomplete code fences during streaming
+  const isIncompleteCodeFence = useIsCodeFenceIncomplete();
+
   // Check if this is a code block by looking for language-xxx class
   // Streamdown adds className like "language-typescript" or "language-python"
-  const isCodeBlock = className?.includes("language-") ?? false;
+  const hasLanguageClass = className?.includes("language-") ?? false;
+
+  // Code block if: has language class OR is incomplete code fence (streaming)
+  const isCodeBlock = hasLanguageClass || isIncompleteCodeFence;
 
   if (!isCodeBlock) {
     // Inline code - simple styling with subtle background
