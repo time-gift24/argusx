@@ -95,7 +95,7 @@
   --chat-runtime-surface-padding-y: 18px;
   --chat-runtime-code-padding-x: 1ch;
   --chat-runtime-code-padding-y: 1ch;
-  --chat-runtime-code-font-size: 13px;
+  --chat-runtime-code-font-size: 11px;
   --chat-runtime-code-line-height: 1.5;
   --chat-runtime-surface-label: oklch(0.54 0 0);
   --chat-runtime-surface-text: oklch(0.22 0 0);
@@ -148,7 +148,7 @@
   --chat-runtime-surface-padding-y: 18px;
   --chat-runtime-code-padding-x: 1ch;
   --chat-runtime-code-padding-y: 1ch;
-  --chat-runtime-code-font-size: 13px;
+  --chat-runtime-code-font-size: 11px;
   --chat-runtime-code-line-height: 1.5;
   --chat-runtime-surface-label: oklch(0.74 0 0);
   --chat-runtime-surface-text: oklch(0.94 0 0);

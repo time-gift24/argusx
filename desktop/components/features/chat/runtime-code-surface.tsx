@@ -8,6 +8,7 @@ import { SURFACE_ICON_GHOST_BUTTON_CLASS } from "@/components/ai-elements/class-
 import {
   CodeBlock,
   CodeBlockActions,
+  CodeBlockCopyButton,
   CodeBlockFilename,
   CodeBlockHeader,
   CodeBlockTitle,
@@ -130,32 +131,29 @@ export function RuntimeCodeSurface({
 
     return (
       <CodeBlock
-        className={cn(
-          "llm-chat-code-surface [&_pre]:pr-8",
-          className
-        )}
+        className={cn("llm-chat-code-surface", className)}
         code={code}
         compact
         language={(language || "text") as BundledLanguage}
         showLineNumbers
         {...props}
       >
-        <div className="pointer-events-none absolute right-[var(--chat-runtime-code-padding-x)] top-[var(--chat-runtime-code-padding-y)] z-10">
-          <Button
-            aria-label={copyLabel}
-            className={cn(
-              SURFACE_ICON_GHOST_BUTTON_CLASS,
-              "pointer-events-auto border-0 bg-transparent shadow-none"
-            )}
-            disabled={!hasCode}
-            onClick={copyToClipboard}
-            size="icon-sm"
-            type="button"
-            variant="ghost"
-          >
-            <CopyStateIcon size={14} />
-          </Button>
-        </div>
+        <CodeBlockHeader>
+          <CodeBlockTitle>
+            <CodeBlockFilename>{language || "text"}</CodeBlockFilename>
+          </CodeBlockTitle>
+          <CodeBlockActions>
+            <CodeBlockCopyButton
+              aria-label={copyLabel}
+              className={cn(
+                SURFACE_ICON_GHOST_BUTTON_CLASS,
+                "[&_svg]:size-[14px]"
+              )}
+              disabled={!hasCode}
+              title={copyLabel}
+            />
+          </CodeBlockActions>
+        </CodeBlockHeader>
       </CodeBlock>
     );
   }

@@ -130,8 +130,8 @@ export const TerminalHeader = ({
       className={cn(
         "flex items-center justify-between",
         compact
-          ? "px-[var(--chat-runtime-code-padding-x)] pt-[var(--chat-runtime-code-padding-y)] pb-0"
-          : "px-[var(--chat-runtime-code-padding-x)] pt-[var(--chat-runtime-code-padding-y)] pb-0",
+          ? "px-2 pt-1.5 pb-0"
+          : "px-2 pt-1.5 pb-0",
         className
       )}
       {...props}
@@ -152,10 +152,7 @@ export const TerminalTitle = ({
   return (
     <div
       className={cn(
-        "flex items-center gap-1.5",
-        compact
-          ? "text-[var(--chat-runtime-surface-label)] [font-size:var(--chat-runtime-code-font-size)]"
-          : "text-[var(--chat-runtime-surface-label)] [font-size:var(--chat-runtime-code-font-size)]",
+        "flex items-center gap-1.5 text-xs text-[var(--chat-runtime-surface-label)]",
         className
       )}
       {...props}
@@ -332,8 +329,8 @@ export const TerminalContent = ({
     <div
       className={cn(
         compact
-          ? "max-h-56 overflow-auto px-[var(--chat-runtime-code-padding-x)] pb-[var(--chat-runtime-code-padding-y)] pt-0 font-mono [font-size:var(--chat-runtime-code-font-size)] [line-height:var(--chat-runtime-code-line-height)]"
-          : "max-h-72 overflow-auto px-[var(--chat-runtime-code-padding-x)] pb-[var(--chat-runtime-code-padding-y)] pt-0 font-mono [font-size:var(--chat-runtime-code-font-size)] [line-height:var(--chat-runtime-code-line-height)]",
+          ? "max-h-56 overflow-auto px-2 pb-1.5 pt-0 font-mono text-[11px] leading-tight"
+          : "max-h-72 overflow-auto px-2 pb-1.5 pt-0 font-mono text-xs leading-tight",
         className
       )}
       ref={containerRef}

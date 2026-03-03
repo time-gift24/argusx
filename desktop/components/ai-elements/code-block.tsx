@@ -32,10 +32,10 @@ import { createHighlighter } from "shiki";
 
 // Shiki uses bitflags for font styles: 1=italic, 2=bold, 4=underline
 // biome-ignore lint/suspicious/noBitwiseOperators: shiki bitflag check
-// eslint-disable-next-line no-bitwise -- shiki bitflag check
+ 
 const isItalic = (fontStyle: number | undefined) => fontStyle && fontStyle & 1;
 // biome-ignore lint/suspicious/noBitwiseOperators: shiki bitflag check
-// eslint-disable-next-line no-bitwise -- shiki bitflag check
+ 
 // oxlint-disable-next-line eslint(no-bitwise)
 const isBold = (fontStyle: number | undefined) => fontStyle && fontStyle & 2;
 const isUnderline = (fontStyle: number | undefined) =>
@@ -322,8 +322,8 @@ const CodeBlockBody = memo(
         className={cn(
           "dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)] m-0",
           compact
-            ? "p-0 [font-size:var(--chat-runtime-code-font-size)] [line-height:var(--chat-runtime-code-line-height)]"
-            : "p-0 [font-size:var(--chat-runtime-code-font-size)] [line-height:var(--chat-runtime-code-line-height)]",
+            ? "p-0 text-[11px] leading-tight"
+            : "p-0 text-xs leading-tight",
           className
         )}
         style={preStyle}
@@ -331,8 +331,8 @@ const CodeBlockBody = memo(
         <code
           className={cn(
             compact
-              ? "font-mono [font-size:var(--chat-runtime-code-font-size)] [line-height:var(--chat-runtime-code-line-height)]"
-              : "font-mono [font-size:var(--chat-runtime-code-font-size)] [line-height:var(--chat-runtime-code-line-height)]",
+              ? "font-mono text-[11px] leading-tight"
+              : "font-mono text-xs leading-tight",
             showLineNumbers && "[counter-increment:line_0] [counter-reset:line]"
           )}
         >
@@ -365,7 +365,7 @@ export const CodeBlockContainer = ({
 }: HTMLAttributes<HTMLDivElement> & { language: string; compact?: boolean }) => (
   <div
     className={cn(
-      "group llm-chat-runtime-surface relative w-full overflow-hidden text-[var(--chat-runtime-surface-text)]",
+      "group llm-chat-runtime-surface relative w-full overflow-hidden border bg-[var(--chat-runtime-surface-bg)] text-[var(--chat-runtime-surface-text)]",
       className
     )}
     data-density={compact ? "compact" : "default"}
@@ -386,7 +386,7 @@ export const CodeBlockHeader = ({
 }: HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex items-center justify-between border-0 bg-transparent px-[var(--chat-runtime-code-padding-x)] pb-0 pt-[var(--chat-runtime-code-padding-y)] text-[var(--chat-runtime-surface-label)] [font-size:var(--chat-runtime-code-font-size)]",
+      "flex items-center justify-between border-0 bg-transparent px-2 pb-0 pt-1.5 text-xs text-[var(--chat-runtime-surface-label)]",
       className
     )}
     {...props}
@@ -420,7 +420,7 @@ export const CodeBlockActions = ({
   className,
   ...props
 }: HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("-my-0.5 flex items-center gap-1", className)} {...props}>
+  <div className={cn("flex items-center gap-1", className)} {...props}>
     {children}
   </div>
 );
@@ -467,7 +467,10 @@ export const CodeBlockContent = ({
   }, [code, language, rawTokens]);
 
   return (
-    <div className="relative overflow-auto px-[var(--chat-runtime-code-padding-x)] pb-[var(--chat-runtime-code-padding-y)] pt-0">
+    <div className={cn(
+      "relative overflow-auto px-2 pb-1.5 pt-0",
+      compact ? "max-h-56" : "max-h-72"
+    )}>
       <CodeBlockBody
         compact={compact}
         showLineNumbers={showLineNumbers}
