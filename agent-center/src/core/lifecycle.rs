@@ -9,6 +9,12 @@ pub enum ThreadStatus {
     Closed,
 }
 
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum LifecycleError {
+    #[error("illegal transition: {from:?} -> {to:?}")]
+    IllegalTransition { from: ThreadStatus, to: ThreadStatus },
+}
+
 pub struct ThreadStateMachine {
     status: ThreadStatus,
 }
@@ -22,7 +28,7 @@ impl ThreadStateMachine {
         self.status
     }
 
-    pub fn transition_to(&mut self, next: ThreadStatus) -> Result<(), &'static str> {
+    pub fn transition_to(&mut self, next: ThreadStatus) -> Result<(), LifecycleError> {
         let legal = matches!(
             (self.status, next),
             // Normal progression
@@ -44,7 +50,10 @@ impl ThreadStateMachine {
         );
 
         if !legal {
-            return Err("illegal transition");
+            return Err(LifecycleError::IllegalTransition {
+                from: self.status,
+                to: next,
+            });
         }
 
         self.status = next;
