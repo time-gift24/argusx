@@ -121,6 +121,10 @@ struct AppState {
     frontend_to_backend_session: Arc<RwLock<HashMap<String, String>>>,
 }
 
+const SQLITE_DB_PATH_ENV: &str = "ARGUSX_DESKTOP_DB_PATH";
+const SQLITE_DB_FILE_NAME: &str = "desktop.sqlite3";
+const SQLITE_DB_TEMP_DIR: &str = "argusx-desktop-agent";
+
 struct UnconfiguredAdapter;
 
 #[async_trait::async_trait]
@@ -593,6 +597,24 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
     })
 }
 
+fn resolve_sqlite_db_path(app_data_dir: Option<PathBuf>) -> PathBuf {
+    let env_override = std::env::var(SQLITE_DB_PATH_ENV).ok();
+    resolve_sqlite_db_path_with_override(env_override.as_deref(), app_data_dir)
+}
+
+fn resolve_sqlite_db_path_with_override(
+    env_override: Option<&str>,
+    app_data_dir: Option<PathBuf>,
+) -> PathBuf {
+    if let Some(path) = env_override.map(str::trim).filter(|value| !value.is_empty()) {
+        return PathBuf::from(path);
+    }
+
+    let base_dir = app_data_dir
+        .unwrap_or_else(|| std::env::temp_dir().join(SQLITE_DB_TEMP_DIR));
+    base_dir.join(SQLITE_DB_FILE_NAME)
+}
+
 fn fingerprint_mismatch_user_message() -> String {
     "Stored runtime credentials are bound to a different machine fingerprint. Clear stored credentials and re-enter API keys.".to_string()
 }
@@ -693,12 +715,10 @@ fn build_llm_client_from_runtime_config(cfg: &LlmRuntimeConfig) -> Result<LlmCli
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .setup(|app| {
-            let app_data_dir = app
-                .path()
-                .app_data_dir()
-                .unwrap_or_else(|_| std::env::temp_dir().join("argusx-desktop-agent"));
-            std::fs::create_dir_all(&app_data_dir)?;
-            let db_path = app_data_dir.join("desktop.sqlite3");
+            let db_path = resolve_sqlite_db_path(app.path().app_data_dir().ok());
+            if let Some(parent) = db_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
             let state = build_runtime_state(db_path).map_err(std::io::Error::other)?;
             app.manage(state);
             Ok(())
@@ -738,6 +758,37 @@ mod tests {
         assert_eq!(
             map_runtime_config_repo_error(RuntimeConfigRepoError::FingerprintMismatch),
             fingerprint_mismatch_user_message()
+        );
+    }
+
+    #[test]
+    fn resolve_sqlite_db_path_uses_env_override_when_present() {
+        let app_data_dir = Some(PathBuf::from("/var/app/data"));
+        let resolved = resolve_sqlite_db_path_with_override(
+            Some("/tmp/argusx-custom.sqlite3"),
+            app_data_dir,
+        );
+        assert_eq!(resolved, PathBuf::from("/tmp/argusx-custom.sqlite3"));
+    }
+
+    #[test]
+    fn resolve_sqlite_db_path_uses_app_data_dir_by_default() {
+        let app_data_dir = Some(PathBuf::from("/var/app/data"));
+        let resolved = resolve_sqlite_db_path_with_override(None, app_data_dir);
+        assert_eq!(
+            resolved,
+            PathBuf::from("/var/app/data").join(SQLITE_DB_FILE_NAME)
+        );
+    }
+
+    #[test]
+    fn resolve_sqlite_db_path_falls_back_to_temp_dir_when_no_app_data_dir() {
+        let resolved = resolve_sqlite_db_path_with_override(None, None);
+        assert_eq!(
+            resolved,
+            std::env::temp_dir()
+                .join(SQLITE_DB_TEMP_DIR)
+                .join(SQLITE_DB_FILE_NAME)
         );
     }
 }
