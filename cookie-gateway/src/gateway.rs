@@ -1,8 +1,8 @@
 // HTTP gateway module for cookie-gateway
-use axum::{Router, routing::{get, post}, Json, extract::State, http::StatusCode};
+use axum::{Router, routing::{get, post}, Json, extract::{State, Query}, http::StatusCode};
 use std::sync::Arc;
 use crate::CookieStore;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use crate::CookieData;
 
 #[derive(Clone)]
@@ -24,10 +24,21 @@ pub struct UploadCookiesRequest {
     pub cookies: Vec<CookieData>,
 }
 
+#[derive(Deserialize)]
+pub struct GetCookiesQuery {
+    pub domain: String,
+}
+
+#[derive(Serialize)]
+pub struct GetCookiesResponse {
+    pub cookies: Vec<CookieData>,
+}
+
 pub fn app(state: GatewayState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/api/cookies", post(upload_cookies))
+        .route("/api/cookies", get(get_cookies))
         .with_state(state)
 }
 
@@ -53,4 +64,21 @@ async fn upload_cookies(
     store.store_cookies(&payload.domain, payload.cookies).await;
 
     Ok(Json(serde_json::json!({"status": "ok"})))
+}
+
+async fn get_cookies(
+    Query(query): Query<GetCookiesQuery>,
+    State(state): State<GatewayState>,
+) -> Result<Json<GetCookiesResponse>, StatusCode> {
+    let store = state.store.clone();
+
+    // Validate whitelist
+    if !store.is_whitelisted(&query.domain) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    // Retrieve cookies
+    let cookies = store.get_cookies(&query.domain).await.unwrap_or_default();
+
+    Ok(Json(GetCookiesResponse { cookies }))
 }
