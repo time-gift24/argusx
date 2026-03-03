@@ -6,12 +6,18 @@ use std::sync::Mutex;
 use super::migrations;
 use super::models::ThreadRow;
 
+pub enum ClaimResult {
+    New,
+    Existing(String),
+}
+
 pub trait ThreadStore {
     fn upsert_thread(&self, thread: &ThreadRow) -> Result<()>;
     fn get_thread(&self, id: &str) -> Result<Option<ThreadRow>>;
     fn get_all_threads(&self) -> Result<Vec<ThreadRow>>;
     fn get_by_dedup(&self, parent_thread_id: &str, key: &str) -> Result<Option<String>>;
     fn insert_dedup(&self, parent_thread_id: &str, key: &str, thread_id: &str) -> Result<()>;
+    fn claim_spawn(&self, parent: &str, key: &str, candidate_id: &str) -> Result<ClaimResult>;
 }
 
 pub struct SqliteThreadStore {
@@ -116,5 +122,31 @@ impl ThreadStore for SqliteThreadStore {
             rusqlite::params![parent_thread_id, key, thread_id],
         )?;
         Ok(())
+    }
+
+    fn claim_spawn(&self, parent: &str, key: &str, candidate_id: &str) -> Result<ClaimResult> {
+        let mut conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
+        let tx = conn.transaction()?;
+
+        // Try to insert new dedup entry
+        tx.execute(
+            "INSERT OR IGNORE INTO spawn_dedup (parent_thread_id, key, thread_id) VALUES (?1, ?2, ?3)",
+            rusqlite::params![parent, key, candidate_id],
+        )?;
+
+        // Get the winner (either our candidate or existing)
+        let winner: String = tx.query_row(
+            "SELECT thread_id FROM spawn_dedup WHERE parent_thread_id=?1 AND key=?2",
+            rusqlite::params![parent, key],
+            |r| r.get(0),
+        )?;
+
+        tx.commit()?;
+
+        if winner == candidate_id {
+            Ok(ClaimResult::New)
+        } else {
+            Ok(ClaimResult::Existing(winner))
+        }
     }
 }

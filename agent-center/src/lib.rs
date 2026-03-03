@@ -6,15 +6,16 @@ pub mod config;
 pub mod api;
 
 use permission::guard::SpawnGuards;
-use persistence::store::{SqliteThreadStore, ThreadStore};
+use persistence::store::{SqliteThreadStore, ThreadStore, ClaimResult};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use std::collections::HashMap;
 
 pub struct AgentCenter {
     guards: SpawnGuards,
     store: Arc<SqliteThreadStore>,
-    reservations: Arc<Mutex<Vec<permission::guard::SpawnReservation>>>,
+    reservations: Arc<Mutex<HashMap<String, permission::guard::SpawnReservation>>>,
 }
 
 pub struct AgentCenterBuilder {
@@ -39,39 +40,40 @@ impl AgentCenter {
     }
 
     pub async fn spawn(&self, req: api::center::SpawnRequest) -> anyhow::Result<api::center::SpawnResponse> {
-        // Check dedup first (idempotency)
-        if let Some(existing_thread_id) = self.store.get_by_dedup(&req.parent_thread_id, &req.key)? {
-            return Ok(api::center::SpawnResponse {
-                thread_id: existing_thread_id,
-            });
-        }
-
-        // Reserve slot (concurrency control)
+        // Reserve slot first (fail fast if at limit)
         let parent_depth = 0; // TODO: Look up parent depth from store
         let reservation = self.guards.reserve(parent_depth)?;
 
-        // Generate new thread ID
-        let thread_id = format!("thread-{}", uuid::Uuid::new_v4());
+        // Generate candidate thread ID
+        let candidate_id = format!("thread-{}", uuid::Uuid::new_v4());
 
-        // Create thread record
-        let thread = persistence::models::ThreadRow {
-            id: thread_id.clone(),
-            parent_thread_id: Some(req.parent_thread_id.clone()),
-            status: "Running".to_string(),  // Spawned threads start in Running state
-            agent_name: req.agent_name.clone(),
-            created_at: chrono::Utc::now(),
-        };
+        // Atomically claim the (parent, key) slot
+        match self.store.claim_spawn(&req.parent_thread_id, &req.key, &candidate_id)? {
+            ClaimResult::Existing(existing_thread_id) => {
+                // Drop reservation - idempotent case doesn't need new slot
+                drop(reservation);
+                Ok(api::center::SpawnResponse {
+                    thread_id: existing_thread_id,
+                })
+            }
+            ClaimResult::New => {
+                // We won the race - create thread
+                let thread = persistence::models::ThreadRow {
+                    id: candidate_id.clone(),
+                    parent_thread_id: Some(req.parent_thread_id.clone()),
+                    status: "Running".to_string(),
+                    agent_name: req.agent_name.clone(),
+                    created_at: chrono::Utc::now(),
+                };
 
-        // Persist thread and dedup mapping
-        self.store.upsert_thread(&thread)?;
-        self.store.insert_dedup(&req.parent_thread_id, &req.key, &thread_id)?;
+                self.store.upsert_thread(&thread)?;
 
-        // Store reservation to keep slot occupied
-        self.reservations.lock().await.push(reservation);
+                // Store reservation mapped to thread_id
+                self.reservations.lock().await.insert(candidate_id.clone(), reservation);
 
-        // TODO: Dispatch initial input to agent runtime (Task 10)
-
-        Ok(api::center::SpawnResponse { thread_id })
+                Ok(api::center::SpawnResponse { thread_id: candidate_id })
+            }
+        }
     }
 
     pub async fn wait(&self, req: api::center::WaitRequest) -> anyhow::Result<api::center::WaitResponse> {
@@ -97,6 +99,7 @@ impl AgentCenter {
                         any_terminal = any_terminal || is_terminal;
                     } else {
                         statuses.insert(thread_id.clone(), "NotFound".to_string());
+                        all_terminal = false; // NotFound doesn't satisfy ALL
                     }
                 }
 
@@ -141,8 +144,19 @@ impl AgentCenter {
         // Parse current status
         let current_status = self.parse_status(&thread.status);
 
-        // If already closed, return idempotently
-        if matches!(current_status, core::lifecycle::ThreadStatus::Closed) {
+        // If already terminal (Closed, Succeeded, Failed, Cancelled), return idempotently
+        if matches!(
+            current_status,
+            core::lifecycle::ThreadStatus::Closed
+                | core::lifecycle::ThreadStatus::Succeeded
+                | core::lifecycle::ThreadStatus::Failed
+                | core::lifecycle::ThreadStatus::Cancelled
+        ) {
+            // Release reservation if still held
+            if let Some(_reservation) = self.reservations.lock().await.remove(&req.thread_id) {
+                // Reservation dropped - slot released
+            }
+
             return Ok(api::center::CloseResponse {
                 final_status: "Closed".to_string(),
             });
@@ -151,7 +165,7 @@ impl AgentCenter {
         // Create state machine and transition
         let mut sm = core::lifecycle::ThreadStateMachine::new(current_status);
 
-        // Transition to Closing
+        // Transition to Closing (if not already)
         if sm.status() != core::lifecycle::ThreadStatus::Closing {
             sm.transition_to(core::lifecycle::ThreadStatus::Closing)
                 .map_err(|e| anyhow::anyhow!("Invalid state transition: {:?}", e))?;
@@ -168,7 +182,10 @@ impl AgentCenter {
         };
         self.store.upsert_thread(&updated_thread)?;
 
-        // TODO: Release reservation (Task 9 will implement proper reservation tracking)
+        // Release reservation
+        if let Some(_reservation) = self.reservations.lock().await.remove(&req.thread_id) {
+            // Reservation dropped - slot released
+        }
 
         Ok(api::center::CloseResponse {
             final_status: "Closed".to_string(),
@@ -207,11 +224,18 @@ impl AgentCenter {
             if is_non_terminal {
                 // In a real implementation, we would check if the runtime is still active
                 // For now, we mark all orphan non-terminal threads as Failed
+                let thread_id = thread.id.clone();
                 let updated_thread = persistence::models::ThreadRow {
                     status: "Failed".to_string(),
                     ..thread
                 };
                 self.store.upsert_thread(&updated_thread)?;
+
+                // Release any held reservation
+                if let Some(_reservation) = self.reservations.lock().await.remove(&thread_id) {
+                    // Reservation dropped - slot released
+                }
+
                 repaired_count += 1;
             }
         }
@@ -246,7 +270,7 @@ impl AgentCenterBuilder {
         Ok(AgentCenter {
             guards: SpawnGuards::new(self.max_concurrent, self.max_depth),
             store: Arc::new(store),
-            reservations: Arc::new(Mutex::new(Vec::new())),
+            reservations: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 }

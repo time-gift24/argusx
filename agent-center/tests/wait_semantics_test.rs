@@ -1,6 +1,5 @@
 use agent_center::AgentCenter;
 use tempfile::tempdir;
-use std::time::Duration;
 
 #[tokio::test]
 async fn wait_all_times_out_when_any_thread_not_terminal() -> anyhow::Result<()> {
