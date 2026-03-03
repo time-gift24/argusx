@@ -69,16 +69,16 @@ export function ChatFullInfoDialog({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="max-h-[80vh] max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Full Session Info</DialogTitle>
+          <DialogTitle>完整会话信息</DialogTitle>
           <DialogDescription>
-            This view loads complete history on demand and is not auto-expanded at startup.
+            此视图按需加载完整历史，启动时不自动展开。
           </DialogDescription>
         </DialogHeader>
 
         <div className="max-h-[55vh] overflow-y-auto rounded-md border bg-muted/20 p-3">
           {sortedMessages.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              {loading ? "Loading full history..." : "No messages available."}
+              {loading ? "正在加载完整历史..." : "无可用消息。"}
             </p>
           ) : (
             <div className="space-y-2">
@@ -100,10 +100,10 @@ export function ChatFullInfoDialog({
 
         <DialogFooter>
           <Button disabled={!sessionId || loading} onClick={handleLoadOlder} type="button" variant="outline">
-            {loading ? "Loading..." : "Load Older"}
+            {loading ? "加载中..." : "加载更早的"}
           </Button>
           <Button onClick={() => onOpenChange(false)} type="button">
-            Close
+            关闭
           </Button>
         </DialogFooter>
       </DialogContent>

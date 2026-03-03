@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { CheckIcon, CopyIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, DownloadIcon } from "lucide-react";
 import {
   createContext,
   memo,
@@ -114,14 +114,53 @@ interface TokenizedCode {
 
 interface CodeBlockContextType {
   code: string;
+  language: string;
   compact: boolean;
 }
 
 // Context
 const CodeBlockContext = createContext<CodeBlockContextType>({
   code: "",
+  language: "text",
   compact: false,
 });
+
+const languageExtensions: Record<string, string> = {
+  bash: "sh",
+  c: "c",
+  cpp: "cpp",
+  go: "go",
+  java: "java",
+  javascript: "js",
+  js: "js",
+  json: "json",
+  markdown: "md",
+  md: "md",
+  python: "py",
+  py: "py",
+  rust: "rs",
+  sh: "sh",
+  shell: "sh",
+  text: "txt",
+  toml: "toml",
+  ts: "ts",
+  typescript: "ts",
+  yaml: "yml",
+  yml: "yml",
+};
+
+const resolveCodeFilename = (language: string): string => {
+  const normalized = language.trim().toLowerCase();
+  if (!normalized) {
+    return "code.txt";
+  }
+  const extension = languageExtensions[normalized];
+  if (extension) {
+    return `code.${extension}`;
+  }
+  const safeExtension = normalized.replace(/[^a-z0-9-]/g, "");
+  return `code.${safeExtension || "txt"}`;
+};
 
 // Highlighter cache (singleton per language)
 const highlighterCache = new Map<
@@ -447,7 +486,10 @@ export const CodeBlock = ({
   children,
   ...props
 }: CodeBlockProps) => {
-  const contextValue = useMemo(() => ({ code, compact }), [code, compact]);
+  const contextValue = useMemo(
+    () => ({ code, compact, language }),
+    [code, compact, language]
+  );
 
   return (
     <CodeBlockContext.Provider value={contextValue}>
@@ -481,11 +523,13 @@ export const CodeBlockCopyButton = ({
   timeout = 2000,
   children,
   className,
+  disabled,
   ...props
 }: CodeBlockCopyButtonProps) => {
   const [isCopied, setIsCopied] = useState(false);
   const timeoutRef = useRef<number>(0);
   const { code, compact } = useContext(CodeBlockContext);
+  const isDisabled = disabled || code.trim().length === 0;
 
   const copyToClipboard = useCallback(async () => {
     if (typeof window === "undefined" || !navigator?.clipboard?.writeText) {
@@ -519,13 +563,73 @@ export const CodeBlockCopyButton = ({
 
   return (
     <Button
-      className={cn(compact && "size-6", "shrink-0", className)}
+      className={cn(
+        compact && "size-5 border-0 bg-transparent shadow-none",
+        "shrink-0",
+        className
+      )}
+      disabled={isDisabled}
       onClick={copyToClipboard}
+      aria-label={isCopied ? "Copied code" : "Copy code"}
       size={compact ? "icon-sm" : "icon"}
+      title={isCopied ? "Copied code" : "Copy code"}
       variant="ghost"
       {...props}
     >
-      {children ?? <Icon size={compact ? 13 : 14} />}
+      {children ?? <Icon size={compact ? 11 : 14} />}
+    </Button>
+  );
+};
+
+export type CodeBlockDownloadButtonProps = ComponentProps<typeof Button> & {
+  onDownload?: () => void;
+  onError?: (error: Error) => void;
+};
+
+export const CodeBlockDownloadButton = ({
+  onDownload,
+  onError,
+  children,
+  className,
+  disabled,
+  ...props
+}: CodeBlockDownloadButtonProps) => {
+  const { code, compact, language } = useContext(CodeBlockContext);
+  const isDisabled = disabled || code.trim().length === 0;
+
+  const downloadCode = useCallback(() => {
+    try {
+      const blob = new Blob([code], { type: "text/plain;charset=utf-8" });
+      const url = window.URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = resolveCodeFilename(language);
+      window.document.body.append(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      onDownload?.();
+    } catch (error) {
+      onError?.(error as Error);
+    }
+  }, [code, language, onDownload, onError]);
+
+  return (
+    <Button
+      className={cn(
+        compact && "size-5 border-0 bg-transparent shadow-none",
+        "shrink-0",
+        className
+      )}
+      disabled={isDisabled}
+      onClick={downloadCode}
+      aria-label="Download code"
+      size={compact ? "icon-sm" : "icon"}
+      title="Download code"
+      variant="ghost"
+      {...props}
+    >
+      {children ?? <DownloadIcon size={compact ? 11 : 14} />}
     </Button>
   );
 };

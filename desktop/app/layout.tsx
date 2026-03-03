@@ -5,7 +5,7 @@ import { AppLayout } from "@/components/layouts";
 
 export const metadata: Metadata = {
   title: "ArgusX",
-  description: "ArgusX Desktop Application",
+  description: "ArgusX桌面应用 - AI Agent管理平台",
 };
 
 const themeInitScript = `
@@ -49,7 +49,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="zh-CN" suppressHydrationWarning>
       <body className="antialiased">
         <Script id="argusx-theme-init" strategy="beforeInteractive">
           {themeInitScript}

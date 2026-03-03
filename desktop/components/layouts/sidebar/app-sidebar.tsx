@@ -16,17 +16,17 @@ import {
 
 const navMain = [
   {
-    title: "Dashboard",
+    title: "仪表板",
     url: "/",
     icon: Home,
   },
   {
-    title: "Chat",
+    title: "对话",
     url: "/chat",
     icon: MessageSquare,
   },
   {
-    title: "Annotation",
+    title: "标注",
     url: "/annotation",
     icon: NotebookPen,
   },
@@ -44,7 +44,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     <Sidebar {...props}>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+          <SidebarGroupLabel>导航</SidebarGroupLabel>
           <SidebarMenu>
             {navMain.map((item) => (
               <SidebarMenuItem key={item.title}>

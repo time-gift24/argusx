@@ -25,7 +25,9 @@ export function SessionBadgeList() {
           onDelete={() => {
             void deleteSession(session.id);
           }}
-          onRename={(title) => updateSession(session.id, { title })}
+          onRename={(title) => {
+            void updateSession(session.id, { title });
+          }}
           session={session}
         >
           <SessionBadge

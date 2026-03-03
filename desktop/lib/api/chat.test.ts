@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getChatMessages, getChatTurnSummaries } from "@/lib/api/chat";
+import {
+  getChatMessages,
+  getChatTurnSummaries,
+  updateChatSession,
+} from "@/lib/api/chat";
 
 const { invokeMock } = vi.hoisted(() => ({
   invokeMock: vi.fn(),
@@ -46,5 +50,18 @@ describe("chat api invoke payload", () => {
 
     const [, payload] = invokeMock.mock.calls[0] as [string, Record<string, unknown>];
     expect(payload).not.toHaveProperty("session_id");
+  });
+
+  it("sends update payload with session id and title", async () => {
+    invokeMock.mockResolvedValueOnce({});
+
+    await updateChatSession("s1", { title: "Renamed" });
+
+    expect(invokeMock).toHaveBeenCalledWith("update_chat_session", {
+      payload: {
+        id: "s1",
+        title: "Renamed",
+      },
+    });
   });
 });

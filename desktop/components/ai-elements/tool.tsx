@@ -16,12 +16,21 @@ import {
   ChevronDownIcon,
   CircleIcon,
   ClockIcon,
+  FileCodeIcon,
   WrenchIcon,
   XCircleIcon,
 } from "lucide-react";
 import { isValidElement } from "react";
 
-import { CodeBlock } from "./code-block";
+import {
+  CodeBlock,
+  CodeBlockActions,
+  CodeBlockCopyButton,
+  CodeBlockDownloadButton,
+  CodeBlockFilename,
+  CodeBlockHeader,
+  CodeBlockTitle,
+} from "./code-block";
 
 export type ToolProps = ComponentProps<typeof Collapsible> & {
   compact?: boolean;
@@ -164,6 +173,41 @@ export type ToolInputProps = ComponentProps<"div"> & {
   compact?: boolean;
 };
 
+const ToolCodeBlock = ({
+  code,
+  compact = false,
+  language = "json",
+}: {
+  code: string;
+  compact?: boolean;
+  language?: "json";
+}) => (
+  <CodeBlock
+    className="llm-chat-code-surface"
+    code={code}
+    compact={compact}
+    language={language}
+  >
+    <CodeBlockHeader
+      className={cn(
+        "border-0 bg-transparent",
+        compact ? "px-2 py-0.5" : "px-3 py-1.5"
+      )}
+    >
+      <CodeBlockTitle className="gap-1.5 text-muted-foreground">
+        <FileCodeIcon className={compact ? "size-3.5" : "size-4"} />
+        <CodeBlockFilename className={cn(compact ? "text-[11px]" : "text-xs")}>
+          {language}
+        </CodeBlockFilename>
+      </CodeBlockTitle>
+      <CodeBlockActions className="-my-0.5 -mr-0.5 gap-1">
+        <CodeBlockCopyButton className="size-5 border-0 bg-transparent text-muted-foreground shadow-none hover:bg-muted/60 hover:text-foreground" />
+        <CodeBlockDownloadButton className="size-5 border-0 bg-transparent text-muted-foreground shadow-none hover:bg-muted/60 hover:text-foreground" />
+      </CodeBlockActions>
+    </CodeBlockHeader>
+  </CodeBlock>
+);
+
 export const ToolInput = ({
   className,
   input,
@@ -174,9 +218,7 @@ export const ToolInput = ({
     <h4 className={cn("font-medium text-muted-foreground uppercase tracking-wide", compact ? "text-[11px]" : "text-xs")}>
       Parameters
     </h4>
-    <div className="rounded-md bg-muted/50">
-      <CodeBlock compact={compact} code={JSON.stringify(input, null, 2)} language="json" />
-    </div>
+    <ToolCodeBlock code={JSON.stringify(input, null, 2)} compact={compact} />
   </div>
 );
 
@@ -219,6 +261,7 @@ export const ToolOutput = ({
       : typeof output === "string"
         ? output
         : undefined;
+  const hasOutput = output !== undefined && output !== null && output !== "";
 
   const totalLines = outputAsCode ? lineCount(outputAsCode) : 0;
   const hasPreview =
@@ -234,7 +277,7 @@ export const ToolOutput = ({
 
   let outputNode: ReactNode = <div>{output as ReactNode}</div>;
   if (outputAsCode) {
-    outputNode = <CodeBlock compact={compact} code={displayCode} language="json" />;
+    outputNode = <ToolCodeBlock code={displayCode} compact={compact} />;
   }
 
   return (
@@ -247,20 +290,30 @@ export const ToolOutput = ({
       >
         {errorText ? "Error" : "Result"}
       </h4>
-      <div
-        className={cn(
-          "overflow-x-auto rounded-md [&_table]:w-full",
-          compact ? "text-[11px]" : "text-xs",
-          errorText
-            ? "bg-destructive/10 text-destructive"
-            : "bg-muted/50 text-foreground"
-        )}
-      >
-        {errorText && (
-          <div className={cn(compact ? "px-2 py-1.5" : "px-3 py-2")}>{errorText}</div>
-        )}
-        {outputNode}
-      </div>
+      {errorText && (
+        <div
+          className={cn(
+            "rounded-md bg-destructive/10 text-destructive",
+            compact ? "px-2 py-1.5 text-[11px]" : "px-3 py-2 text-xs"
+          )}
+        >
+          {errorText}
+        </div>
+      )}
+      {outputAsCode ? (
+        outputNode
+      ) : (
+        hasOutput && (
+          <div
+            className={cn(
+              "overflow-x-auto rounded-md bg-muted/50 text-foreground [&_table]:w-full",
+              compact ? "text-[11px]" : "text-xs"
+            )}
+          >
+            {outputNode}
+          </div>
+        )
+      )}
       {hasPreview && onToggleExpand && (
         <Button
           className={cn("h-6 px-2 text-[11px]")}

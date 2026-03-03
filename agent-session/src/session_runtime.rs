@@ -165,6 +165,35 @@ where
         self.store.get(session_id).await
     }
 
+    pub async fn rename_session(&self, session_id: &SessionId, title: String) -> Result<SessionInfo> {
+        self.ensure_session_loaded(session_id).await?;
+        let normalized_title = title.trim();
+        if normalized_title.is_empty() {
+            anyhow::bail!("session title cannot be empty");
+        }
+
+        let (previous_info, updated_info) = {
+            let mut sessions = self.sessions.write().await;
+            let state = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| anyhow!("Session not found: {session_id}"))?;
+            let previous_info = state.info.clone();
+            state.info.title = normalized_title.to_string();
+            state.info.updated_at = chrono::Utc::now().timestamp_millis();
+            (previous_info, state.info.clone())
+        };
+
+        if let Err(err) = self.store.update(&updated_info).await {
+            let mut sessions = self.sessions.write().await;
+            if let Some(state) = sessions.get_mut(session_id) {
+                state.info = previous_info;
+            }
+            return Err(err);
+        }
+
+        Ok(updated_info)
+    }
+
     pub async fn list_turn_summaries(&self, session_id: &SessionId) -> Result<Vec<TurnSummary>> {
         self.ensure_session_loaded(session_id)
             .await
@@ -197,7 +226,8 @@ where
     ) -> Result<RestoreCheckpointResult> {
         self.ensure_session_loaded(session_id).await?;
 
-        let (target_turn_id, updated_info, removed_turn_ids) = {
+        let restore_lock_turn_id = format!("__restore__{}", new_id());
+        let (target_turn_id, updated_info, previous_info, kept_turns, previous_turns, removed_turn_ids) = {
             let mut sessions = self.sessions.write().await;
             let state = sessions
                 .get_mut(session_id)
@@ -227,24 +257,65 @@ where
                 .map(|summary| summary.turn_id.clone())
                 .collect();
 
-            state.turns.truncate(target_index + 1);
-            state.current_turn_id = None;
-            state.info.status = SessionStatus::Idle;
-            state.info.updated_at = chrono::Utc::now().timestamp_millis();
+            let previous_turns = state.turns.clone();
+            let kept_turns = state.turns[..=target_index].to_vec();
+            let previous_info = state.info.clone();
+            let mut updated_info = previous_info.clone();
+            updated_info.status = SessionStatus::Idle;
+            updated_info.updated_at = chrono::Utc::now().timestamp_millis();
 
-            (target.turn_id.clone(), state.info.clone(), removed_turn_ids)
+            // Hold a restore marker while touching storage so concurrent turns fail fast as "busy".
+            state.current_turn_id = Some(restore_lock_turn_id.clone());
+
+            (
+                target.turn_id.clone(),
+                updated_info,
+                previous_info,
+                kept_turns,
+                previous_turns,
+                removed_turn_ids,
+            )
         };
 
-        let removed_on_disk = self.store.truncate_turns_after(session_id, turn_id).await?;
+        let persist_result: Result<Vec<String>> = async {
+            let removed_on_disk = self.store.truncate_turns_after(session_id, turn_id).await?;
+            if removed_turn_ids != removed_on_disk {
+                warn!(
+                    "restore_to_turn removed turn mismatch for session {} target {}: memory={:?} disk={:?}",
+                    session_id, turn_id, removed_turn_ids, removed_on_disk
+                );
+            }
+            self.store.update(&updated_info).await?;
+            Ok(removed_on_disk)
+        }
+        .await;
 
-        if removed_turn_ids != removed_on_disk {
-            warn!(
-                "restore_to_turn removed turn mismatch for session {} target {}: memory={:?} disk={:?}",
-                session_id, turn_id, removed_turn_ids, removed_on_disk
-            );
+        {
+            let mut sessions = self.sessions.write().await;
+            if let Some(state) = sessions.get_mut(session_id) {
+                if state.current_turn_id.as_deref() == Some(restore_lock_turn_id.as_str()) {
+                    match persist_result {
+                        Ok(_) => {
+                            state.turns = kept_turns;
+                            state.info = updated_info.clone();
+                            state.current_turn_id = None;
+                        }
+                        Err(_) => {
+                            state.turns = previous_turns;
+                            state.info = previous_info;
+                            state.current_turn_id = None;
+                        }
+                    }
+                } else {
+                    warn!(
+                        "restore marker lost for session {} while restoring turn {}",
+                        session_id, turn_id
+                    );
+                }
+            }
         }
 
-        self.store.update(&updated_info).await?;
+        let removed_on_disk = persist_result?;
 
         Ok(RestoreCheckpointResult {
             restored_turn_id: target_turn_id,
@@ -588,6 +659,7 @@ mod tests {
     use futures::{stream, StreamExt};
     use tempfile::TempDir;
     use tokio::sync::Mutex;
+    use crate::storage::SessionStore;
 
     // Dummy implementations for testing
     struct MockModel;
@@ -595,6 +667,17 @@ mod tests {
         requests: Arc<Mutex<Vec<ModelRequest>>>,
     }
     struct MockTools;
+    struct FailingTruncateStore {
+        inner: FileSessionStore,
+    }
+
+    impl FailingTruncateStore {
+        fn new(base_path: PathBuf) -> Self {
+            Self {
+                inner: FileSessionStore::new(base_path),
+            }
+        }
+    }
 
     #[async_trait]
     impl agent_core::LanguageModel for MockModel {
@@ -654,6 +737,81 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl SessionStore for FailingTruncateStore {
+        async fn create(&self, info: &SessionInfo) -> Result<()> {
+            self.inner.create(info).await
+        }
+
+        async fn get(&self, session_id: &str) -> Result<Option<SessionInfo>> {
+            self.inner.get(session_id).await
+        }
+
+        async fn update(&self, info: &SessionInfo) -> Result<()> {
+            self.inner.update(info).await
+        }
+
+        async fn delete(&self, session_id: &str) -> Result<()> {
+            self.inner.delete(session_id).await
+        }
+
+        async fn list(&self, filter: SessionFilter) -> Result<Vec<SessionInfo>> {
+            self.inner.list(filter).await
+        }
+    }
+
+    #[async_trait]
+    impl SessionArtifactStore for FailingTruncateStore {
+        async fn save_turn_context(&self, context: &TurnContext) -> Result<()> {
+            self.inner.save_turn_context(context).await
+        }
+
+        async fn save_turn_summary(&self, session_id: &str, summary: &TurnSummary) -> Result<()> {
+            self.inner.save_turn_summary(session_id, summary).await
+        }
+
+        async fn list_turn_summaries(&self, session_id: &str) -> Result<Vec<TurnSummary>> {
+            self.inner.list_turn_summaries(session_id).await
+        }
+
+        async fn load_latest_turn_summary(&self, session_id: &str) -> Result<Option<TurnSummary>> {
+            self.inner.load_latest_turn_summary(session_id).await
+        }
+
+        async fn delete_turn_artifacts(&self, session_id: &str, turn_id: &str) -> Result<()> {
+            self.inner.delete_turn_artifacts(session_id, turn_id).await
+        }
+
+        async fn truncate_turns_after(
+            &self,
+            _session_id: &str,
+            _restored_turn_id: &str,
+        ) -> Result<Vec<String>> {
+            anyhow::bail!("injected truncate failure")
+        }
+
+        async fn save_turn_transcript(
+            &self,
+            session_id: &str,
+            turn_id: &str,
+            items: &[TranscriptItem],
+        ) -> Result<()> {
+            self.inner.save_turn_transcript(session_id, turn_id, items).await
+        }
+
+        async fn load_turn_transcript(
+            &self,
+            session_id: &str,
+            turn_id: &str,
+        ) -> Result<Vec<TranscriptItem>> {
+            self.inner.load_turn_transcript(session_id, turn_id).await
+        }
+
+        async fn find_session_id_by_turn_id(&self, turn_id: &str) -> Result<Option<String>> {
+            self.inner.find_session_id_by_turn_id(turn_id).await
+        }
+    }
+
     #[tokio::test]
     async fn test_create_session() {
         let temp_dir = TempDir::new().unwrap();
@@ -693,6 +851,33 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(sessions.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_rename_session_persists_to_store() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let runtime = SessionRuntime::new(
+            temp_dir.path().to_path_buf(),
+            Arc::new(MockModel),
+            Arc::new(MockTools),
+        );
+
+        let session_id = runtime
+            .create_session(None, Some("Before".into()))
+            .await
+            .expect("create session");
+        let updated = runtime
+            .rename_session(&session_id, "After".into())
+            .await
+            .expect("rename session");
+        assert_eq!(updated.title, "After");
+
+        let reloaded = runtime
+            .get_session(&session_id)
+            .await
+            .expect("load session")
+            .expect("session exists");
+        assert_eq!(reloaded.title, "After");
     }
 
     #[tokio::test]
@@ -994,6 +1179,69 @@ mod tests {
         assert_eq!(persisted.len(), 2);
         assert_eq!(persisted[0].turn_id, "t1");
         assert_eq!(persisted[1].turn_id, "t2");
+    }
+
+    #[tokio::test]
+    async fn restore_to_turn_rolls_back_memory_when_storage_truncate_fails() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let store = Arc::new(FailingTruncateStore::new(temp_dir.path().to_path_buf()));
+        let runtime = SessionRuntime::with_store(store, Arc::new(MockModel), Arc::new(MockTools));
+
+        let session_id = runtime
+            .create_session(None, Some("Restore Rollback".into()))
+            .await
+            .expect("create session");
+
+        let summaries = vec![
+            TurnSummary {
+                turn_id: "t1".into(),
+                epoch: 0,
+                started_at: 1,
+                ended_at: Some(11),
+                status: TurnStatus::Done,
+                final_message: Some("one".into()),
+                tool_calls_count: 0,
+                input_tokens: 1,
+                output_tokens: 1,
+            },
+            TurnSummary {
+                turn_id: "t2".into(),
+                epoch: 0,
+                started_at: 2,
+                ended_at: Some(12),
+                status: TurnStatus::Done,
+                final_message: Some("two".into()),
+                tool_calls_count: 0,
+                input_tokens: 1,
+                output_tokens: 1,
+            },
+            TurnSummary {
+                turn_id: "t3".into(),
+                epoch: 0,
+                started_at: 3,
+                ended_at: Some(13),
+                status: TurnStatus::Done,
+                final_message: Some("three".into()),
+                tool_calls_count: 0,
+                input_tokens: 1,
+                output_tokens: 1,
+            },
+        ];
+        seed_turn_state_and_artifacts(&runtime, &session_id, &summaries).await;
+
+        let err = runtime
+            .restore_to_turn(&session_id, &"t2".to_string())
+            .await
+            .expect_err("restore should fail");
+        assert!(err.to_string().contains("injected truncate failure"));
+
+        let sessions = runtime.sessions.read().await;
+        let state = sessions.get(&session_id).expect("session state exists");
+        assert_eq!(state.turns.len(), 3);
+        assert_eq!(state.turns[0].turn_id, "t1");
+        assert_eq!(state.turns[1].turn_id, "t2");
+        assert_eq!(state.turns[2].turn_id, "t3");
+        assert!(state.current_turn_id.is_none());
     }
 
     async fn seed_turn_state_and_artifacts(

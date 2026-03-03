@@ -54,9 +54,9 @@ export function ConversationView({ sessionId }: ConversationViewProps) {
       <ConversationContent className="mx-auto flex max-w-3xl gap-4 px-4 pb-8 pt-4">
         {timeline.length === 0 ? (
           <ConversationEmptyState
-            description="Send a message to start the conversation"
+            description="发送消息开始对话"
             icon={<BotIcon className="size-12" />}
-            title="No messages yet"
+            title="暂无消息"
           />
         ) : (
           timeline.map((item) =>
@@ -69,7 +69,7 @@ export function ConversationView({ sessionId }: ConversationViewProps) {
                 key={item.message.id}
               >
                 {item.message.role === "assistant" ? (
-                  <MessageResponse className="text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
+                  <MessageResponse className="llm-chat-markdown text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
                     {item.message.content}
                   </MessageResponse>
                 ) : (

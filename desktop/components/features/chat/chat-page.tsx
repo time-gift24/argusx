@@ -85,7 +85,7 @@ export function ChatPage() {
           variant="outline"
         >
           <HistoryIcon className="mr-1 size-4" />
-          Full Info
+          完整信息
         </Button>
       </div>
       <div className="absolute right-3 top-3 z-50">
@@ -110,7 +110,7 @@ export function ChatPage() {
             variant="outline"
           >
             <Settings2Icon className="size-4" />
-            <span className="sr-only">Open runtime config</span>
+            <span className="sr-only">打开运行时配置</span>
           </Button>
         </div>
       </div>
@@ -123,7 +123,7 @@ export function ChatPage() {
           <ConversationView sessionId={currentSession.id} />
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
-            Select or create a chat session
+            选择或创建对话会话
           </div>
         )}
       </div>

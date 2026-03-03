@@ -9,7 +9,7 @@ export function ThemeToggle() {
   const displayTheme = mounted ? theme : "light";
 
   const ariaLabel =
-    displayTheme === "dark" ? "Switch to light" : "Switch to dark";
+    displayTheme === "dark" ? "切换到浅色" : "切换到深色";
 
   return (
     <Button

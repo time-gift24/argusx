@@ -110,9 +110,9 @@ export function ChatRuntimeConfigDialog({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>LLM Runtime Configuration</DialogTitle>
+          <DialogTitle>LLM运行时配置</DialogTitle>
           <DialogDescription>
-            Configure provider API keys, base URLs, models, and custom headers. API keys are encrypted at rest in local SQLite.
+            配置提供商API密钥、基础URL、模型和自定义请求头。API密钥在本地SQLite中加密存储。
           </DialogDescription>
         </DialogHeader>
 
@@ -134,7 +134,7 @@ export function ChatRuntimeConfigDialog({
             return (
               <TabsContent className="space-y-4" key={provider.id} value={provider.id}>
                 <div className="grid gap-2">
-                  <Label htmlFor={`${provider.id}-api-key`}>API Key</Label>
+                  <Label htmlFor={`${provider.id}-api-key`}>API密钥</Label>
                   <Input
                     id={`${provider.id}-api-key`}
                     onChange={(event) =>
@@ -150,7 +150,7 @@ export function ChatRuntimeConfigDialog({
                 </div>
 
                 <div className="grid gap-2">
-                  <Label htmlFor={`${provider.id}-base-url`}>Base URL</Label>
+                  <Label htmlFor={`${provider.id}-base-url`}>基础URL</Label>
                   <Input
                     id={`${provider.id}-base-url`}
                     onChange={(event) =>
@@ -166,7 +166,7 @@ export function ChatRuntimeConfigDialog({
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label>Models</Label>
+                    <Label>模型</Label>
                     <Button
                       onClick={() =>
                         patchProvider(provider.id, (current) => ({
@@ -179,12 +179,12 @@ export function ChatRuntimeConfigDialog({
                       variant="outline"
                     >
                       <PlusIcon className="size-3.5" />
-                      Add
+                      添加
                     </Button>
                   </div>
                   <div className="space-y-1.5">
                     {cfg.models.length === 0 ? (
-                      <p className="text-muted-foreground text-xs">At least one model is required.</p>
+                      <p className="text-muted-foreground text-xs">至少需要一个模型。</p>
                     ) : null}
                     {(cfg.models.length === 0 ? [""] : cfg.models).map((model, index) => (
                       <div className="flex items-center gap-2" key={`${provider.id}-model-${index}`}>
@@ -219,7 +219,7 @@ export function ChatRuntimeConfigDialog({
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label>Custom Headers</Label>
+                    <Label>自定义请求头</Label>
                     <Button
                       onClick={() =>
                         patchProvider(provider.id, (current) => ({
@@ -232,12 +232,12 @@ export function ChatRuntimeConfigDialog({
                       variant="outline"
                     >
                       <PlusIcon className="size-3.5" />
-                      Add
+                      添加
                     </Button>
                   </div>
                   <div className="space-y-1.5">
                     {cfg.headers.length === 0 ? (
-                      <p className="text-muted-foreground text-xs">Optional.</p>
+                      <p className="text-muted-foreground text-xs">可选。</p>
                     ) : null}
                     {cfg.headers.map((header, index) => (
                       <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2" key={`${provider.id}-header-${index}`}>
@@ -249,7 +249,7 @@ export function ChatRuntimeConfigDialog({
                               return { ...current, headers: next };
                             })
                           }
-                          placeholder="Header Key"
+                          placeholder="请求头名称"
                           value={header.key}
                         />
                         <Input
@@ -260,7 +260,7 @@ export function ChatRuntimeConfigDialog({
                               return { ...current, headers: next };
                             })
                           }
-                          placeholder="Header Value"
+                          placeholder="请求头值"
                           value={header.value}
                         />
                         <Button
@@ -296,10 +296,10 @@ export function ChatRuntimeConfigDialog({
             variant="ghost"
             disabled={loading}
           >
-            Clear Stored Credentials
+            清除存储的凭据
           </Button>
           <Button onClick={handleSave} type="button" disabled={loading}>
-            Save Runtime Config
+            保存运行时配置
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -299,8 +299,8 @@ export function ChatPromptInput() {
             disabled={!hasAvailableModels}
             placeholder={
               hasAvailableModels
-                ? "Send a message..."
-                : "Configure provider models to enable chat"
+                ? "发送消息..."
+                : "配置提供商模型以启用对话"
             }
           />
         </PromptInputBody>
@@ -320,7 +320,7 @@ export function ChatPromptInput() {
               disabled={!hasAvailableModels}
             >
               <SearchIcon size={16} />
-              <span>Search</span>
+              <span>搜索</span>
             </PromptInputButton>
             <ModelSelector
               onOpenChange={setModelSelectorOpen}
@@ -343,15 +343,15 @@ export function ChatPromptInput() {
                   )}
                   {!selectedOption && (
                     <ModelSelectorName className="max-w-44 text-destructive">
-                      No available models
+                      无可用模型
                     </ModelSelectorName>
                   )}
                 </PromptInputButton>
               </ModelSelectorTrigger>
               <ModelSelectorContent>
-                <ModelSelectorInput placeholder="Search models..." />
+                <ModelSelectorInput placeholder="搜索模型..." />
                 <ModelSelectorList>
-                  <ModelSelectorEmpty>No models found.</ModelSelectorEmpty>
+                  <ModelSelectorEmpty>未找到模型。</ModelSelectorEmpty>
                   {groupedModelOptions.map(([group, options]) => (
                     <ModelSelectorGroup heading={group} key={group}>
                       {options.map((m) => (
@@ -375,7 +375,7 @@ export function ChatPromptInput() {
           />
           {!hasAvailableModels && (
             <p className="w-full text-xs text-red-500">
-              No available models. Please configure provider settings.
+              无可用模型。请配置提供商设置。
             </p>
           )}
           {runtimeConfigError && (

@@ -30,11 +30,11 @@ const statusConfig: Record<
   ChatStatus,
   { icon: React.ReactNode; label: string }
 > = {
-  "wait-input": { icon: <MessageSquareIcon className="size-3" />, label: "Ready" },
-  "await-input": { icon: <MessageSquareIcon className="size-3" />, label: "Your Turn" },
-  thinking: { icon: <Loader2Icon className="size-3 animate-spin" />, label: "Thinking" },
-  "tool-call": { icon: <WrenchIcon className="size-3" />, label: "Tool" },
-  outputing: { icon: <TypeIcon className="size-3" />, label: "Writing" },
+  "wait-input": { icon: <MessageSquareIcon className="size-3" />, label: "就绪" },
+  "await-input": { icon: <MessageSquareIcon className="size-3" />, label: "轮到您" },
+  thinking: { icon: <Loader2Icon className="size-3 animate-spin" />, label: "思考中" },
+  "tool-call": { icon: <WrenchIcon className="size-3" />, label: "工具" },
+  outputing: { icon: <TypeIcon className="size-3" />, label: "写入中" },
 };
 
 export function SessionBadge({

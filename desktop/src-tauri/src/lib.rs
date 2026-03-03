@@ -86,6 +86,13 @@ struct CancelAgentTurnPayload {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct UpdateChatSessionPayload {
+    id: String,
+    title: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RestoreTurnCheckpointPayload {
     session_id: String,
     turn_id: String,
@@ -135,14 +142,14 @@ impl ProviderAdapter for UnconfiguredAdapter {
 
     async fn chat(&self, _req: LlmRequest) -> Result<LlmResponse, LlmError> {
         Err(LlmError::InvalidRequest {
-            message: "No provider is configured".to_string(),
+            message: "未配置提供商".to_string(),
         })
     }
 
     fn chat_stream(&self, _req: LlmRequest) -> LlmChunkStream {
         Box::pin(async_stream::stream! {
             yield Err(LlmError::InvalidRequest {
-                message: "No provider is configured".to_string(),
+                message: "未配置提供商".to_string(),
             });
         })
     }
@@ -157,15 +164,15 @@ async fn create_chat_session(
         .runtime
         .create_session(None, title)
         .await
-        .map_err(|err| format!("failed to create session: {err}"))?;
+        .map_err(|err| format!("创建会话失败: {err}"))?;
 
     let Some(info) = state
         .runtime
         .get_session(&backend_session_id)
         .await
-        .map_err(|err| format!("failed to load session: {err}"))?
+        .map_err(|err| format!("加载会话失败: {err}"))?
     else {
-        return Err("failed to load just-created session".to_string());
+        return Err("加载刚创建的会话失败".to_string());
     };
 
     state
@@ -181,7 +188,10 @@ async fn create_chat_session(
 async fn list_chat_sessions(state: State<'_, AppState>) -> Result<Vec<ChatSession>, String> {
     let sessions = state
         .runtime
-        .list_sessions(SessionFilter::default())
+        .list_sessions(SessionFilter {
+            limit: None,
+            ..SessionFilter::default()
+        })
         .await
         .map_err(|err| format!("failed to list sessions: {err}"))?;
 
@@ -191,6 +201,39 @@ async fn list_chat_sessions(state: State<'_, AppState>) -> Result<Vec<ChatSessio
     }
 
     Ok(sessions.into_iter().map(chat_session_from_info).collect())
+}
+
+#[tauri::command]
+async fn update_chat_session(
+    state: State<'_, AppState>,
+    payload: UpdateChatSessionPayload,
+) -> Result<ChatSession, String> {
+    let title = payload.title.trim();
+    if title.is_empty() {
+        return Err("会话标题不能为空".to_string());
+    }
+
+    let backend_session_id = state
+        .frontend_to_backend_session
+        .read()
+        .await
+        .get(&payload.id)
+        .cloned()
+        .unwrap_or(payload.id.clone());
+
+    let info = state
+        .runtime
+        .rename_session(&backend_session_id, title.to_string())
+        .await
+        .map_err(|err| format!("更新会话失败: {err}"))?;
+
+    state
+        .frontend_to_backend_session
+        .write()
+        .await
+        .insert(payload.id, backend_session_id);
+
+    Ok(chat_session_from_info(info))
 }
 
 #[tauri::command]
@@ -207,7 +250,7 @@ async fn delete_chat_session(state: State<'_, AppState>, id: String) -> Result<(
         .runtime
         .delete_session(&backend_session_id)
         .await
-        .map_err(|err| format!("failed to delete session: {err}"))?;
+        .map_err(|err| format!("删除会话失败: {err}"))?;
 
     let mut mapping = state.frontend_to_backend_session.write().await;
     mapping.remove(&id);
@@ -245,7 +288,7 @@ async fn get_chat_messages(
     let messages = state
         .chat_repo
         .list_messages(&backend_session_id, query)
-        .map_err(|err| format!("failed to query chat messages: {err}"))?;
+        .map_err(|err| format!("查询聊天消息失败: {err}"))?;
 
     Ok(messages
         .into_iter()
@@ -276,7 +319,7 @@ async fn get_chat_turn_summaries(
         .runtime
         .list_turn_summaries(&backend_session_id)
         .await
-        .map_err(|err| format!("failed to query turn summaries: {err}"))?;
+        .map_err(|err| format!("查询轮次摘要失败: {err}"))?;
 
     Ok(summaries
         .into_iter()
@@ -364,7 +407,7 @@ async fn start_agent_turn(
         .runtime
         .run_turn(request)
         .await
-        .map_err(|err| format!("failed to run turn: {err}"))?;
+        .map_err(|err| format!("运行轮次失败: {err}"))?;
 
     spawn_stream_forwarders(
         app,
@@ -389,7 +432,7 @@ async fn cancel_agent_turn(
             Some("cancelled from desktop ui".to_string()),
         )
         .await
-        .map_err(|err| format!("failed to cancel turn {}: {err}", payload.turn_id))
+        .map_err(|err| format!("取消轮次 {} 失败: {err}", payload.turn_id))
 }
 
 #[tauri::command]
@@ -414,7 +457,7 @@ async fn restore_turn_checkpoint(
             .map_err(|err| format!("failed to resolve session by turn id: {err}"))?
         else {
             return Err(format!(
-                "turn {} was not found in any session",
+                "在任何会话中未找到轮次 {}",
                 payload.turn_id
             ));
         };
@@ -430,7 +473,7 @@ async fn restore_turn_checkpoint(
         .runtime
         .restore_to_turn(&backend_session_id, &payload.turn_id)
         .await
-        .map_err(|err| format!("failed to restore checkpoint {}: {err}", payload.turn_id))?;
+        .map_err(|err| format!("恢复检查点 {} 失败: {err}", payload.turn_id))?;
 
     Ok(RestoreTurnCheckpointResponse {
         restored_turn_id: result.restored_turn_id,
@@ -555,9 +598,15 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
     let (runtime_cfg, runtime_config_bootstrap_error) = match runtime_config_repo.load() {
         Ok(Some(config)) => (config, None),
         Ok(None) => (normalize_runtime_config(LlmRuntimeConfig::default()), None),
-        Err(RuntimeConfigRepoError::FingerprintMismatch) => (
+        Err(RuntimeConfigRepoError::FingerprintMismatch) => {
+            runtime_config_repo
+                .clear()
+                .map_err(map_runtime_config_repo_error)?;
+            (normalize_runtime_config(LlmRuntimeConfig::default()), None)
+        }
+        Err(RuntimeConfigRepoError::HostFingerprint(_)) => (
             normalize_runtime_config(LlmRuntimeConfig::default()),
-            Some(fingerprint_mismatch_user_message()),
+            Some(fingerprint_unavailable_user_message()),
         ),
         Err(err) => return Err(map_runtime_config_repo_error(err)),
     };
@@ -616,12 +665,17 @@ fn resolve_sqlite_db_path_with_override(
 }
 
 fn fingerprint_mismatch_user_message() -> String {
-    "Stored runtime credentials are bound to a different machine fingerprint. Clear stored credentials and re-enter API keys.".to_string()
+    "存储的运行时凭据绑定到不同的机器指纹。清除存储的凭据并重新输入API密钥。".to_string()
+}
+
+fn fingerprint_unavailable_user_message() -> String {
+    "无法加载加密的运行时凭据，因为此机器上无法获取主机指纹。".to_string()
 }
 
 fn map_runtime_config_repo_error(err: RuntimeConfigRepoError) -> String {
     match err {
         RuntimeConfigRepoError::FingerprintMismatch => fingerprint_mismatch_user_message(),
+        RuntimeConfigRepoError::HostFingerprint(_) => fingerprint_unavailable_user_message(),
         other => format!("runtime config persistence error: {other}"),
     }
 }
@@ -727,6 +781,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .invoke_handler(tauri::generate_handler![
             create_chat_session,
             list_chat_sessions,
+            update_chat_session,
             delete_chat_session,
             get_chat_messages,
             get_chat_turn_summaries,
@@ -745,6 +800,22 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
+
+    fn sample_runtime_config() -> LlmRuntimeConfig {
+        LlmRuntimeConfig {
+            default_provider: Some(ProviderId::Openai),
+            providers: crate::llm_runtime_config::ProviderConfigs {
+                openai: crate::llm_runtime_config::ProviderRuntimeConfig {
+                    api_key: "sk-openai-test".to_string(),
+                    base_url: "https://openai.provider.test/v1".to_string(),
+                    models: vec!["gpt-4o".to_string()],
+                    headers: vec![],
+                },
+                ..crate::llm_runtime_config::ProviderConfigs::default()
+            },
+        }
+    }
 
     #[test]
     fn fingerprint_message_is_actionable() {
@@ -754,11 +825,44 @@ mod tests {
     }
 
     #[test]
+    fn build_runtime_state_clears_mismatched_runtime_credentials() {
+        let temp = tempdir().expect("create tempdir");
+        let db_path = temp.path().join("desktop.db");
+        let repo = RuntimeConfigRepo::new(db_path.clone()).expect("create repo");
+        let config = sample_runtime_config();
+        repo.save_with_fingerprint(&config, "fp-legacy")
+            .expect("save legacy config");
+
+        let state = build_runtime_state(db_path.clone()).expect("build runtime state");
+        let bootstrap_error = tauri::async_runtime::block_on(async {
+            state.runtime_config_bootstrap_error.read().await.clone()
+        });
+        assert!(
+            bootstrap_error.is_none(),
+            "fingerprint mismatch should auto-recover instead of blocking runtime config reads"
+        );
+
+        let loaded_with_legacy_key = repo
+            .load_with_fingerprint("fp-legacy")
+            .expect("load with legacy fingerprint");
+        assert!(
+            loaded_with_legacy_key.is_none(),
+            "auto-recovery should clear stale encrypted credentials"
+        );
+    }
+
+    #[test]
     fn map_runtime_error_uses_actionable_fingerprint_message() {
         assert_eq!(
             map_runtime_config_repo_error(RuntimeConfigRepoError::FingerprintMismatch),
             fingerprint_mismatch_user_message()
         );
+    }
+
+    #[test]
+    fn fingerprint_unavailable_message_is_actionable() {
+        let message = fingerprint_unavailable_user_message();
+        assert!(message.contains("fingerprint"));
     }
 
     #[test]

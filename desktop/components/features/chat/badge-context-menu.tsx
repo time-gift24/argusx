@@ -65,14 +65,14 @@ export function BadgeContextMenu({
               setShowRenameDialog(true);
             }}
           >
-            Rename
+            重命名
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem
             className="text-destructive"
             onSelect={() => setShowDeleteDialog(true)}
           >
-            Delete
+            删除
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
@@ -81,10 +81,10 @@ export function BadgeContextMenu({
       <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Rename Session</DialogTitle>
+            <DialogTitle>重命名会话</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <Label htmlFor="title">Title</Label>
+            <Label htmlFor="title">标题</Label>
             <Input
               className="mt-2"
               id="title"
@@ -95,7 +95,7 @@ export function BadgeContextMenu({
           </div>
           <DialogFooter>
             <Button onClick={handleRename} size="sm">
-              Save
+              保存
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -105,19 +105,18 @@ export function BadgeContextMenu({
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Session?</AlertDialogTitle>
+            <AlertDialogTitle>删除会话？</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete &quot;{session.title}&quot; and all its
-              messages. This action cannot be undone.
+              这将永久删除&quot;{session.title}&quot;及其所有消息。此操作无法撤销。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground"
               onClick={onDelete}
             >
-              Delete
+              删除
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

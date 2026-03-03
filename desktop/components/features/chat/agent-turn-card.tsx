@@ -19,7 +19,7 @@ export function AgentTurnCard({ sessionId, turn }: AgentTurnCardProps) {
     <Message from="assistant">
       <div className="w-full space-y-2">
         {shouldShowSummary && (
-          <MessageResponse className="text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
+          <MessageResponse className="llm-chat-markdown text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
             {summaryText}
           </MessageResponse>
         )}
@@ -28,7 +28,7 @@ export function AgentTurnCard({ sessionId, turn }: AgentTurnCardProps) {
 
         {turn.status === "failed" || turn.status === "cancelled" ? (
           <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive text-sm">
-            {turn.error ?? "Turn failed"}
+            {turn.error ?? "轮次失败"}
           </div>
         ) : null}
       </div>

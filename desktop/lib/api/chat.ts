@@ -33,6 +33,10 @@ export interface GetChatMessagesOptions {
   limit?: number;
 }
 
+export interface UpdateChatSessionPayload {
+  title: string;
+}
+
 export type AgentStreamSource = "run" | "ui";
 
 export interface AgentEventPayload {
@@ -122,6 +126,17 @@ export async function deleteChatSession(id: string): Promise<void> {
     return await invoke("delete_chat_session", { id });
   } catch (error) {
     throw new Error(`Failed to delete chat session: ${error}`);
+  }
+}
+
+export async function updateChatSession(
+  id: string,
+  payload: UpdateChatSessionPayload
+): Promise<ChatSession> {
+  try {
+    return await invoke("update_chat_session", { payload: { id, ...payload } });
+  } catch (error) {
+    throw new Error(`Failed to update chat session: ${error}`);
   }
 }
 

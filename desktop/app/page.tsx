@@ -19,39 +19,39 @@ export default function DashboardPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-2xl">Welcome to ArgusX</CardTitle>
+              <CardTitle className="text-2xl">欢迎使用 ArgusX</CardTitle>
               <CardDescription className="mt-1">
-                Your AI Agent platform with powerful LLM chat capabilities
+                您的AI Agent平台，具备强大的LLM对话能力
               </CardDescription>
             </div>
             <Badge variant="secondary" className="flex items-center gap-1">
               <Sparkles className="h-3 w-3" />
-              AI Ready
+              AI 就绪
             </Badge>
           </div>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Get started by creating a new chat or exploring your existing conversations.
-            ArgusX provides a seamless experience for interacting with AI agents.
+            开始使用，创建新对话或探索现有对话。
+            ArgusX 提供流畅的 AI Agent 交互体验。
           </p>
         </CardContent>
       </Card>
 
       {/* Quick Actions */}
       <div>
-        <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
+        <h2 className="text-lg font-semibold mb-4">快速操作</h2>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Link href="/chat" className="block">
             <Card className="hover:bg-accent/50 transition-colors cursor-pointer h-full">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium">New Chat</CardTitle>
+                <CardTitle className="text-sm font-medium">新建对话</CardTitle>
                 <MessageCircle className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">Start</div>
+                <div className="text-2xl font-bold">开始</div>
                 <p className="text-xs text-muted-foreground">
-                  Create a new conversation
+                  创建新对话
                 </p>
               </CardContent>
             </Card>
@@ -65,33 +65,33 @@ export default function DashboardPage() {
             <CardContent>
               <div className="text-2xl font-bold">0</div>
               <p className="text-xs text-muted-foreground">
-                Active AI agents
+                活跃的AI Agent
               </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Templates</CardTitle>
+              <CardTitle className="text-sm font-medium">模板</CardTitle>
               <Zap className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">3</div>
               <p className="text-xs text-muted-foreground">
-                Pre-built templates
+                预置模板
               </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Settings</CardTitle>
+              <CardTitle className="text-sm font-medium">设置</CardTitle>
               <Settings className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">-</div>
               <p className="text-xs text-muted-foreground">
-                Configure preferences
+                配置偏好
               </p>
             </CardContent>
           </Card>
@@ -102,43 +102,43 @@ export default function DashboardPage() {
 
       {/* Stats Overview */}
       <div>
-        <h2 className="text-lg font-semibold mb-4">Overview</h2>
+        <h2 className="text-lg font-semibold mb-4">概览</h2>
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Chats</CardTitle>
+              <CardTitle className="text-sm font-medium">对话总数</CardTitle>
               <MessageCircle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">0</div>
               <p className="text-xs text-muted-foreground">
-                Conversations this month
+                本月对话数
               </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Messages</CardTitle>
+              <CardTitle className="text-sm font-medium">消息</CardTitle>
               <Brain className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">0</div>
               <p className="text-xs text-muted-foreground">
-                Total messages sent
+                发送消息总数
               </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Time</CardTitle>
+              <CardTitle className="text-sm font-medium">活跃时间</CardTitle>
               <Zap className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">0h</div>
               <p className="text-xs text-muted-foreground">
-                Time spent chatting
+                对话时长
               </p>
             </CardContent>
           </Card>
@@ -148,9 +148,9 @@ export default function DashboardPage() {
       {/* Getting Started */}
       <Card>
         <CardHeader>
-          <CardTitle>Getting Started</CardTitle>
+          <CardTitle>入门指南</CardTitle>
           <CardDescription>
-            Follow these steps to get the most out of ArgusX
+            按照以下步骤充分利用ArgusX
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -159,18 +159,18 @@ export default function DashboardPage() {
               1
             </div>
             <div className="flex-1">
-              <p className="font-medium">Start a new chat</p>
-              <p className="text-sm text-muted-foreground">Begin a conversation with an AI agent</p>
+              <p className="font-medium">开始新对话</p>
+              <p className="text-sm text-muted-foreground">与AI Agent开始对话</p>
             </div>
             <div className="flex items-center gap-2">
               <Button asChild variant="ghost" size="sm">
                 <Link href="/chat">
-                  Chat <ArrowRight className="ml-1 h-4 w-4" />
+                  对话 <ArrowRight className="ml-1 h-4 w-4" />
                 </Link>
               </Button>
               <Button asChild variant="ghost" size="sm">
                 <Link href="/annotation">
-                  Annotation <ArrowRight className="ml-1 h-4 w-4" />
+                  标注 <ArrowRight className="ml-1 h-4 w-4" />
                 </Link>
               </Button>
             </div>
@@ -181,11 +181,11 @@ export default function DashboardPage() {
               2
             </div>
             <div className="flex-1">
-              <p className="font-medium">Configure your model</p>
-              <p className="text-sm text-muted-foreground">Choose your preferred LLM provider</p>
+              <p className="font-medium">配置您的模型</p>
+              <p className="text-sm text-muted-foreground">选择您喜欢的LLM提供商</p>
             </div>
             <Button variant="ghost" size="sm" disabled>
-              Coming soon
+              即将推出
             </Button>
           </div>
           <Separator />
@@ -194,11 +194,11 @@ export default function DashboardPage() {
               3
             </div>
             <div className="flex-1">
-              <p className="font-medium">Create custom agents</p>
-              <p className="text-sm text-muted-foreground">Build specialized AI agents for your needs</p>
+              <p className="font-medium">创建自定义Agent</p>
+              <p className="text-sm text-muted-foreground">为您的需求构建专用AI Agent</p>
             </div>
             <Button variant="ghost" size="sm" disabled>
-              Coming soon
+              即将推出
             </Button>
           </div>
         </CardContent>

@@ -12,6 +12,7 @@ import {
   getChatMessages,
   getChatTurnSummaries,
   listChatSessions,
+  updateChatSession as updateChatSessionApi,
 } from "@/lib/api/chat";
 import { trimChatCacheToBudget } from "@/lib/stores/chat-cache-budget";
 import type { ToolState } from "@/types";
@@ -153,7 +154,10 @@ interface ChatState {
   loadSessionTurns: (sessionId: string) => Promise<void>;
   loadFullSessionMessages: (sessionId: string, limit?: number) => Promise<void>;
   clearSessionCache: (sessionId: string) => void;
-  updateSession: (id: string, updates: Partial<Pick<ChatSession, "title" | "color">>) => void;
+  updateSession: (
+    id: string,
+    updates: Partial<Pick<ChatSession, "title">>
+  ) => Promise<void>;
   setCurrentSession: (id: string) => void;
   addMessage: (
     sessionId: string,
@@ -183,7 +187,7 @@ interface ChatState {
   applyAgentStreamEnvelope: (envelope: AgentStreamEnvelope) => void;
 }
 
-const COLORS = ["chart-1", "chart-2", "chart-3", "chart-4", "chart-5"];
+const COLORS = ["blue", "emerald", "amber", "violet", "rose"];
 const CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
 const DEFAULT_LOAD_LIMIT = 300;
 const REASONING_CHAR_LIMIT = 24_000;
@@ -749,6 +753,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
 
       deleteSession: async (id) => {
+        const wasCurrentSession = get().currentSessionId === id;
         await deleteChatSessionApi(id);
 
         set((state) => {
@@ -778,6 +783,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
             cacheBytes: trimmed.estimatedBytes,
           };
         });
+
+        if (wasCurrentSession) {
+          const nextCurrentSessionId = get().currentSessionId;
+          if (nextCurrentSessionId) {
+            void get().loadSessionMessages(nextCurrentSessionId, {
+              range: "window_24h",
+              limit: DEFAULT_LOAD_LIMIT,
+            });
+            void get().loadSessionTurns(nextCurrentSessionId);
+          }
+        }
       },
 
       loadSessionMessages: async (sessionId, options) => {
@@ -902,10 +918,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
       },
 
-      updateSession: (id, updates) => {
+      updateSession: async (id, updates) => {
+        const nextTitle = updates.title?.trim();
+        if (!nextTitle) {
+          return;
+        }
+
+        const updated = await updateChatSessionApi(id, {
+          title: nextTitle,
+        });
+        const persisted = toStoreSession(updated);
+
         set((state) => ({
-          sessions: state.sessions.map((s) =>
-            s.id === id ? { ...s, ...updates, updatedAt: Date.now() } : s
+          sessions: state.sessions.map((session) =>
+            session.id === id
+              ? {
+                  ...session,
+                  title: persisted.title,
+                  updatedAt: persisted.updatedAt,
+                }
+              : session
           ),
         }));
       },
