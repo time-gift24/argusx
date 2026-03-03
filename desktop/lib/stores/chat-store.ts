@@ -518,6 +518,33 @@ const upsertToolCall = (
   return next;
 };
 
+const deriveTerminalTextFromToolResult = (value: unknown): string | undefined => {
+  if (typeof value === "string") {
+    return value.trim().length > 0 ? value : undefined;
+  }
+
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const stdout = typeof value.stdout === "string" ? value.stdout : "";
+  const stderr = typeof value.stderr === "string" ? value.stderr : "";
+  const merged = `${stdout}${stderr}`.trim();
+  if (merged.length > 0) {
+    return `${stdout}${stderr}`;
+  }
+
+  const textualKeys = ["output", "text", "message", "content"] as const;
+  for (const key of textualKeys) {
+    const candidate = value[key];
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+};
+
 const upsertQueueItem = (
   queue: QueueVM,
   callId: string,
@@ -1410,11 +1437,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
               isError ? "failed" : "completed"
             );
             if (!turn.terminal.output && result.output !== undefined) {
-              const output =
-                typeof result.output === "string"
-                  ? result.output
-                  : JSON.stringify(result.output, null, 2);
-              turn.terminal.output = output;
+              const terminalText = deriveTerminalTextFromToolResult(result.output);
+              if (terminalText) {
+                turn.terminal.output = terminalText;
+              }
             }
             if (!turn.terminal.output && isError && errorText) {
               turn.terminal.output = errorText;

@@ -13,8 +13,17 @@ export interface TurnProcessSectionVM {
   key: TurnProcessSectionKey;
   title: string;
   preview: string;
+  headerLabel: string;
+  headerDetail?: string;
+  compactItems?: TurnProcessCompactItemVM[];
   isStreaming: boolean;
   defaultOpen: boolean;
+}
+
+export interface TurnProcessCompactItemVM {
+  id: string;
+  label: string;
+  status: "Waiting" | "Running" | "Completed" | "Failed";
 }
 
 export interface TurnProcessMetrics {
@@ -57,6 +66,16 @@ const queueStatusLabel: Record<QueueItemVM["status"], string> = {
   running: "running",
   completed: "completed",
   failed: "failed",
+};
+
+const queueStatusDisplayLabel: Record<
+  QueueItemVM["status"],
+  TurnProcessCompactItemVM["status"]
+> = {
+  waiting: "Waiting",
+  running: "Running",
+  completed: "Completed",
+  failed: "Failed",
 };
 
 const toSingleLine = (value: string): string =>
@@ -128,6 +147,60 @@ const resolveQueueMetrics = (items: AgentTurnVM["queue"]["items"]) => {
   return metrics;
 };
 
+const toolStateToCompactStatus = (
+  state: ToolCallVM["state"]
+): TurnProcessCompactItemVM["status"] => {
+  if (state === "input-available" || state === "input-streaming") {
+    return "Running";
+  }
+  if (state === "output-error" || state === "output-denied") {
+    return "Failed";
+  }
+  if (state === "output-available" || state === "approval-responded") {
+    return "Completed";
+  }
+  return "Waiting";
+};
+
+const buildToolCompactItems = (turn: AgentTurnVM): TurnProcessCompactItemVM[] => {
+  const itemsFromQueue = [...turn.queue.items]
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map((item) => ({
+      id: item.callId,
+      label: item.toolName,
+      status: queueStatusDisplayLabel[item.status],
+    }));
+
+  if (itemsFromQueue.length > 0) {
+    return itemsFromQueue;
+  }
+
+  return [...turn.tools]
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map((tool) => ({
+      id: tool.callId,
+      label: tool.toolName,
+      status: toolStateToCompactStatus(tool.state),
+    }));
+};
+
+const buildToolsHeaderDetail = (items: TurnProcessCompactItemVM[]): string | undefined => {
+  if (items.length === 0) {
+    return undefined;
+  }
+
+  const first = items[0]?.label;
+  if (!first) {
+    return undefined;
+  }
+
+  if (items.length === 1) {
+    return first;
+  }
+
+  return `${first} +${items.length - 1}`;
+};
+
 const resolveStatus = (turn: AgentTurnVM): TurnProcessStatus => {
   if (turn.status === "failed" || turn.status === "cancelled") {
     return "failed";
@@ -177,8 +250,9 @@ export const buildTurnProcessVM = (turn: AgentTurnVM): TurnProcessVM => {
         (turn.reasoning.isStreaming
           ? "Streaming reasoning..."
           : "Reasoning captured"),
+      headerLabel: turn.reasoning.isStreaming ? "Thinking..." : "Reasoning",
       isStreaming: turn.reasoning.isStreaming,
-      defaultOpen: turn.reasoning.isStreaming,
+      defaultOpen: false,
     });
   }
 
@@ -190,12 +264,16 @@ export const buildTurnProcessVM = (turn: AgentTurnVM): TurnProcessVM => {
       key: "plan",
       title: "Plan",
       preview: `${completed}/${turn.plan.tasks.length} completed`,
+      headerLabel: turn.plan.isStreaming ? "Planning..." : "Plan",
       isStreaming: turn.plan.isStreaming,
       defaultOpen: turn.plan.isStreaming,
     });
   }
 
   if (turn.tools.length > 0 || turn.queue.items.length > 0) {
+    const compactItems = buildToolCompactItems(turn);
+    const isStreaming =
+      queue.running > 0 || queue.waiting > 0 || turn.tools.some((tool) => TOOL_RUNNING_STATES.has(tool.state));
     const latest = [...turn.queue.items]
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .at(0);
@@ -206,8 +284,11 @@ export const buildTurnProcessVM = (turn: AgentTurnVM): TurnProcessVM => {
       key: "tools",
       title: "Tools",
       preview: queuePreview,
-      isStreaming: queue.running > 0 || queue.waiting > 0,
-      defaultOpen: queue.running > 0,
+      headerLabel: isStreaming ? "Running tools..." : "Tools",
+      headerDetail: buildToolsHeaderDetail(compactItems),
+      compactItems,
+      isStreaming,
+      defaultOpen: false,
     });
   }
 
@@ -220,8 +301,10 @@ export const buildTurnProcessVM = (turn: AgentTurnVM): TurnProcessVM => {
       key: "terminal",
       title: "Terminal",
       preview: firstLine ? toPreview(firstLine, 88) : "Streaming terminal output...",
+      headerLabel: turn.terminal.isStreaming ? "Running terminal..." : "Terminal",
+      headerDetail: firstLine ? toPreview(firstLine, 64) : undefined,
       isStreaming: turn.terminal.isStreaming,
-      defaultOpen: turn.terminal.isStreaming,
+      defaultOpen: false,
     });
   }
 

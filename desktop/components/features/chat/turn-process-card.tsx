@@ -7,10 +7,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { useChatStore } from "@/lib/stores/chat-store";
 import { cn } from "@/lib/utils";
 import { ChevronDownIcon } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { TurnProcessSections } from "./turn-process-sections";
 import { buildTurnProcessVM } from "./turn-process-view-model";
@@ -33,25 +32,16 @@ const statusDotClass: Record<
 
 export function TurnProcessCard({ sessionId, turn }: TurnProcessCardProps) {
   const vm = useMemo(() => buildTurnProcessVM(turn), [turn]);
-  const turnUiState = useChatStore(
-    (state) => state.turnUiState[sessionId]?.[turn.id]
-  );
-  const setTurnProcessExpanded = useChatStore(
-    (state) => state.setTurnProcessExpanded
-  );
+  const [processExpanded, setProcessExpanded] = useState(false);
 
   if (!vm.hasProcess) {
     return null;
   }
 
-  const processExpanded = turnUiState?.processExpanded ?? false;
-
   return (
     <Collapsible
       className="overflow-hidden rounded-md border border-border/60 bg-background/40"
-      onOpenChange={(nextOpen) =>
-        setTurnProcessExpanded(sessionId, turn.id, nextOpen)
-      }
+      onOpenChange={setProcessExpanded}
       open={processExpanded}
     >
       <CollapsibleTrigger asChild>

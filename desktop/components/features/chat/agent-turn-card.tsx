@@ -5,6 +5,7 @@ import type { AgentTurnVM } from "@/lib/stores/chat-store";
 import { Message, MessageResponse } from "@/components/ai-elements/message";
 
 import { TurnProcessCard } from "./turn-process-card";
+import { sanitizeAssistantMarkdown } from "./sanitize-assistant-markdown";
 
 interface AgentTurnCardProps {
   sessionId: string;
@@ -12,7 +13,7 @@ interface AgentTurnCardProps {
 }
 
 export function AgentTurnCard({ sessionId, turn }: AgentTurnCardProps) {
-  const summaryText = turn.assistantText.trim();
+  const summaryText = sanitizeAssistantMarkdown(turn.assistantText);
   const shouldShowSummary = summaryText.length > 0;
 
   return (

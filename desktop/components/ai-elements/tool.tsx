@@ -16,7 +16,6 @@ import {
   ChevronDownIcon,
   CircleIcon,
   ClockIcon,
-  FileCodeIcon,
   WrenchIcon,
   XCircleIcon,
 } from "lucide-react";
@@ -26,11 +25,14 @@ import {
   CodeBlock,
   CodeBlockActions,
   CodeBlockCopyButton,
-  CodeBlockDownloadButton,
   CodeBlockFilename,
   CodeBlockHeader,
   CodeBlockTitle,
 } from "./code-block";
+import {
+  COLLAPSIBLE_CONTENT_ANIMATION_CLASS,
+  SURFACE_ICON_GHOST_BUTTON_CLASS,
+} from "./class-names";
 
 export type ToolProps = ComponentProps<typeof Collapsible> & {
   compact?: boolean;
@@ -40,7 +42,7 @@ export const Tool = ({ className, compact = false, ...props }: ToolProps) => (
   <Collapsible
     className={cn(
       "group not-prose w-full rounded-md border",
-      compact ? "mb-1.5 border-border/60 bg-background/50" : "mb-4",
+      compact ? "mb-1.5 border-0 bg-transparent" : "mb-4",
       className
     )}
     {...props}
@@ -160,7 +162,8 @@ export const ToolContent = ({
 }: ToolContentProps) => (
   <CollapsibleContent
     className={cn(
-      "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-popover-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
+      COLLAPSIBLE_CONTENT_ANIMATION_CLASS,
+      "text-popover-foreground",
       compact ? "space-y-2 px-2.5 py-2" : "space-y-4 p-4",
       className
     )}
@@ -183,7 +186,7 @@ const ToolCodeBlock = ({
   language?: "json";
 }) => (
   <CodeBlock
-    className="llm-chat-code-surface"
+    className="llm-chat-code-surface llm-chat-runtime-surface"
     code={code}
     compact={compact}
     language={language}
@@ -191,18 +194,18 @@ const ToolCodeBlock = ({
     <CodeBlockHeader
       className={cn(
         "border-0 bg-transparent",
-        compact ? "px-2 py-0.5" : "px-3 py-1.5"
+        compact
+          ? "px-[var(--chat-runtime-code-padding-x)] pt-[var(--chat-runtime-code-padding-y)] pb-1"
+          : "px-[var(--chat-runtime-code-padding-x)] pt-[var(--chat-runtime-code-padding-y)] pb-1"
       )}
     >
-      <CodeBlockTitle className="gap-1.5 text-muted-foreground">
-        <FileCodeIcon className={compact ? "size-3.5" : "size-4"} />
+      <CodeBlockTitle className="gap-1.5 text-[var(--chat-runtime-surface-label)]">
         <CodeBlockFilename className={cn(compact ? "text-[11px]" : "text-xs")}>
           {language}
         </CodeBlockFilename>
       </CodeBlockTitle>
-      <CodeBlockActions className="-my-0.5 -mr-0.5 gap-1">
-        <CodeBlockCopyButton className="size-5 border-0 bg-transparent text-muted-foreground shadow-none hover:bg-muted/60 hover:text-foreground" />
-        <CodeBlockDownloadButton className="size-5 border-0 bg-transparent text-muted-foreground shadow-none hover:bg-muted/60 hover:text-foreground" />
+      <CodeBlockActions className="-my-0.5 gap-1">
+        <CodeBlockCopyButton className={SURFACE_ICON_GHOST_BUTTON_CLASS} />
       </CodeBlockActions>
     </CodeBlockHeader>
   </CodeBlock>
@@ -306,7 +309,7 @@ export const ToolOutput = ({
         hasOutput && (
           <div
             className={cn(
-              "overflow-x-auto rounded-md bg-muted/50 text-foreground [&_table]:w-full",
+              "llm-chat-runtime-surface overflow-x-auto px-[var(--chat-runtime-code-padding-x)] py-[var(--chat-runtime-code-padding-y)] text-[var(--chat-runtime-surface-text)] [&_table]:w-full",
               compact ? "text-[11px]" : "text-xs"
             )}
           >

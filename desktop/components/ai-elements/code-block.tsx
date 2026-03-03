@@ -321,14 +321,16 @@ const CodeBlockBody = memo(
       <pre
         className={cn(
           "dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)] m-0",
-          compact ? "p-2 text-[11px] leading-4" : "p-3 text-[12px] leading-5",
+          compact ? "p-0 text-[12px] leading-[1.45]" : "p-0 text-[13px] leading-[1.5]",
           className
         )}
         style={preStyle}
       >
         <code
           className={cn(
-            compact ? "font-mono text-[11px] leading-4" : "font-mono text-[12px] leading-5",
+            compact
+              ? "font-mono text-[12px] leading-[1.45]"
+              : "font-mono text-[13px] leading-[1.5]",
             showLineNumbers && "[counter-increment:line_0] [counter-reset:line]"
           )}
         >
@@ -361,8 +363,7 @@ export const CodeBlockContainer = ({
 }: HTMLAttributes<HTMLDivElement> & { language: string; compact?: boolean }) => (
   <div
     className={cn(
-      "group relative w-full overflow-hidden rounded-md border bg-background text-foreground",
-      compact && "border-border/60",
+      "group llm-chat-runtime-surface relative w-full overflow-hidden text-[var(--chat-runtime-surface-text)]",
       className
     )}
     data-density={compact ? "compact" : "default"}
@@ -383,7 +384,7 @@ export const CodeBlockHeader = ({
 }: HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex items-center justify-between border-b bg-muted/80 px-3 py-2 text-muted-foreground text-xs",
+      "flex items-center justify-between border-0 bg-transparent px-[var(--chat-runtime-code-padding-x)] pt-[var(--chat-runtime-code-padding-y)] pb-1 text-[12px] text-[var(--chat-runtime-surface-label)]",
       className
     )}
     {...props}
@@ -417,10 +418,7 @@ export const CodeBlockActions = ({
   className,
   ...props
 }: HTMLAttributes<HTMLDivElement>) => (
-  <div
-    className={cn("-my-1 -mr-1 flex items-center gap-2", className)}
-    {...props}
-  >
+  <div className={cn("-my-0.5 flex items-center gap-1", className)} {...props}>
     {children}
   </div>
 );
@@ -467,7 +465,7 @@ export const CodeBlockContent = ({
   }, [code, language, rawTokens]);
 
   return (
-    <div className="relative overflow-auto">
+    <div className="relative overflow-auto px-[var(--chat-runtime-code-padding-x)] pb-[var(--chat-runtime-code-padding-y)] pt-0.5">
       <CodeBlockBody
         compact={compact}
         showLineNumbers={showLineNumbers}
@@ -528,7 +526,7 @@ export const CodeBlockCopyButton = ({
 }: CodeBlockCopyButtonProps) => {
   const [isCopied, setIsCopied] = useState(false);
   const timeoutRef = useRef<number>(0);
-  const { code, compact } = useContext(CodeBlockContext);
+  const { code } = useContext(CodeBlockContext);
   const isDisabled = disabled || code.trim().length === 0;
 
   const copyToClipboard = useCallback(async () => {
@@ -564,19 +562,18 @@ export const CodeBlockCopyButton = ({
   return (
     <Button
       className={cn(
-        compact && "size-5 border-0 bg-transparent shadow-none",
-        "shrink-0",
+        "size-6 shrink-0 border-0 bg-transparent text-[var(--chat-runtime-surface-icon)] shadow-none hover:bg-[var(--chat-runtime-surface-hover)] hover:text-[var(--chat-runtime-surface-text)]",
         className
       )}
       disabled={isDisabled}
       onClick={copyToClipboard}
       aria-label={isCopied ? "Copied code" : "Copy code"}
-      size={compact ? "icon-sm" : "icon"}
+      size="icon-sm"
       title={isCopied ? "Copied code" : "Copy code"}
       variant="ghost"
       {...props}
     >
-      {children ?? <Icon size={compact ? 11 : 14} />}
+      {children ?? <Icon size={14} />}
     </Button>
   );
 };
@@ -594,7 +591,7 @@ export const CodeBlockDownloadButton = ({
   disabled,
   ...props
 }: CodeBlockDownloadButtonProps) => {
-  const { code, compact, language } = useContext(CodeBlockContext);
+  const { code, language } = useContext(CodeBlockContext);
   const isDisabled = disabled || code.trim().length === 0;
 
   const downloadCode = useCallback(() => {
@@ -617,19 +614,18 @@ export const CodeBlockDownloadButton = ({
   return (
     <Button
       className={cn(
-        compact && "size-5 border-0 bg-transparent shadow-none",
-        "shrink-0",
+        "size-6 shrink-0 border-0 bg-transparent text-[var(--chat-runtime-surface-icon)] shadow-none hover:bg-[var(--chat-runtime-surface-hover)] hover:text-[var(--chat-runtime-surface-text)]",
         className
       )}
       disabled={isDisabled}
       onClick={downloadCode}
       aria-label="Download code"
-      size={compact ? "icon-sm" : "icon"}
+      size="icon-sm"
       title="Download code"
       variant="ghost"
       {...props}
     >
-      {children ?? <DownloadIcon size={compact ? 11 : 14} />}
+      {children ?? <DownloadIcon size={14} />}
     </Button>
   );
 };

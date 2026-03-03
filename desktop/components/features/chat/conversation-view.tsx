@@ -11,6 +11,7 @@ import {
 import { Message, MessageResponse } from "@/components/ai-elements/message";
 import { BotIcon } from "lucide-react";
 import { AgentTurnCard } from "./agent-turn-card";
+import { sanitizeAssistantMarkdown } from "./sanitize-assistant-markdown";
 import { Fragment, useMemo } from "react";
 import { TurnCheckpoint } from "./turn-checkpoint";
 
@@ -59,38 +60,54 @@ export function ConversationView({ sessionId }: ConversationViewProps) {
             title="暂无消息"
           />
         ) : (
-          timeline.map((item) =>
-            item.kind === "message" ? (
-              <Message
-                className={
-                  item.message.role === "user" ? "ml-0 justify-start" : undefined
-                }
-                from={item.message.role as "user" | "assistant" | "system"}
-                key={item.message.id}
-              >
-                {item.message.role === "assistant" ? (
-                  <MessageResponse className="llm-chat-markdown text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
-                    {item.message.content}
-                  </MessageResponse>
-                ) : (
-                  <div
-                    className={cn(
-                      "whitespace-pre-wrap text-[13px] leading-5",
-                      item.message.role === "user" &&
-                        "w-fit max-w-full rounded-lg bg-secondary/70 px-3 py-2 text-foreground"
-                    )}
-                  >
-                    {item.message.content}
-                  </div>
-                )}
-              </Message>
-            ) : (
+          timeline.map((item) => {
+            if (item.kind === "message") {
+              const assistantContent =
+                item.message.role === "assistant"
+                  ? sanitizeAssistantMarkdown(item.message.content)
+                  : item.message.content;
+
+              if (
+                item.message.role === "assistant" &&
+                assistantContent.length === 0
+              ) {
+                return null;
+              }
+
+              return (
+                <Message
+                  className={
+                    item.message.role === "user" ? "ml-0 justify-start" : undefined
+                  }
+                  from={item.message.role as "user" | "assistant" | "system"}
+                  key={item.message.id}
+                >
+                  {item.message.role === "assistant" ? (
+                    <MessageResponse className="llm-chat-markdown text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
+                      {assistantContent}
+                    </MessageResponse>
+                  ) : (
+                    <div
+                      className={cn(
+                        "whitespace-pre-wrap text-[13px] leading-5",
+                        item.message.role === "user" &&
+                          "w-fit max-w-full rounded-lg bg-secondary/70 px-3 py-2 text-foreground"
+                      )}
+                    >
+                      {assistantContent}
+                    </div>
+                  )}
+                </Message>
+              );
+            }
+
+            return (
               <Fragment key={item.turn.id}>
                 <AgentTurnCard sessionId={sessionId} turn={item.turn} />
                 <TurnCheckpoint sessionId={sessionId} turn={item.turn} />
               </Fragment>
-            )
-          )
+            );
+          })
         )}
       </ConversationContent>
     </Conversation>

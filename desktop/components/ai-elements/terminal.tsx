@@ -62,6 +62,7 @@ export const Terminal = ({
   children,
   ...props
 }: TerminalProps) => {
+  const hasCustomChildren = children !== undefined && children !== null;
   const contextValue = useMemo(
     () => ({
       autoScroll,
@@ -89,10 +90,9 @@ export const Terminal = ({
     <TerminalContext.Provider value={contextValue}>
       <div
         className={cn(
-          "flex flex-col overflow-hidden border",
-          compact
-            ? "rounded-md border-border/60 bg-muted/30 text-foreground"
-            : "rounded-lg bg-zinc-950 text-zinc-100",
+          "flex flex-col overflow-hidden",
+          !hasCustomChildren &&
+            "llm-chat-runtime-surface border bg-[var(--chat-runtime-surface-bg)] text-[var(--chat-runtime-surface-text)]",
           className
         )}
         {...props}
@@ -128,10 +128,10 @@ export const TerminalHeader = ({
   return (
     <div
       className={cn(
-        "flex items-center justify-between border-b",
+        "flex items-center justify-between",
         compact
-          ? "border-border/60 px-2 py-1"
-          : "border-zinc-800 px-3 py-1.5",
+          ? "px-[var(--chat-runtime-code-padding-x)] pt-[var(--chat-runtime-code-padding-y)] pb-1"
+          : "px-[var(--chat-runtime-code-padding-x)] pt-[var(--chat-runtime-code-padding-y)] pb-1",
         className
       )}
       {...props}
@@ -153,7 +153,9 @@ export const TerminalTitle = ({
     <div
       className={cn(
         "flex items-center gap-1.5",
-        compact ? "text-[11px] text-muted-foreground" : "text-[12px] text-zinc-400",
+        compact
+          ? "text-[12px] text-[var(--chat-runtime-surface-label)]"
+          : "text-[12px] text-[var(--chat-runtime-surface-label)]",
         className
       )}
       {...props}
@@ -181,7 +183,9 @@ export const TerminalStatus = ({
     <div
       className={cn(
         "flex items-center gap-2",
-        compact ? "text-[11px] text-muted-foreground" : "text-xs text-zinc-400",
+        compact
+          ? "text-[11px] text-[var(--chat-runtime-surface-label)]"
+          : "text-[11px] text-[var(--chat-runtime-surface-label)]",
         className
       )}
       {...props}
@@ -219,7 +223,7 @@ export const TerminalCopyButton = ({
 }: TerminalCopyButtonProps) => {
   const [isCopied, setIsCopied] = useState(false);
   const timeoutRef = useRef<number>(0);
-  const { compact, output } = useContext(TerminalContext);
+  const { output } = useContext(TerminalContext);
 
   const copyToClipboard = useCallback(async () => {
     if (typeof window === "undefined" || !navigator?.clipboard?.writeText) {
@@ -249,17 +253,15 @@ export const TerminalCopyButton = ({
   return (
     <Button
       className={cn(
-        compact
-          ? "size-6 shrink-0 text-muted-foreground hover:bg-muted hover:text-foreground"
-          : "size-7 shrink-0 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100",
+        "size-6 shrink-0 text-[var(--chat-runtime-surface-icon)] hover:bg-[var(--chat-runtime-surface-hover)] hover:text-[var(--chat-runtime-surface-text)]",
         className
       )}
       onClick={copyToClipboard}
-      size={compact ? "icon-sm" : "icon"}
+      size="icon-sm"
       variant="ghost"
       {...props}
     >
-      {children ?? <Icon size={compact ? 13 : 14} />}
+      {children ?? <Icon size={14} />}
     </Button>
   );
 };
@@ -271,7 +273,7 @@ export const TerminalClearButton = ({
   className,
   ...props
 }: TerminalClearButtonProps) => {
-  const { compact, onClear } = useContext(TerminalContext);
+  const { onClear } = useContext(TerminalContext);
 
   if (!onClear) {
     return null;
@@ -280,17 +282,15 @@ export const TerminalClearButton = ({
   return (
     <Button
       className={cn(
-        compact
-          ? "size-6 shrink-0 text-muted-foreground hover:bg-muted hover:text-foreground"
-          : "size-7 shrink-0 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100",
+        "size-6 shrink-0 text-[var(--chat-runtime-surface-icon)] hover:bg-[var(--chat-runtime-surface-hover)] hover:text-[var(--chat-runtime-surface-text)]",
         className
       )}
       onClick={onClear}
-      size={compact ? "icon-sm" : "icon"}
+      size="icon-sm"
       variant="ghost"
       {...props}
     >
-      {children ?? <Trash2Icon size={compact ? 13 : 14} />}
+      {children ?? <Trash2Icon size={14} />}
     </Button>
   );
 };
@@ -332,8 +332,8 @@ export const TerminalContent = ({
     <div
       className={cn(
         compact
-          ? "max-h-56 overflow-auto p-2 font-mono text-[11px] leading-4"
-          : "max-h-72 overflow-auto p-3 font-mono text-[12px] leading-5",
+          ? "max-h-56 overflow-auto px-[var(--chat-runtime-code-padding-x)] pb-[var(--chat-runtime-code-padding-y)] pt-0.5 font-mono text-[13px] leading-[1.5]"
+          : "max-h-72 overflow-auto px-[var(--chat-runtime-code-padding-x)] pb-[var(--chat-runtime-code-padding-y)] pt-0.5 font-mono text-[13px] leading-[1.5]",
         className
       )}
       ref={containerRef}
@@ -349,8 +349,8 @@ export const TerminalContent = ({
                 className={cn(
                   "ml-0.5 inline-block animate-pulse",
                   compact
-                    ? "h-3.5 w-1.5 bg-foreground"
-                    : "h-4 w-2 bg-zinc-100"
+                    ? "h-4 w-1.5 bg-[var(--chat-runtime-surface-text)]"
+                    : "h-4 w-1.5 bg-[var(--chat-runtime-surface-text)]"
                 )}
               />
             )}
