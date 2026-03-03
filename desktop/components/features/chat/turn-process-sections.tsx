@@ -32,6 +32,7 @@ import {
 } from "@/components/ai-elements/tool";
 import { SURFACE_ICON_GHOST_BUTTON_CLASS } from "@/components/ai-elements/class-names";
 import { STREAMDOWN_PLUGINS } from "@/components/ai-elements/streamdown-plugins";
+import { StreamdownCode } from "@/components/ai-elements/streamdown-code";
 import { useChatStore } from "@/lib/stores/chat-store";
 import { cn } from "@/lib/utils";
 import { Streamdown } from "streamdown";
@@ -42,7 +43,6 @@ import {
 } from "lucide-react";
 
 import { RuntimeProcessSection } from "./runtime-process-section";
-import { RuntimeMarkdownBlock } from "./runtime-markdown-block";
 import type {
   TurnProcessCompactItemVM,
   TurnProcessSectionVM,

@@ -22,7 +22,7 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 
-import { RuntimeMarkdownBlock } from "@/components/features/chat/runtime-markdown-block";
+import { StreamdownCode } from "./streamdown-code";
 
 import { COLLAPSIBLE_CONTENT_ANIMATION_CLASS } from "./class-names";
 import { Shimmer } from "./shimmer";
@@ -217,7 +217,7 @@ export const ReasoningContent = memo(
       {...props}
     >
       <Streamdown
-        BlockComponent={RuntimeMarkdownBlock}
+        components={{ code: StreamdownCode }}
         plugins={STREAMDOWN_PLUGINS}
         {...props}
       >

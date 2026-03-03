@@ -27,7 +27,7 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 
-import { RuntimeMarkdownBlock } from "@/components/features/chat/runtime-markdown-block";
+import { StreamdownCode } from "./streamdown-code";
 
 import { STREAMDOWN_PLUGINS } from "./streamdown-plugins";
 
@@ -323,9 +323,12 @@ export const MessageBranchPage = ({
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 export const MessageResponse = memo(
-  ({ className, BlockComponent, ...props }: MessageResponseProps) => (
+  ({ className, components, ...props }: MessageResponseProps) => (
     <Streamdown
-      BlockComponent={BlockComponent ?? RuntimeMarkdownBlock}
+      components={{
+        code: StreamdownCode,
+        ...components,
+      }}
       className={cn(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className
