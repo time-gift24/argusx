@@ -48,3 +48,4 @@ agent-tool = { path = "../../agent-tool" }
 agent-turn = { path = "../../agent-turn" }
 llm-client = { path = "../../llm-client" }
 llm-provider = { path = "../../llm-provider" }
+cookie-gateway = { path = "../../cookie-gateway" }

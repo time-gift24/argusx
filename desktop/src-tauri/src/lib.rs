@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::process::Command;
 
 use agent_core::{
     new_id, InputEnvelope, RunEventStream, Runtime, SessionMeta, TurnRequest, TurnStatus,
@@ -11,6 +12,7 @@ use agent_session::{SessionConfig, SessionFilter, SessionRuntime, SqliteSessionS
 use agent_tool::AgentToolRuntime;
 use agent_turn::adapters::bigmodel::BigModelAdapterConfig;
 use agent_turn::BigModelModelAdapter;
+use cookie_gateway::{CookieGateway, CookieStore};
 use futures::StreamExt;
 use llm_client::{LlmChunkStream, LlmClient, LlmError, LlmRequest, LlmResponse, ProviderAdapter};
 use llm_provider::anthropic::{AnthropicAdapter, AnthropicConfig};
@@ -126,6 +128,7 @@ struct AppState {
     llm_runtime_config: Arc<RwLock<LlmRuntimeConfig>>,
     runtime_config_bootstrap_error: Arc<RwLock<Option<String>>>,
     frontend_to_backend_session: Arc<RwLock<HashMap<String, String>>>,
+    cookie_gateway: Arc<CookieGateway>,
 }
 
 const SQLITE_DB_PATH_ENV: &str = "ARGUSX_DESKTOP_DB_PATH";
@@ -588,6 +591,49 @@ async fn ensure_backend_session_id(
     Ok(backend_session_id)
 }
 
+#[tauri::command]
+async fn get_cookie_opt_in(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.cookie_gateway.store().is_opted_in().await)
+}
+
+#[tauri::command]
+async fn set_cookie_opt_in(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    state.cookie_gateway.store().set_opt_in(enabled).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn open_extension_folder(app: AppHandle) -> Result<(), String> {
+    let extension_path = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("capabilities/default/extensions");
+
+    #[cfg(target_os = "macos")]
+    Command::new("open")
+        .arg(&extension_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    Command::new("explorer")
+        .arg(&extension_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "linux")]
+    Command::new("xdg-open")
+        .arg(&extension_path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
     let _ =
         open_and_bootstrap(&base_path).map_err(|err| format!("bootstrap schema failed: {err}"))?;
@@ -635,6 +681,10 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
         },
     );
 
+    // Initialize cookie gateway
+    let cookie_store = CookieStore::new();
+    let cookie_gateway = Arc::new(CookieGateway::new(cookie_store));
+
     Ok(AppState {
         runtime: Arc::new(runtime),
         model_adapter,
@@ -643,6 +693,7 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
         llm_runtime_config: Arc::new(RwLock::new(runtime_cfg)),
         runtime_config_bootstrap_error: Arc::new(RwLock::new(runtime_config_bootstrap_error)),
         frontend_to_backend_session: Arc::new(RwLock::new(HashMap::new())),
+        cookie_gateway,
     })
 }
 
@@ -769,11 +820,22 @@ fn build_llm_client_from_runtime_config(cfg: &LlmRuntimeConfig) -> Result<LlmCli
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .setup(|app| {
-            let db_path = resolve_sqlite_db_path(app.path().app_data_dir().ok());
-            if let Some(parent) = db_path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let state = build_runtime_state(db_path).map_err(std::io::Error::other)?;
+            let base_path = app
+                .path()
+                .app_data_dir()
+                .unwrap_or_else(|_| std::env::temp_dir().join("argusx-desktop-agent"))
+                .join("sessions");
+            std::fs::create_dir_all(&base_path)?;
+            let state = build_runtime_state(base_path).map_err(std::io::Error::other)?;
+
+            // Start cookie gateway server
+            let gateway = state.cookie_gateway.clone();
+            tokio::spawn(async move {
+                if let Err(e) = gateway.start().await {
+                    eprintln!("Cookie gateway error: {}", e);
+                }
+            });
+
             app.manage(state);
             Ok(())
         })
@@ -792,6 +854,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             start_agent_turn,
             cancel_agent_turn,
             restore_turn_checkpoint,
+            get_cookie_opt_in,
+            set_cookie_opt_in,
+            open_extension_folder,
         ])
         .run(tauri::generate_context!())?;
     Ok(())

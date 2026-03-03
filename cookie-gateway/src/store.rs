@@ -21,6 +21,7 @@ pub struct CookieData {
 /// Thread-safe cookie storage with domain whitelist validation
 pub struct CookieStore {
     storage: Arc<RwLock<HashMap<String, Vec<CookieData>>>>,
+    opt_in: Arc<RwLock<bool>>,
 }
 
 impl CookieStore {
@@ -28,6 +29,7 @@ impl CookieStore {
     pub fn new() -> Self {
         Self {
             storage: Arc::new(RwLock::new(HashMap::new())),
+            opt_in: Arc::new(RwLock::new(false)),
         }
     }
 
@@ -61,6 +63,14 @@ impl CookieStore {
     pub async fn get_cookies(&self, domain: &str) -> Option<Vec<CookieData>> {
         let storage = self.storage.read().await;
         storage.get(domain).cloned()
+    }
+
+    pub async fn is_opted_in(&self) -> bool {
+        *self.opt_in.read().await
+    }
+
+    pub async fn set_opt_in(&self, enabled: bool) {
+        *self.opt_in.write().await = enabled;
     }
 }
 
