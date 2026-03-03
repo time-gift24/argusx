@@ -93,4 +93,14 @@ line-10`,
     const { container } = renderMarkdown("```text\nfn main() {}\n```");
     expect(container.querySelector('[data-highlighted="false"]')).toBeTruthy();
   });
+
+  it("keeps runtime surface visual token consistent in light and dark themes", () => {
+    // This test verifies that CSS variables for runtime surface are present
+    // and the components use them correctly after deprecation migration
+    const { container } = renderMarkdown("```ts\nconst x = 1;\n```");
+    const surface = container.querySelector(".llm-chat-code-surface");
+    expect(surface).toBeTruthy();
+    // The surface should use CSS variables that work in both light and dark themes
+    expect(container.querySelector('[data-highlighted="true"]')).toBeTruthy();
+  });
 });

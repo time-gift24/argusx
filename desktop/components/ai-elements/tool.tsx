@@ -1,3 +1,7 @@
+/**
+ * @deprecated 已迁移到 components/ai/tool.tsx
+ * 请使用 `import { Tool, ToolContent, ... } from "@/components/ai/tool"` 代替
+ */
 "use client";
 
 import type { DynamicToolUIPart, ToolUIPart } from "@/types";

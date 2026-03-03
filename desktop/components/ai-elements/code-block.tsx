@@ -1,3 +1,7 @@
+/**
+ * @deprecated 已迁移到 components/ai/code-block.tsx
+ * 请使用 `import { CodeBlock, CodeBlockHeader, ... } from "@/components/ai/code-block"` 代替
+ */
 "use client";
 
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";

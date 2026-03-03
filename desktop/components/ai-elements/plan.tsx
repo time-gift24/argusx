@@ -1,3 +1,7 @@
+/**
+ * @deprecated 已迁移到 components/ai/plan.tsx
+ * 请使用 `import { Plan, PlanContent, ... } from "@/components/ai/plan"` 代替
+ */
 "use client";
 
 import type { ComponentProps } from "react";

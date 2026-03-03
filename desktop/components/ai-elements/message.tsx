@@ -1,3 +1,7 @@
+/**
+ * @deprecated 已迁移到 components/ai/message.tsx
+ * 请使用 `import { Message, MessageResponse } from "@/components/ai/message"` 代替
+ */
 "use client";
 
 import type { UIMessage } from "@/types";

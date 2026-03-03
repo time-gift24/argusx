@@ -1,3 +1,7 @@
+/**
+ * @deprecated 已迁移到 components/ai/reasoning.tsx
+ * 请使用 `import { Reasoning, ReasoningContent, ... } from "@/components/ai/reasoning"` 代替
+ */
 "use client";
 
 import type { ComponentProps, ReactNode } from "react";
