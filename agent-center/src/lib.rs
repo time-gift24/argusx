@@ -1,5 +1,6 @@
 pub mod error;
 pub mod core;
+pub mod permission;
 
 pub struct AgentCenter;
 pub struct AgentCenterBuilder;
