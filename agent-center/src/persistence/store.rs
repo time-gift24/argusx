@@ -1,6 +1,7 @@
 use anyhow::Result;
 use rusqlite::Connection;
 use std::path::Path;
+use std::sync::Mutex;
 
 use super::migrations;
 use super::models::ThreadRow;
@@ -12,20 +13,21 @@ pub trait ThreadStore {
 }
 
 pub struct SqliteThreadStore {
-    conn: Connection,
+    conn: Mutex<Connection>,
 }
 
 impl SqliteThreadStore {
     pub fn new(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
         migrations::run_migrations(&conn)?;
-        Ok(Self { conn })
+        Ok(Self { conn: Mutex::new(conn) })
     }
 }
 
 impl ThreadStore for SqliteThreadStore {
     fn upsert_thread(&self, thread: &ThreadRow) -> Result<()> {
-        self.conn.execute(
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
             r#"
             INSERT INTO threads (id, parent_thread_id, status, agent_name, created_at)
             VALUES (?1, ?2, ?3, ?4, ?5)
@@ -45,7 +47,8 @@ impl ThreadStore for SqliteThreadStore {
     }
 
     fn get_by_dedup(&self, parent_thread_id: &str, key: &str) -> Result<Option<String>> {
-        let result = self.conn.query_row(
+        let conn = self.conn.lock().unwrap();
+        let result = conn.query_row(
             "SELECT thread_id FROM spawn_dedup WHERE parent_thread_id = ?1 AND key = ?2",
             rusqlite::params![parent_thread_id, key],
             |row| row.get(0),
@@ -59,7 +62,8 @@ impl ThreadStore for SqliteThreadStore {
     }
 
     fn insert_dedup(&self, parent_thread_id: &str, key: &str, thread_id: &str) -> Result<()> {
-        self.conn.execute(
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
             "INSERT OR IGNORE INTO spawn_dedup (parent_thread_id, key, thread_id) VALUES (?1, ?2, ?3)",
             rusqlite::params![parent_thread_id, key, thread_id],
         )?;

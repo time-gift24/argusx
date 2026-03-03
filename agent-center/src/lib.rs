@@ -93,7 +93,7 @@ impl AgentCenterBuilder {
 
     pub fn build(self) -> anyhow::Result<AgentCenter> {
         let db_path = self.db_path.unwrap_or_else(|| {
-            std::env::temp_dir().join("agent-center-default.db")
+            std::env::temp_dir().join(format!("agent-center-{}.db", uuid::Uuid::new_v4()))
         });
 
         let store = SqliteThreadStore::new(&db_path)?;
