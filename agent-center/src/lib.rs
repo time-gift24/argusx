@@ -1,6 +1,7 @@
 pub mod error;
 pub mod core;
 pub mod permission;
+pub mod persistence;
 
 use permission::guard::SpawnGuards;
 
