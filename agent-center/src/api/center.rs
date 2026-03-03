@@ -33,3 +33,14 @@ pub struct WaitResponse {
     pub statuses: HashMap<String, String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloseRequest {
+    pub thread_id: String,
+    pub force: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloseResponse {
+    pub final_status: String,
+}
+

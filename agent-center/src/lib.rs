@@ -57,7 +57,7 @@ impl AgentCenter {
         let thread = persistence::models::ThreadRow {
             id: thread_id.clone(),
             parent_thread_id: Some(req.parent_thread_id.clone()),
-            status: "Pending".to_string(),
+            status: "Running".to_string(),  // Spawned threads start in Running state
             agent_name: req.agent_name.clone(),
             created_at: chrono::Utc::now(),
         };
@@ -130,6 +130,61 @@ impl AgentCenter {
                 }
                 Ok(api::center::WaitResponse { timed_out: true, statuses })
             }
+        }
+    }
+
+    pub async fn close(&self, req: api::center::CloseRequest) -> anyhow::Result<api::center::CloseResponse> {
+        // Get current thread state
+        let thread = self.store.get_thread(&req.thread_id)?
+            .ok_or_else(|| anyhow::anyhow!("Thread not found: {}", req.thread_id))?;
+
+        // Parse current status
+        let current_status = self.parse_status(&thread.status);
+
+        // If already closed, return idempotently
+        if matches!(current_status, core::lifecycle::ThreadStatus::Closed) {
+            return Ok(api::center::CloseResponse {
+                final_status: "Closed".to_string(),
+            });
+        }
+
+        // Create state machine and transition
+        let mut sm = core::lifecycle::ThreadStateMachine::new(current_status);
+
+        // Transition to Closing
+        if sm.status() != core::lifecycle::ThreadStatus::Closing {
+            sm.transition_to(core::lifecycle::ThreadStatus::Closing)
+                .map_err(|e| anyhow::anyhow!("Invalid state transition: {:?}", e))?;
+        }
+
+        // Transition to Closed
+        sm.transition_to(core::lifecycle::ThreadStatus::Closed)
+            .map_err(|e| anyhow::anyhow!("Invalid state transition: {:?}", e))?;
+
+        // Persist final state
+        let updated_thread = persistence::models::ThreadRow {
+            status: "Closed".to_string(),
+            ..thread
+        };
+        self.store.upsert_thread(&updated_thread)?;
+
+        // TODO: Release reservation (Task 9 will implement proper reservation tracking)
+
+        Ok(api::center::CloseResponse {
+            final_status: "Closed".to_string(),
+        })
+    }
+
+    fn parse_status(&self, status: &str) -> core::lifecycle::ThreadStatus {
+        match status {
+            "Pending" => core::lifecycle::ThreadStatus::Pending,
+            "Running" => core::lifecycle::ThreadStatus::Running,
+            "Succeeded" => core::lifecycle::ThreadStatus::Succeeded,
+            "Failed" => core::lifecycle::ThreadStatus::Failed,
+            "Cancelled" => core::lifecycle::ThreadStatus::Cancelled,
+            "Closing" => core::lifecycle::ThreadStatus::Closing,
+            "Closed" => core::lifecycle::ThreadStatus::Closed,
+            _ => core::lifecycle::ThreadStatus::Failed, // Default to Failed for unknown states
         }
     }
 }
