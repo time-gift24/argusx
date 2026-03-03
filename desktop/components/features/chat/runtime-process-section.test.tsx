@@ -53,4 +53,17 @@ describe("RuntimeProcessSection", () => {
     expect(screen.getByText("Tools")).toBeInTheDocument();
     expect(screen.getByText("2s")).toBeInTheDocument();
   });
+
+  it("reuses runtime surface token for process and code containers", () => {
+    const { container } = render(
+      <RuntimeProcessSection
+        icon={WrenchIcon}
+        isStreaming={false}
+        label="Tools"
+      >
+        <div>tools content</div>
+      </RuntimeProcessSection>
+    );
+    expect(container.querySelectorAll(".llm-chat-runtime-surface").length).toBeGreaterThan(0);
+  });
 });
