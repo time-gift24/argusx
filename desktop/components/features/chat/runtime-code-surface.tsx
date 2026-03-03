@@ -148,15 +148,20 @@ export function RuntimeCodeSurface({
               <CodeBlockFilename>{language || "code"}</CodeBlockFilename>
             </CodeBlockTitle>
             <CodeBlockActions>
-              <CodeBlockCopyButton
+              <Button
                 aria-label={copyLabel}
                 className={cn(
                   SURFACE_ICON_GHOST_BUTTON_CLASS,
                   "[&_svg]:size-[14px]"
                 )}
                 disabled={!hasCode}
-                title={copyLabel}
-              />
+                onClick={copyToClipboard}
+                size="icon-sm"
+                type="button"
+                variant="ghost"
+              >
+                <CopyStateIcon size={14} />
+              </Button>
             </CodeBlockActions>
           </CodeBlockHeader>
           <div className="px-[var(--chat-runtime-code-padding-x)] pb-[var(--chat-runtime-code-padding-y)] font-mono [font-size:var(--chat-runtime-code-font-size)] [line-height:var(--chat-runtime-code-line-height)]">

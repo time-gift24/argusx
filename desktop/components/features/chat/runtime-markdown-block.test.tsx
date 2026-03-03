@@ -36,10 +36,7 @@ describe("RuntimeMarkdownBlock", () => {
 
     expect(container.querySelector(".llm-chat-code-surface")).toBeTruthy();
     expect(screen.getByLabelText("Copy code")).toBeInTheDocument();
-    // Check that highlighted code renders (may have data-highlighted on wrapper or element)
-    const highlighted = container.querySelector('[data-highlighted="true"]') ||
-                        container.querySelector(".llm-chat-code-surface");
-    expect(highlighted).toBeTruthy();
+    expect(container.querySelector('[data-highlighted="true"]')).toBeTruthy();
     expect(screen.queryByTestId("streamdown-default-block")).not.toBeInTheDocument();
   });
 

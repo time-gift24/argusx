@@ -6,6 +6,13 @@ describe("shouldHighlightFence", () => {
     expect(shouldHighlightFence({ isFenced: true, language: "rust" })).toBe(true);
   });
 
+  it("returns true for common language aliases", () => {
+    expect(shouldHighlightFence({ isFenced: true, language: "ts" })).toBe(true);
+    expect(shouldHighlightFence({ isFenced: true, language: "js" })).toBe(true);
+    expect(shouldHighlightFence({ isFenced: true, language: "py" })).toBe(true);
+    expect(shouldHighlightFence({ isFenced: true, language: "yml" })).toBe(true);
+  });
+
   it("returns false when language is empty", () => {
     expect(shouldHighlightFence({ isFenced: true, language: "" })).toBe(false);
   });
