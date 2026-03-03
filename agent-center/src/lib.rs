@@ -4,6 +4,7 @@ pub mod permission;
 pub mod persistence;
 pub mod config;
 pub mod api;
+pub mod tools;
 
 use permission::guard::SpawnGuards;
 use persistence::store::{SqliteThreadStore, ThreadStore, ClaimResult};
@@ -241,6 +242,15 @@ impl AgentCenter {
         }
 
         Ok(api::center::ReconcileReport { repaired_count })
+    }
+
+    /// List available tool names
+    pub fn list_tools(&self) -> Vec<String> {
+        vec![
+            tools::SpawnAgentTool::name().to_string(),
+            tools::WaitTool::name().to_string(),
+            tools::CloseAgentTool::name().to_string(),
+        ]
     }
 }
 
