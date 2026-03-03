@@ -187,6 +187,37 @@ impl AgentCenter {
             _ => core::lifecycle::ThreadStatus::Failed, // Default to Failed for unknown states
         }
     }
+
+    pub async fn reconcile(&self) -> anyhow::Result<api::center::ReconcileReport> {
+        // Get all threads from persistence
+        let threads = self.store.get_all_threads()?;
+        let mut repaired_count = 0;
+
+        for thread in threads {
+            let status = self.parse_status(&thread.status);
+
+            // Check if thread is in non-terminal state
+            let is_non_terminal = matches!(
+                status,
+                core::lifecycle::ThreadStatus::Pending
+                    | core::lifecycle::ThreadStatus::Running
+                    | core::lifecycle::ThreadStatus::Closing
+            );
+
+            if is_non_terminal {
+                // In a real implementation, we would check if the runtime is still active
+                // For now, we mark all orphan non-terminal threads as Failed
+                let updated_thread = persistence::models::ThreadRow {
+                    status: "Failed".to_string(),
+                    ..thread
+                };
+                self.store.upsert_thread(&updated_thread)?;
+                repaired_count += 1;
+            }
+        }
+
+        Ok(api::center::ReconcileReport { repaired_count })
+    }
 }
 
 impl AgentCenterBuilder {

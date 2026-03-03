@@ -44,3 +44,8 @@ pub struct CloseResponse {
     pub final_status: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReconcileReport {
+    pub repaired_count: usize,
+}
+

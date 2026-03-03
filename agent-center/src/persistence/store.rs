@@ -9,6 +9,7 @@ use super::models::ThreadRow;
 pub trait ThreadStore {
     fn upsert_thread(&self, thread: &ThreadRow) -> Result<()>;
     fn get_thread(&self, id: &str) -> Result<Option<ThreadRow>>;
+    fn get_all_threads(&self) -> Result<Vec<ThreadRow>>;
     fn get_by_dedup(&self, parent_thread_id: &str, key: &str) -> Result<Option<String>>;
     fn insert_dedup(&self, parent_thread_id: &str, key: &str, thread_id: &str) -> Result<()>;
 }
@@ -70,6 +71,27 @@ impl ThreadStore for SqliteThreadStore {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.into()),
         }
+    }
+
+    fn get_all_threads(&self) -> Result<Vec<ThreadRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, parent_thread_id, status, agent_name, created_at FROM threads"
+        )?;
+
+        let threads = stmt.query_map([], |row| {
+            Ok(ThreadRow {
+                id: row.get(0)?,
+                parent_thread_id: row.get(1)?,
+                status: row.get(2)?,
+                agent_name: row.get(3)?,
+                created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
+
+        Ok(threads)
     }
 
     fn get_by_dedup(&self, parent_thread_id: &str, key: &str) -> Result<Option<String>> {
