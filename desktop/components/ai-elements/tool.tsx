@@ -164,7 +164,9 @@ export const ToolContent = ({
     className={cn(
       COLLAPSIBLE_CONTENT_ANIMATION_CLASS,
       "text-popover-foreground",
-      compact ? "space-y-2 px-2.5 py-2" : "space-y-4 p-4",
+      compact
+        ? "space-y-1 px-[var(--chat-runtime-code-padding-x)] py-[var(--chat-runtime-code-padding-y)]"
+        : "space-y-4 p-4",
       className
     )}
     {...props}
@@ -195,12 +197,12 @@ const ToolCodeBlock = ({
       className={cn(
         "border-0 bg-transparent",
         compact
-          ? "px-[var(--chat-runtime-code-padding-x)] pt-[var(--chat-runtime-code-padding-y)] pb-1"
-          : "px-[var(--chat-runtime-code-padding-x)] pt-[var(--chat-runtime-code-padding-y)] pb-1"
+          ? "px-[var(--chat-runtime-code-padding-x)] pt-[var(--chat-runtime-code-padding-y)] pb-0"
+          : "px-[var(--chat-runtime-code-padding-x)] pt-[var(--chat-runtime-code-padding-y)] pb-0"
       )}
     >
       <CodeBlockTitle className="gap-1.5 text-[var(--chat-runtime-surface-label)]">
-        <CodeBlockFilename className={cn(compact ? "text-[11px]" : "text-xs")}>
+        <CodeBlockFilename className="[font-size:var(--chat-runtime-code-font-size)]">
           {language}
         </CodeBlockFilename>
       </CodeBlockTitle>
@@ -309,8 +311,7 @@ export const ToolOutput = ({
         hasOutput && (
           <div
             className={cn(
-              "llm-chat-runtime-surface overflow-x-auto px-[var(--chat-runtime-code-padding-x)] py-[var(--chat-runtime-code-padding-y)] text-[var(--chat-runtime-surface-text)] [&_table]:w-full",
-              compact ? "text-[11px]" : "text-xs"
+              "llm-chat-runtime-surface overflow-x-auto px-[var(--chat-runtime-code-padding-x)] py-[var(--chat-runtime-code-padding-y)] text-[var(--chat-runtime-surface-text)] [font-size:var(--chat-runtime-code-font-size)] [line-height:var(--chat-runtime-code-line-height)] [&_table]:w-full"
             )}
           >
             {outputNode}

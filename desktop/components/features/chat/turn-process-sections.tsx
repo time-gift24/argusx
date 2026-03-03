@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 
 import { RuntimeProcessSection } from "./runtime-process-section";
+import { RuntimeMarkdownBlock } from "./runtime-markdown-block";
 import type {
   TurnProcessCompactItemVM,
   TurnProcessSectionVM,
@@ -111,9 +112,9 @@ export function TurnProcessSections({
       }
       open={isSectionOpen(section)}
       detail={section.headerDetail}
-      contentClassName="llm-chat-markdown px-2.5 py-2 text-[12px] leading-5 text-foreground/90"
+      contentClassName="llm-chat-markdown px-[var(--chat-runtime-code-padding-x)] py-[var(--chat-runtime-code-padding-y)] text-[13px] leading-5 text-foreground/90"
     >
-      <Streamdown plugins={STREAMDOWN_PLUGINS}>
+      <Streamdown BlockComponent={RuntimeMarkdownBlock} plugins={STREAMDOWN_PLUGINS}>
         {turn.reasoning.text || "Streaming reasoning..."}
       </Streamdown>
     </RuntimeProcessSection>
@@ -171,7 +172,7 @@ export function TurnProcessSections({
       }
       open={isSectionOpen(section)}
       detail={section.headerDetail}
-      contentClassName="llm-chat-process-tools space-y-1.5 px-2.5 py-2 text-[var(--chat-runtime-text-secondary)]"
+      contentClassName="llm-chat-process-tools space-y-1.5 px-[var(--chat-runtime-code-padding-x)] py-[var(--chat-runtime-code-padding-y)] text-[var(--chat-runtime-text-secondary)]"
     >
       {renderCompactItems(section.compactItems)}
       {turn.tools.map((tool) => {
@@ -227,7 +228,7 @@ export function TurnProcessSections({
         }
         open={isSectionOpen(section)}
         detail={section.headerDetail}
-        contentClassName="px-2.5 py-2"
+        contentClassName="px-[var(--chat-runtime-code-padding-x)] py-[var(--chat-runtime-code-padding-y)]"
       >
         <Terminal
           className="bg-transparent"
@@ -241,9 +242,9 @@ export function TurnProcessSections({
           previewLines={8}
         >
           <div className="llm-chat-code-surface llm-chat-terminal-surface llm-chat-runtime-surface overflow-hidden">
-            <CodeBlockHeader className="border-0 bg-transparent px-[var(--chat-runtime-code-padding-x)] pt-[var(--chat-runtime-code-padding-y)] pb-1">
+            <CodeBlockHeader className="border-0 bg-transparent px-[var(--chat-runtime-code-padding-x)] pt-[var(--chat-runtime-code-padding-y)] pb-0">
               <CodeBlockTitle className="text-[var(--chat-runtime-surface-label)]">
-                <CodeBlockFilename className="text-[12px]">
+                <CodeBlockFilename className="[font-size:var(--chat-runtime-code-font-size)]">
                   terminal
                 </CodeBlockFilename>
               </CodeBlockTitle>
@@ -259,7 +260,7 @@ export function TurnProcessSections({
                 />
               </CodeBlockActions>
             </CodeBlockHeader>
-            <TerminalContent className="!max-h-56 !bg-transparent !px-[var(--chat-runtime-code-padding-x)] !pb-[var(--chat-runtime-code-padding-y)] !pt-0.5 !text-[13px] !leading-[1.5]" />
+            <TerminalContent className="!max-h-56 !bg-transparent !px-[var(--chat-runtime-code-padding-x)] !pb-[var(--chat-runtime-code-padding-y)] !pt-0 ![font-size:var(--chat-runtime-code-font-size)] ![line-height:var(--chat-runtime-code-line-height)]" />
           </div>
         </Terminal>
       </RuntimeProcessSection>

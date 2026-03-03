@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ChevronDownIcon, Code } from "lucide-react";
 
+import { COLLAPSIBLE_CONTENT_ANIMATION_CLASS } from "./class-names";
 import { getStatusBadge } from "./tool";
 
 export type SandboxRootProps = ComponentProps<typeof Collapsible>;
@@ -67,10 +68,7 @@ export const SandboxContent = ({
   ...props
 }: SandboxContentProps) => (
   <CollapsibleContent
-    className={cn(
-      "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
-      className
-    )}
+    className={cn(COLLAPSIBLE_CONTENT_ANIMATION_CLASS, className)}
     {...props}
   />
 );

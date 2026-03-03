@@ -9,10 +9,6 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
-import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
 import { BrainIcon, ChevronDownIcon } from "lucide-react";
 import {
   createContext,
@@ -26,7 +22,11 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 
+import { RuntimeMarkdownBlock } from "@/components/features/chat/runtime-markdown-block";
+
+import { COLLAPSIBLE_CONTENT_ANIMATION_CLASS } from "./class-names";
 import { Shimmer } from "./shimmer";
+import { STREAMDOWN_PLUGINS } from "./streamdown-plugins";
 
 interface ReasoningContextValue {
   isStreaming: boolean;
@@ -205,19 +205,22 @@ export type ReasoningContentProps = ComponentProps<
   children: string;
 };
 
-const streamdownPlugins = { cjk, code, math, mermaid };
-
 export const ReasoningContent = memo(
   ({ className, children, ...props }: ReasoningContentProps) => (
     <CollapsibleContent
       className={cn(
         "mt-4 text-sm",
-        "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
+        COLLAPSIBLE_CONTENT_ANIMATION_CLASS,
+        "text-muted-foreground",
         className
       )}
       {...props}
     >
-      <Streamdown plugins={streamdownPlugins} {...props}>
+      <Streamdown
+        BlockComponent={RuntimeMarkdownBlock}
+        plugins={STREAMDOWN_PLUGINS}
+        {...props}
+      >
         {children}
       </Streamdown>
     </CollapsibleContent>

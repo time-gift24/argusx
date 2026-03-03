@@ -137,6 +137,7 @@ export function ChatPromptInput() {
     addMessage,
     updateSessionStatus,
     ensureAgentTurn,
+    requestScrollToBottom,
   } = useChatStore();
   const {
     availableModels,
@@ -252,11 +253,17 @@ export function ChatPromptInput() {
         role: "user",
         content: message.text,
       });
+      requestScrollToBottom(currentSessionId);
 
       setSubmitStatus("submitted");
       updateSessionStatus(currentSessionId, "thinking");
 
       try {
+        if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+          await new Promise<void>((resolve) => {
+            window.requestAnimationFrame(() => resolve());
+          });
+        }
         const { turnId } = await startAgentTurn({
           sessionId: currentSessionId,
           input: message.text,
@@ -276,6 +283,7 @@ export function ChatPromptInput() {
       currentSessionId,
       addMessage,
       ensureAgentTurn,
+      requestScrollToBottom,
       selectedOption,
       updateSessionStatus,
     ]

@@ -10,6 +10,8 @@ import {
 import { cn } from "@/lib/utils";
 import { ChevronDownIcon, SearchIcon } from "lucide-react";
 
+import { COLLAPSIBLE_CONTENT_ANIMATION_CLASS } from "./class-names";
+
 export type TaskItemFileProps = ComponentProps<"div">;
 
 export const TaskItemFile = ({
@@ -111,7 +113,8 @@ export const TaskContent = ({
 }: TaskContentProps) => (
   <CollapsibleContent
     className={cn(
-      "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-popover-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
+      COLLAPSIBLE_CONTENT_ANIMATION_CLASS,
+      "text-popover-foreground",
       className
     )}
     {...props}

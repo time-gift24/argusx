@@ -142,6 +142,7 @@ interface ChatState {
   messages: Record<string, ChatMessage[]>;
   turns: Record<string, AgentTurnVM[]>;
   turnUiState: Record<string, Record<string, TurnUiState>>;
+  scrollToBottomSignal: Record<string, number>;
   cacheBytes: number;
 
   bootstrap: () => Promise<void>;
@@ -159,6 +160,7 @@ interface ChatState {
     updates: Partial<Pick<ChatSession, "title">>
   ) => Promise<void>;
   setCurrentSession: (id: string) => void;
+  requestScrollToBottom: (sessionId: string) => void;
   addMessage: (
     sessionId: string,
     message: Omit<ChatMessage, "id" | "sessionId" | "createdAt">
@@ -245,7 +247,7 @@ const createEmptyTurn = (
 };
 
 const createDefaultTurnUiState = (): TurnUiState => ({
-  processExpanded: false,
+  processExpanded: true,
   sectionExpanded: {},
   codeExpanded: {},
 });
@@ -688,12 +690,71 @@ const toStoreTurn = (turn: BackendChatTurnSummary): AgentTurnVM => ({
   lastSeq: 0,
 });
 
+const mergeTurnWithLocalProcess = (
+  incomingTurn: AgentTurnVM,
+  existingTurn: AgentTurnVM | undefined
+): AgentTurnVM => {
+  if (!existingTurn) {
+    return incomingTurn;
+  }
+
+  const mergedStatus =
+    existingTurn.status === "streaming" && incomingTurn.status === "started"
+      ? existingTurn.status
+      : incomingTurn.status;
+  const isFinalStatus =
+    mergedStatus === "done" ||
+    mergedStatus === "failed" ||
+    mergedStatus === "cancelled";
+  const reasoningStatus =
+    isFinalStatus &&
+    (existingTurn.reasoning.status === "started" ||
+      existingTurn.reasoning.status === "streaming")
+      ? "completed"
+      : existingTurn.reasoning.status;
+
+  return {
+    ...existingTurn,
+    id: incomingTurn.id,
+    sessionId: incomingTurn.sessionId,
+    createdAt: incomingTurn.createdAt,
+    updatedAt: Math.max(existingTurn.updatedAt, incomingTurn.updatedAt),
+    status: mergedStatus,
+    assistantText:
+      incomingTurn.assistantText.trim().length > 0
+        ? incomingTurn.assistantText
+        : existingTurn.assistantText,
+    reasoning: {
+      ...existingTurn.reasoning,
+      isStreaming: isFinalStatus ? false : existingTurn.reasoning.isStreaming,
+      status: reasoningStatus,
+      updatedAt: Math.max(existingTurn.reasoning.updatedAt, incomingTurn.updatedAt),
+    },
+    terminal: {
+      ...existingTurn.terminal,
+      isStreaming: isFinalStatus ? false : existingTurn.terminal.isStreaming,
+      updatedAt: Math.max(existingTurn.terminal.updatedAt, incomingTurn.updatedAt),
+    },
+    plan: existingTurn.plan
+      ? {
+          ...existingTurn.plan,
+          isStreaming: isFinalStatus ? false : existingTurn.plan.isStreaming,
+        }
+      : existingTurn.plan,
+    error:
+      mergedStatus === "failed" || mergedStatus === "cancelled"
+        ? existingTurn.error
+        : undefined,
+  };
+};
+
 export const useChatStore = create<ChatState>((set, get) => ({
       sessions: [],
       currentSessionId: null,
       messages: {},
       turns: {},
       turnUiState: {},
+      scrollToBottomSignal: {},
       cacheBytes: 0,
 
       bootstrap: async () => {
@@ -716,6 +777,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const turnUiState = Object.fromEntries(
             Object.entries(state.turnUiState).filter(([sessionId]) => validIds.has(sessionId))
           );
+          const scrollToBottomSignal = Object.fromEntries(
+            Object.entries(state.scrollToBottomSignal).filter(([sessionId]) =>
+              validIds.has(sessionId)
+            )
+          );
 
           const trimmed = trimChatCacheToBudget(
             sessions,
@@ -731,6 +797,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             messages: trimmed.messages,
             turns: trimmed.turns,
             turnUiState,
+            scrollToBottomSignal,
             cacheBytes: trimmed.estimatedBytes,
           };
         });
@@ -758,6 +825,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
             ...state.turnUiState,
             [nextSession.id]: state.turnUiState[nextSession.id] ?? {},
           };
+          const scrollToBottomSignal = {
+            ...state.scrollToBottomSignal,
+            [nextSession.id]: state.scrollToBottomSignal[nextSession.id] ?? 0,
+          };
           const trimmed = trimChatCacheToBudget(
             sessions,
             messages,
@@ -772,6 +843,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             messages: trimmed.messages,
             turns: trimmed.turns,
             turnUiState,
+            scrollToBottomSignal,
             cacheBytes: trimmed.estimatedBytes,
           };
         });
@@ -791,6 +863,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           delete turns[id];
           const turnUiState = { ...state.turnUiState };
           delete turnUiState[id];
+          const scrollToBottomSignal = { ...state.scrollToBottomSignal };
+          delete scrollToBottomSignal[id];
 
           const currentSessionId = state.currentSessionId === id ? (sessions[0]?.id ?? null) : state.currentSessionId;
           const trimmed = trimChatCacheToBudget(
@@ -806,6 +880,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             messages: trimmed.messages,
             turns: trimmed.turns,
             turnUiState,
+            scrollToBottomSignal,
             currentSessionId,
             cacheBytes: trimmed.estimatedBytes,
           };
@@ -884,13 +959,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         set((state) => {
           const existing = state.turns[sessionId] ?? [];
-          const incomingIds = new Set(incoming.map((turn) => turn.id));
+          const existingById = new Map(existing.map((turn) => [turn.id, turn]));
+          const mergedIncoming = incoming.map((turn) =>
+            mergeTurnWithLocalProcess(turn, existingById.get(turn.id))
+          );
+          const incomingIds = new Set(mergedIncoming.map((turn) => turn.id));
           const preservedInFlight = existing.filter(
             (turn) =>
               (turn.status === "started" || turn.status === "streaming") &&
               !incomingIds.has(turn.id)
           );
-          const nextSessionTurns = [...incoming, ...preservedInFlight].sort(
+          const nextSessionTurns = [...mergedIncoming, ...preservedInFlight].sort(
             (a, b) => a.createdAt - b.createdAt
           );
 
@@ -976,6 +1055,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
           limit: DEFAULT_LOAD_LIMIT,
         });
         void get().loadSessionTurns(id);
+      },
+
+      requestScrollToBottom: (sessionId) => {
+        set((state) => ({
+          scrollToBottomSignal: {
+            ...state.scrollToBottomSignal,
+            [sessionId]: (state.scrollToBottomSignal[sessionId] ?? 0) + 1,
+          },
+        }));
       },
 
       addMessage: (sessionId, message) => {

@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 import { BrainIcon, ChevronDownIcon, DotIcon } from "lucide-react";
 import { createContext, memo, useContext, useMemo } from "react";
 
+import { COLLAPSIBLE_CONTENT_ANIMATION_CLASS } from "./class-names";
+
 interface ChainOfThoughtContextValue {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
@@ -187,7 +189,8 @@ export const ChainOfThoughtContent = memo(
         <CollapsibleContent
           className={cn(
             "mt-2 space-y-3",
-            "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-popover-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
+            COLLAPSIBLE_CONTENT_ANIMATION_CLASS,
+            "text-popover-foreground",
             className
           )}
           {...props}

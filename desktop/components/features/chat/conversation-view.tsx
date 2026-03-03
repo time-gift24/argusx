@@ -10,9 +10,10 @@ import {
 } from "@/components/ai-elements/conversation";
 import { Message, MessageResponse } from "@/components/ai-elements/message";
 import { BotIcon } from "lucide-react";
+import { useStickToBottomContext } from "use-stick-to-bottom";
 import { AgentTurnCard } from "./agent-turn-card";
 import { sanitizeAssistantMarkdown } from "./sanitize-assistant-markdown";
-import { Fragment, useMemo } from "react";
+import { Fragment, useEffect, useMemo } from "react";
 import { TurnCheckpoint } from "./turn-checkpoint";
 
 interface ConversationViewProps {
@@ -22,11 +23,48 @@ interface ConversationViewProps {
 const EMPTY_MESSAGES: ChatMessage[] = [];
 const EMPTY_TURNS: AgentTurnVM[] = [];
 
+interface ConversationScrollSyncProps {
+  signal: number;
+}
+
+function ConversationScrollSync({ signal }: ConversationScrollSyncProps) {
+  const { scrollToBottom } = useStickToBottomContext();
+
+  useEffect(() => {
+    if (signal <= 0) {
+      return;
+    }
+
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = window.requestAnimationFrame(() => {
+      scrollToBottom();
+      raf2 = window.requestAnimationFrame(() => {
+        scrollToBottom();
+      });
+    });
+
+    return () => {
+      if (raf1) {
+        window.cancelAnimationFrame(raf1);
+      }
+      if (raf2) {
+        window.cancelAnimationFrame(raf2);
+      }
+    };
+  }, [signal, scrollToBottom]);
+
+  return null;
+}
+
 export function ConversationView({ sessionId }: ConversationViewProps) {
   const messages = useChatStore(
     (state) => state.messages[sessionId] ?? EMPTY_MESSAGES
   );
   const turns = useChatStore((state) => state.turns[sessionId] ?? EMPTY_TURNS);
+  const scrollSignal = useChatStore(
+    (state) => state.scrollToBottomSignal[sessionId] ?? 0
+  );
 
   const timeline: Array<
     | { kind: "message"; at: number; message: ChatMessage }
@@ -52,6 +90,7 @@ export function ConversationView({ sessionId }: ConversationViewProps) {
 
   return (
     <Conversation className="h-full min-h-0">
+      <ConversationScrollSync signal={scrollSignal} />
       <ConversationContent className="mx-auto flex max-w-3xl gap-4 px-4 pb-8 pt-4">
         {timeline.length === 0 ? (
           <ConversationEmptyState

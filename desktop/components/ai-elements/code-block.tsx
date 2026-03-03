@@ -321,7 +321,9 @@ const CodeBlockBody = memo(
       <pre
         className={cn(
           "dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)] m-0",
-          compact ? "p-0 text-[12px] leading-[1.45]" : "p-0 text-[13px] leading-[1.5]",
+          compact
+            ? "p-0 [font-size:var(--chat-runtime-code-font-size)] [line-height:var(--chat-runtime-code-line-height)]"
+            : "p-0 [font-size:var(--chat-runtime-code-font-size)] [line-height:var(--chat-runtime-code-line-height)]",
           className
         )}
         style={preStyle}
@@ -329,8 +331,8 @@ const CodeBlockBody = memo(
         <code
           className={cn(
             compact
-              ? "font-mono text-[12px] leading-[1.45]"
-              : "font-mono text-[13px] leading-[1.5]",
+              ? "font-mono [font-size:var(--chat-runtime-code-font-size)] [line-height:var(--chat-runtime-code-line-height)]"
+              : "font-mono [font-size:var(--chat-runtime-code-font-size)] [line-height:var(--chat-runtime-code-line-height)]",
             showLineNumbers && "[counter-increment:line_0] [counter-reset:line]"
           )}
         >
@@ -384,7 +386,7 @@ export const CodeBlockHeader = ({
 }: HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex items-center justify-between border-0 bg-transparent px-[var(--chat-runtime-code-padding-x)] pt-[var(--chat-runtime-code-padding-y)] pb-1 text-[12px] text-[var(--chat-runtime-surface-label)]",
+      "flex items-center justify-between border-0 bg-transparent px-[var(--chat-runtime-code-padding-x)] pb-0 pt-[var(--chat-runtime-code-padding-y)] text-[var(--chat-runtime-surface-label)] [font-size:var(--chat-runtime-code-font-size)]",
       className
     )}
     {...props}
@@ -465,7 +467,7 @@ export const CodeBlockContent = ({
   }, [code, language, rawTokens]);
 
   return (
-    <div className="relative overflow-auto px-[var(--chat-runtime-code-padding-x)] pb-[var(--chat-runtime-code-padding-y)] pt-0.5">
+    <div className="relative overflow-auto px-[var(--chat-runtime-code-padding-x)] pb-[var(--chat-runtime-code-padding-y)] pt-0">
       <CodeBlockBody
         compact={compact}
         showLineNumbers={showLineNumbers}

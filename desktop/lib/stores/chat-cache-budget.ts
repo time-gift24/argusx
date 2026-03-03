@@ -28,22 +28,52 @@ function estimateBytes<M extends CacheMessageLike, T extends CacheTurnLike>(
   return textEncoder.encode(payload).length;
 }
 
-function trimOldestHalf<T extends { createdAt: number }>(items: T[]): T[] {
-  if (items.length <= 1) {
-    return [];
+type EvictionCandidate =
+  | { kind: "message"; sessionId: string; createdAt: number }
+  | { kind: "turn"; sessionId: string; createdAt: number };
+
+function findOldestCandidate<M extends CacheMessageLike, T extends CacheTurnLike>(
+  messages: Record<string, M[]>,
+  turns: Record<string, T[]>
+): EvictionCandidate | undefined {
+  let oldest: EvictionCandidate | undefined;
+  const isOlder = (createdAt: number): boolean =>
+    oldest === undefined || createdAt < oldest.createdAt;
+
+  for (const [sessionId, sessionMessages] of Object.entries(messages)) {
+    const first = sessionMessages[0];
+    if (first && isOlder(first.createdAt)) {
+      oldest = {
+        kind: "message",
+        sessionId,
+        createdAt: first.createdAt,
+      };
+    }
   }
-  const sorted = [...items].sort((a, b) => a.createdAt - b.createdAt);
-  const removeCount = Math.ceil(sorted.length / 2);
-  return sorted.slice(removeCount);
+
+  for (const [sessionId, sessionTurns] of Object.entries(turns)) {
+    const first = sessionTurns[0];
+    if (first && isOlder(first.createdAt)) {
+      oldest = {
+        kind: "turn",
+        sessionId,
+        createdAt: first.createdAt,
+      };
+    }
+  }
+
+  return oldest;
 }
 
 export function trimChatCacheToBudget<M extends CacheMessageLike, T extends CacheTurnLike>(
   sessions: CacheSessionMeta[],
   messages: Record<string, M[]>,
   turns: Record<string, T[]>,
-  activeSessionId: string | null,
+  _activeSessionId: string | null,
   budgetBytes: number
 ): TrimmedCacheResult<M, T> {
+  void sessions;
+  void _activeSessionId;
   const nextMessages: Record<string, M[]> = Object.fromEntries(
     Object.entries(messages).map(([sessionId, values]) => [sessionId, [...values]])
   );
@@ -56,34 +86,18 @@ export function trimChatCacheToBudget<M extends CacheMessageLike, T extends Cach
     return { messages: nextMessages, turns: nextTurns, estimatedBytes };
   }
 
-  const evictableSessions = [...sessions]
-    .filter((session) => session.id !== activeSessionId)
-    .sort((a, b) => a.updatedAt - b.updatedAt);
-
-  for (const session of evictableSessions) {
-    nextMessages[session.id] = [];
-    nextTurns[session.id] = [];
-    estimatedBytes = estimateBytes(nextMessages, nextTurns);
-    if (estimatedBytes <= budgetBytes) {
-      return { messages: nextMessages, turns: nextTurns, estimatedBytes };
-    }
-  }
-
-  if (!activeSessionId) {
-    return { messages: nextMessages, turns: nextTurns, estimatedBytes };
-  }
-
   while (estimatedBytes > budgetBytes) {
-    const currentMessages = nextMessages[activeSessionId] ?? [];
-    const currentTurns = nextTurns[activeSessionId] ?? [];
-    if (currentMessages.length === 0 && currentTurns.length === 0) {
+    const oldest = findOldestCandidate(nextMessages, nextTurns);
+    if (!oldest) {
       break;
     }
 
-    if (currentMessages.length >= currentTurns.length && currentMessages.length > 0) {
-      nextMessages[activeSessionId] = trimOldestHalf(currentMessages);
-    } else if (currentTurns.length > 0) {
-      nextTurns[activeSessionId] = trimOldestHalf(currentTurns);
+    if (oldest.kind === "message") {
+      nextMessages[oldest.sessionId] = (nextMessages[oldest.sessionId] ?? []).slice(
+        1
+      );
+    } else {
+      nextTurns[oldest.sessionId] = (nextTurns[oldest.sessionId] ?? []).slice(1);
     }
 
     estimatedBytes = estimateBytes(nextMessages, nextTurns);
