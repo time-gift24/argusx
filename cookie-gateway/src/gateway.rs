@@ -39,6 +39,7 @@ pub fn app(state: GatewayState) -> Router {
         .route("/health", get(health))
         .route("/api/cookies", post(upload_cookies))
         .route("/api/cookies", get(get_cookies))
+        .route("/api/proxy", post(proxy::proxy_request))
         .with_state(state)
 }
 

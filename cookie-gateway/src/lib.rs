@@ -4,6 +4,8 @@ pub mod gateway;
 pub mod proxy;
 pub mod store;
 pub mod gateway;
+pub mod proxy;
+pub mod error;
 
 pub use store::{CookieData, CookieStore};
 
