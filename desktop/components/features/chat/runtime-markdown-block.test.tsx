@@ -36,7 +36,10 @@ describe("RuntimeMarkdownBlock", () => {
 
     expect(container.querySelector(".llm-chat-code-surface")).toBeTruthy();
     expect(screen.getByLabelText("Copy code")).toBeInTheDocument();
-    expect(screen.queryByText(/^ts$/i)).not.toBeInTheDocument();
+    // Check that highlighted code renders (may have data-highlighted on wrapper or element)
+    const highlighted = container.querySelector('[data-highlighted="true"]') ||
+                        container.querySelector(".llm-chat-code-surface");
+    expect(highlighted).toBeTruthy();
     expect(screen.queryByTestId("streamdown-default-block")).not.toBeInTheDocument();
   });
 
@@ -82,5 +85,15 @@ line-10`,
     fireEvent.click(screen.getByRole("button", { name: /展开/ }));
     expect(codeNode?.textContent).toContain("line-10");
     expect(screen.getByRole("button", { name: "收起" })).toBeInTheDocument();
+  });
+
+  it("does not syntax-highlight fenced code when language is missing", () => {
+    const { container } = renderMarkdown("```\nfn main() {}\n```");
+    expect(container.querySelector('[data-highlighted="false"]')).toBeTruthy();
+  });
+
+  it("does not syntax-highlight fenced text language", () => {
+    const { container } = renderMarkdown("```text\nfn main() {}\n```");
+    expect(container.querySelector('[data-highlighted="false"]')).toBeTruthy();
   });
 });

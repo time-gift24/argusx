@@ -3,6 +3,7 @@
 import type { BlockProps } from "streamdown";
 import { Block } from "streamdown";
 
+import { shouldHighlightFence } from "@/components/ai/highlight-policy";
 import { RuntimeCodeSurface } from "./runtime-code-surface";
 
 const TERMINAL_FENCE_LANGUAGES = new Set([
@@ -63,12 +64,18 @@ export function RuntimeMarkdownBlock(props: BlockProps) {
     return <Block {...props} />;
   }
 
+  const highlighted = shouldHighlightFence({
+    isFenced: true,
+    language: parsed.language,
+  });
+
   if (TERMINAL_FENCE_LANGUAGES.has(parsed.language)) {
     return (
       <RuntimeCodeSurface
         code={parsed.code}
         isIncomplete={props.isIncomplete}
         language={parsed.language}
+        highlighted={highlighted}
         mode="terminal"
       />
     );
@@ -79,6 +86,7 @@ export function RuntimeMarkdownBlock(props: BlockProps) {
       code={parsed.code}
       isIncomplete={props.isIncomplete}
       language={parsed.language}
+      highlighted={highlighted}
     />
   );
 }
