@@ -103,3 +103,41 @@ async fn default_builtins_expose_only_read_glob_grep() {
     names.sort();
     assert_eq!(names, vec!["glob", "grep", "read"]);
 }
+
+#[tokio::test]
+async fn default_runtime_rejects_shell_tool() {
+    let rt = AgentToolRuntime::default_with_builtins().await;
+    let err = rt
+        .execute_tool(
+            agent_core::ToolCall::new("shell", serde_json::json!({"command": "echo ok"})),
+            ToolExecutionContext {
+                session_id: "s1".into(),
+                turn_id: "t1".into(),
+                epoch: 0,
+                cwd: None,
+            },
+        )
+        .await
+        .expect_err("shell tool should not be available");
+    // Should be User error because tool doesn't exist
+    assert!(matches!(err.kind, ToolExecutionErrorKind::User));
+}
+
+#[tokio::test]
+async fn default_runtime_rejects_read_file_tool() {
+    let rt = AgentToolRuntime::default_with_builtins().await;
+    let err = rt
+        .execute_tool(
+            agent_core::ToolCall::new("read_file", serde_json::json!({"path": "test.txt"})),
+            ToolExecutionContext {
+                session_id: "s1".into(),
+                turn_id: "t1".into(),
+                epoch: 0,
+                cwd: None,
+            },
+        )
+        .await
+        .expect_err("read_file tool should not be available");
+    // Should be User error because tool doesn't exist
+    assert!(matches!(err.kind, ToolExecutionErrorKind::User));
+}
