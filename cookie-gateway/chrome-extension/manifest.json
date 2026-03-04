@@ -1,58 +1,18 @@
 {
   "manifest_version": 3,
-  "name": "Cookie Bridge",
-  "version": "1.0",
-  "description": "A bridge for capturing and forwarding cookies from Chrome to CookieGateway",
-  "permissions": {
-    "tabs": ["activeTab", "<all_urls>", "https://*.company.com/*", "http://localhost:3456/*"],
-    "cookies": {
-      "read": {
-        "type": "array",
-      }
-    }
+  "name": "Cookie Gateway Client",
+  "version": "1.0.0",
+  "description": "Passive Chrome extension client that executes Gateway WebSocket commands.",
+  "permissions": [
+    "cookies",
+    "alarms",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://localhost:3456/*"
   ],
   "background": {
-    "service_worker": {
-      "scripts": ["background.js"],
-      "matches": [
-        {
-          "id": 1",
-          "matches": ["http://*/*"]
-        }
-      ],
-      "actions": [
-        {
-          "type": "get_allCookies",
-          "title": "Get Cookies"
-        },
-        {
-          "id": 2",
-          "type": "button",
-          "label": "Send Cookies",
-          "action": "sendCookies"
-        },
-        {
-          "id": 3",
-          "type": "button",
-          "label": "Refresh",
-          "action": "refresh"
-        },
-        {
-          "id": 4",
-          "type": "button",
-          "label": "Open Settings",
-          "action": "openSettings"
-        }
-      ]
-    }
-  },
-  "icons": {
-     "16": {
-       "type": "image",
-       "source": "icons/cookie_16.png",
-       "size": 24
-     }
-   ]
-  ],
-  "permissions": ["tabs", "activeTab", "cookies", "http://*/*"]
+    "service_worker": "background.js"
+  }
 }

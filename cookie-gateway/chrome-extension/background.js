@@ -1,120 +1,268 @@
-// background.js - Service Worker for Cookie Bridge extension
+const GATEWAY_WS_URL = "ws://localhost:3456";
+const HEARTBEAT_INTERVAL_MS = 20_000;
+const RECONNECT_DELAY_MS = 5_000;
+const CONNECTION_CHECK_ALARM = "gateway-connection-check";
 
-const GATEWAY_URL = 'http://localhost:3456';
+let ws = null;
+let isConnecting = false;
+let heartbeatTimer = null;
+let reconnectTimer = null;
+
+function log(message, extra) {
+  if (extra === undefined) {
+    console.log(`[CookieGateway] ${message}`);
+    return;
+  }
+  console.log(`[CookieGateway] ${message}`, extra);
+}
+
+function isWebSocketOpen() {
+  return ws && ws.readyState === WebSocket.OPEN;
+}
+
+function ensureAlarm() {
+  chrome.alarms.create(CONNECTION_CHECK_ALARM, { periodInMinutes: 1 });
+}
+
+function sendJson(payload) {
+  if (!isWebSocketOpen()) {
+    return false;
+  }
+
+  ws.send(JSON.stringify(payload));
+  return true;
+}
+
+function stopHeartbeat() {
+  if (!heartbeatTimer) {
+    return;
+  }
+
+  clearInterval(heartbeatTimer);
+  heartbeatTimer = null;
+}
+
+function startHeartbeat() {
+  stopHeartbeat();
+  heartbeatTimer = setInterval(() => {
+    sendJson({
+      type: "PING",
+      timestamp: new Date().toISOString(),
+    });
+  }, HEARTBEAT_INTERVAL_MS);
+}
+
+function scheduleReconnect(reason) {
+  if (reconnectTimer) {
+    return;
+  }
+
+  log(`Scheduling reconnect in ${RECONNECT_DELAY_MS}ms`, reason);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectGateway();
+  }, RECONNECT_DELAY_MS);
+}
+
+function clearReconnectSchedule() {
+  if (!reconnectTimer) {
+    return;
+  }
+
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+}
+
+function chromeCookiesGetAll(filter) {
+  return new Promise((resolve, reject) => {
+    chrome.cookies.getAll(filter, (cookies) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(cookies || []);
+    });
+  });
+}
+
+function chromeTabsCreate(createProperties) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.create(createProperties, (tab) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(tab);
+    });
+  });
+}
+
+async function runGetCookies(command) {
+  const { domain } = command;
+  if (!domain || typeof domain !== "string") {
+    throw new Error("GET_COOKIES requires a string field: domain");
+  }
+
+  const cookies = await chromeCookiesGetAll({ domain });
+  return {
+    domain,
+    count: cookies.length,
+    cookies,
+  };
+}
+
+async function runOpenUrl(command) {
+  const { url } = command;
+  if (!url || typeof url !== "string") {
+    throw new Error("OPEN_URL requires a string field: url");
+  }
+
+  const tab = await chromeTabsCreate({ url, active: true });
+  return {
+    message: "URL opened",
+    tabId: tab?.id ?? null,
+    url: tab?.url ?? url,
+  };
+}
+
+async function handleCommand(command) {
+  const requestId = command?.requestId ?? null;
+  const action = command?.action;
+
+  try {
+    if (!action || typeof action !== "string") {
+      throw new Error("Missing action field");
+    }
+
+    let result;
+    switch (action) {
+      case "GET_COOKIES":
+        result = await runGetCookies(command);
+        break;
+      case "OPEN_URL":
+        result = await runOpenUrl(command);
+        break;
+      default:
+        throw new Error(`Unsupported action: ${action}`);
+    }
+
+    sendJson({
+      type: "ACTION_RESULT",
+      ok: true,
+      requestId,
+      action,
+      result,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    sendJson({
+      type: "ACTION_RESULT",
+      ok: false,
+      requestId,
+      action: action || "UNKNOWN",
+      error: error instanceof Error ? error.message : String(error),
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+function connectGateway() {
+  if (isWebSocketOpen() || isConnecting) {
+    return;
+  }
+
+  isConnecting = true;
+  log(`Connecting to ${GATEWAY_WS_URL}`);
+
+  const nextWs = new WebSocket(GATEWAY_WS_URL);
+  ws = nextWs;
+
+  nextWs.onopen = () => {
+    isConnecting = false;
+    clearReconnectSchedule();
+    startHeartbeat();
+
+    sendJson({
+      type: "CLIENT_HELLO",
+      role: "chrome-extension-client",
+      userAgent: navigator.userAgent,
+      timestamp: new Date().toISOString(),
+    });
+
+    log("Gateway connection established");
+  };
+
+  nextWs.onmessage = (event) => {
+    let message;
+    try {
+      message = JSON.parse(event.data);
+    } catch (error) {
+      log("Received non-JSON message", event.data);
+      return;
+    }
+
+    if (message.type === "PONG") {
+      log("Received PONG");
+      return;
+    }
+
+    if (!message.action) {
+      log("Ignoring message without action", message);
+      return;
+    }
+
+    handleCommand(message);
+  };
+
+  nextWs.onerror = (event) => {
+    isConnecting = false;
+    log("WebSocket error", event);
+  };
+
+  nextWs.onclose = (event) => {
+    if (ws === nextWs) {
+      ws = null;
+    }
+
+    isConnecting = false;
+    stopHeartbeat();
+    log("WebSocket closed", { code: event.code, reason: event.reason });
+    scheduleReconnect("socket-closed");
+  };
+}
+
+function initialize() {
+  ensureAlarm();
+  connectGateway();
+}
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('Cookie Bridge extension installed');
+  log("Extension installed");
+  initialize();
 });
 
-// Listen for messages from popup
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'sendCookies') {
-    // Get the active tab
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      chrome.cookies.getAll({ url: tabs[0].url }, (cookies) => {
-        // Send to gateway
-        fetch(`${GATEWAY_URL}/api/cookies`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            domain: new URL(tab.url[0].url).hostname,
-            cookies: cookies.map(cookie => ({
-              name: cookie.name,
-              value: cookie.value,
-              domain: cookie.domain,
-              path: cookie.path,
-              secure: cookie.secure,
-              httpOnly: cookie.httpOnly,
-              expirationDate: cookie.expirationDate
-            }))
-          })
-        }).then(response => => {
-          if (response.ok) {
-            sendResponse({ status: 'success' });
-          } else {
-            sendResponse({ status: 'error', message: response.statusText });
-          }
-        });
-      } catch (error) => {
-        console.error('Failed to send cookies:', error);
-        sendResponse({ status: 'error', message: error.toString() });
-      });
-    } else {
-      sendResponse({ status: 'error', message: 'Unknown action' });
-    }
-  });
+chrome.runtime.onStartup.addListener(() => {
+  log("Browser startup detected");
+  initialize();
 });
 
-// Listen for tab updates
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tabInfo) {
-  if (changeInfo.status === 'complete' && tabInfo.url) {
-    // Update popup with new URL
-    chrome.action.setBadgeText({ text: 'Refreshing...' });
-    chrome.action.openPopup();
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== CONNECTION_CHECK_ALARM) {
+    return;
+  }
+
+  if (!isWebSocketOpen()) {
+    log("Alarm detected disconnected socket; reconnecting");
+    connectGateway();
   }
 });
 
-// Listen for messages from popup
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'refresh') {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      chrome.cookies.getAll({ url: tabs[0].url }, (cookies) => {
-        const gatewayUrl = 'http://localhost:3456';
-        const domain = new URL(tabId .url).hostname;
-
-        // Check whitelist
-        const isWhitelisted = domain.endsWith('.company.com') ||
-                     domain === 'api.company.com' ||
-                     domain === 'internal.company.net');
-
-        if (!isWhitelisted) {
-          sendResponse({ status: 'error', message: 'Domain not whitelisted' });
-          return;
-        }
-
-        // Check opt-in status
-        fetch(`${gatewayUrl}/api/cookies?domain=${domain}`)
-          .then(response => response.json())
-          .then(data => {
-            if (data.opted_in) {
-              chrome.storage.local.get(['cookie_opt_in'], (result) => {
-                if (result.opted_in) {
-                  chrome.tabs.sendMessage(tabId, {
-                    status: 'success',
-                    opted_in: true,
-                    cookies: data.cookies,
-                    domain: domain
-                  });
-                } else {
-                  chrome.tabs.sendMessage(tabId, {
-                    status: 'error',
-                    message: 'User has not opted in'
-                  });
-                }
-              });
-            })
-          .catch(error => {
-            chrome.tabs.sendMessage(tabId, {
-              status: 'error',
-              message: error.message
-            });
-          });
-        });
-      } catch (error) {
-        chrome.tabs.sendMessage(tabId, {
-          status: 'error',
-          message: error.message
-        });
-      });
-    }
-  });
+chrome.runtime.onSuspend.addListener(() => {
+  stopHeartbeat();
+  if (ws) {
+    ws.close();
+    ws = null;
+  }
 });
 
-// Open options page
-chrome.runtime.openOptionsPage = (reason) => {
-  chrome.runtime.openOptionsPage((reason) => {
-    console.log(`Options page closed: ${reason}`);
-  });
-});
+initialize();
