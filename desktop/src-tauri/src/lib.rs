@@ -677,7 +677,11 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
     let tools = tauri::async_runtime::block_on(AgentToolRuntime::default_with_builtins());
 
     // Create AgentCenter for multi-agent orchestration
-    let agent_center_db_path = base_path.join("agent-center.db");
+    // Use parent directory of base_path for agent-center database
+    let agent_center_db_path = base_path
+        .parent()
+        .map(|dir| dir.join("agent-center.db"))
+        .unwrap_or_else(|| base_path.with_extension("agent-center.db"));
     let agent_center = Arc::new(
         AgentCenter::builder()
             .db_path(agent_center_db_path)
