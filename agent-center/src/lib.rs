@@ -49,6 +49,15 @@ impl AgentCenter {
             return Err(anyhow::anyhow!("key and agent_name must be <= 256 characters"));
         }
 
+        // Fast path: check if dedup entry already exists (idempotent case)
+        // This avoids consuming concurrency quota for duplicate spawns
+        if let Some(existing_thread_id) = self.store.get_by_dedup(&req.parent_thread_id, &req.key)? {
+            return Ok(api::center::SpawnResponse {
+                thread_id: existing_thread_id,
+            });
+        }
+
+        // Slow path: need to create new thread
         // Look up parent and validate depth
         let (parent_depth, is_root) = if req.parent_thread_id == "root" {
             // Allow "root" as a special case for top-level threads
@@ -64,7 +73,7 @@ impl AgentCenter {
             ));
         };
 
-        // Reserve slot first (fail fast if at limit)
+        // Reserve slot (fail fast if at limit)
         let reservation = self.guards.reserve(parent_depth)?;
 
         // Calculate child depth
@@ -89,16 +98,17 @@ impl AgentCenter {
         };
 
         // Atomically claim dedup slot and insert thread
+        // Note: In race condition, another caller might have inserted between our get_by_dedup check and here
         match self.store.atomic_spawn_thread(&req.parent_thread_id, &req.key, &thread)? {
             ClaimResult::Existing(existing_thread_id) => {
-                // Drop reservation - idempotent case doesn't need new slot
+                // Lost the race - drop reservation (another caller already created the thread)
                 drop(reservation);
                 Ok(api::center::SpawnResponse {
                     thread_id: existing_thread_id,
                 })
             }
             ClaimResult::New => {
-                // We won the race - thread already inserted atomically
+                // Won the race - thread already inserted atomically
                 // Store reservation mapped to thread_id
                 self.reservations.lock().await.insert(candidate_id.clone(), reservation);
 

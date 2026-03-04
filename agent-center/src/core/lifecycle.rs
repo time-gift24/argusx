@@ -38,6 +38,8 @@ impl ThreadStateMachine {
                 | (ThreadStatus::Running, ThreadStatus::Failed)
                 | (ThreadStatus::Running, ThreadStatus::Cancelled)
                 | (ThreadStatus::Running, ThreadStatus::Closing)
+                // Force close: Running -> Closed (bypasses Closing state)
+                | (ThreadStatus::Running, ThreadStatus::Closed)
                 | (ThreadStatus::Closing, ThreadStatus::Closed)
                 | (ThreadStatus::Closing, ThreadStatus::Failed)
                 // Idempotent transitions (terminal states stay terminal)
