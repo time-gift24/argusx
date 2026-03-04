@@ -1,8 +1,15 @@
 use async_trait::async_trait;
+use grep::regex::RegexMatcher;
+use grep::searcher::Searcher;
+use grep::searcher::Sink;
+use grep::searcher::SinkMatch;
+use ignore::WalkBuilder;
+use regex::escape;
 use serde::Deserialize;
 use serde_json::json;
+use std::io::Cursor;
 use std::path::PathBuf;
-use walkdir::WalkDir;
+use std::sync::Arc;
 
 use crate::builtin::fs::guard::FsGuard;
 use crate::builtin::fs::error::FsError;
@@ -123,8 +130,8 @@ impl Tool for GrepTool {
         let pattern = if args.is_regex {
             args.pattern.clone()
         } else {
-            // Escape for literal search
-            regex::escape(&args.pattern)
+            // Escape for literal search using regex escape
+            escape(&args.pattern)
         };
 
         // Add anchors if whole_line is set
@@ -134,15 +141,18 @@ impl Tool for GrepTool {
             pattern
         };
 
-        // Build regex with case sensitivity
+        // Build regex matcher with case sensitivity
         let regex_pattern = if args.case_insensitive {
             format!("(?i){}", pattern)
         } else {
             pattern
         };
 
-        let re = regex::Regex::new(&regex_pattern)
+        let matcher = RegexMatcher::new(&regex_pattern)
             .map_err(|e| ToolError::InvalidArgs(format!("invalid pattern: {}", e)))?;
+
+        let matcher = Arc::new(matcher);
+        let mut searcher = Searcher::new();
 
         let max_results = args.max_results.unwrap_or(100);
         let context_lines = args.context_lines.unwrap_or(0);
@@ -151,36 +161,46 @@ impl Tool for GrepTool {
         let mut results = Vec::new();
         let mut total_matches = 0usize;
 
-        let walk = WalkDir::new(&authorized_path)
+        // Use ignore::WalkBuilder for file traversal (same as ripgrep)
+        let walk = WalkBuilder::new(&authorized_path)
             .follow_links(false)
-            .max_depth(10);
+            .max_depth(Some(10))
+            .build();
 
-        for entry in walk.into_iter().filter_map(|e| e.ok()) {
+        for entry in walk {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
 
             let path = entry.path();
             if !path.is_file() {
                 continue;
             }
 
-            // Read file content
-            let content = match std::fs::read_to_string(path) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
+            let file_path = path.to_path_buf();
 
             // Calculate remaining slots for this file
             let remaining = max_results.saturating_sub(total_matches);
-            // Use min of max_count (per-file) and remaining (global)
             let file_max = max_count.map(|c| c.min(remaining)).unwrap_or(remaining);
 
-            let file_path = path.to_path_buf();
-            let file_matches = search_content(&content, &re, context_lines, Some(file_max))?;
+            // Search in this file using ripgrep's searcher
+            let file_matches = search_file(
+                &mut searcher,
+                matcher.clone(),
+                &file_path,
+                context_lines,
+                file_max,
+            )?;
 
-            total_matches += file_matches.len();
-            results.push(json!({
-                "path": file_path.to_string_lossy(),
-                "matches": file_matches,
-            }));
+            // P2 Fix: Only include files with matches
+            if !file_matches.is_empty() {
+                total_matches += file_matches.len();
+                results.push(json!({
+                    "path": file_path.to_string_lossy(),
+                    "matches": file_matches,
+                }));
+            }
 
             if total_matches >= max_results {
                 break;
@@ -195,41 +215,100 @@ impl Tool for GrepTool {
     }
 }
 
-fn search_content(
-    content: &str,
-    re: &regex::Regex,
+fn search_file(
+    searcher: &mut Searcher,
+    matcher: Arc<RegexMatcher>,
+    path: &std::path::Path,
     context_lines: usize,
-    max_count: Option<usize>,
+    max_count: usize,
 ) -> Result<Vec<serde_json::Value>, std::io::Error> {
-    let max_count = max_count.unwrap_or(usize::MAX);
+    let _file = std::fs::File::open(path)?;
+    let _reader = std::io::BufReader::new(_file);
+
     let mut matches = Vec::new();
-    let mut line_matches = 0usize;
+    let mut line_number = 0usize;
+    let mut pending_context: Vec<String> = Vec::new();
 
-    for (line_num, line) in content.lines().enumerate() {
-        if line_matches >= max_count {
-            break;
-        }
+    // Use ripgrep's sink to process the file
+    struct RipgrepSink<'a> {
+        matches: &'a mut Vec<serde_json::Value>,
+        line_number: &'a mut usize,
+        pending_context: &'a mut Vec<String>,
+        _context_lines: usize,
+        match_count: &'a mut usize,
+        max_count: usize,
+    }
 
-        if re.is_match(line) {
+    impl Sink for RipgrepSink<'_> {
+        type Error = std::io::Error;
+
+        fn matched(&mut self, _searcher: &Searcher, match_info: &SinkMatch) -> std::io::Result<bool> {
+            *self.match_count += 1;
+
+            // Get line number from the match
+            if let Some(line) = match_info.line_number() {
+                *self.line_number = line as usize;
+            }
+
+            // Get the matched line text - lines() returns bytes, convert to string
+            let line_bytes = match_info.lines().next().unwrap_or(b"");
+            let line_text = String::from_utf8_lossy(line_bytes).to_string();
+
             // Get context lines
-            let context_start = line_num.saturating_sub(context_lines);
-            let context_end = (line_num + context_lines + 1).min(content.lines().count());
-            let context: Vec<String> = content.lines()
-                .skip(context_start)
-                .take(context_end - context_start)
-                .map(|s| s.to_string())
-                .collect();
+            let context = self.pending_context.clone();
 
-            matches.push(json!({
-                "line_number": line_num + 1,
-                "line": line,
+            self.matches.push(json!({
+                "line_number": *self.line_number,
+                "line": line_text,
                 "context": context,
             }));
-            line_matches += 1;
+
+            if *self.match_count >= self.max_count {
+                return Ok(false); // Stop searching
+            }
+            Ok(true) // Continue searching
         }
     }
 
-    Ok(matches)
+    // Pre-read file to build context lines
+    let file_content = std::fs::read_to_string(path)?;
+    let all_lines: Vec<&str> = file_content.lines().collect();
+    let total_lines = all_lines.len();
+
+    let sink = RipgrepSink {
+        matches: &mut matches,
+        line_number: &mut line_number,
+        pending_context: &mut pending_context,
+        _context_lines: context_lines,
+        match_count: &mut 0,
+        max_count,
+    };
+
+    // Search the file using ripgrep's searcher
+    let mut reader = Cursor::new(file_content.as_bytes());
+    let _ = searcher.search_reader(&*matcher, &mut reader, sink);
+
+    // Now add context lines by re-reading the file
+    // We need to rebuild the matches with context
+    let mut matches_with_context = Vec::new();
+    for m in &matches {
+        let line_num = m.get("line_number").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        let context_start = line_num.saturating_sub(context_lines);
+        let context_end = (line_num + context_lines).min(total_lines);
+
+        let context: Vec<String> = (context_start..context_end)
+            .filter(|&i| i != line_num)
+            .map(|i| all_lines.get(i).unwrap_or(&"").to_string())
+            .collect();
+
+        matches_with_context.push(json!({
+            "line_number": line_num,
+            "line": m.get("line").and_then(|v| v.as_str()).unwrap_or(""),
+            "context": context,
+        }));
+    }
+
+    Ok(matches_with_context)
 }
 
 fn map_fs_error(e: FsError) -> ToolError {

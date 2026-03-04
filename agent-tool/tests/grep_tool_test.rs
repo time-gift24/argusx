@@ -168,3 +168,33 @@ async fn grep_tool_has_correct_name_and_description() {
     assert_eq!(tool.name(), "grep");
     assert!(tool.description().contains("Search"));
 }
+
+// P2 Fix: grep should not return files with zero matches
+#[tokio::test]
+async fn grep_excludes_files_with_no_matches() {
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    // Create file A with match
+    std::fs::write(temp_dir.path().join("A.txt"), "Hello World\nRust is great").unwrap();
+    // Create file B without match
+    std::fs::write(temp_dir.path().join("B.txt"), "foo bar baz\nnothing here").unwrap();
+
+    let tool = GrepTool::new(vec![temp_dir.path().to_path_buf()]).unwrap();
+
+    let result = tool.execute(
+        test_context(),
+        json!({
+            "path": temp_dir.path().to_str().unwrap(),
+            "pattern": "Hello",
+            "is_regex": false
+        }),
+    ).await.unwrap();
+
+    assert!(!result.is_error);
+    assert_eq!(result.output["total_matches"].as_i64().unwrap(), 1);
+
+    // Should only contain A.txt, not B.txt
+    let results = result.output["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert!(results[0]["path"].as_str().unwrap().ends_with("A.txt"));
+}
