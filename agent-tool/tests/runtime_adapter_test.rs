@@ -18,6 +18,15 @@ async fn default_builtins_expose_update_plan_tool_spec() {
 }
 
 #[tokio::test]
+async fn default_builtins_list_includes_update_plan() {
+    use agent_core::tools::ToolCatalog;
+    let rt = AgentToolRuntime::default_with_builtins().await;
+
+    let tools = rt.list_tools().await;
+    assert!(tools.iter().any(|t| t.name == "update_plan"));
+}
+
+#[tokio::test]
 async fn runtime_adapter_executes_update_plan_tool() {
     use agent_core::tools::{ToolExecutionContext, ToolExecutor};
     let rt = AgentToolRuntime::default_with_builtins().await;
