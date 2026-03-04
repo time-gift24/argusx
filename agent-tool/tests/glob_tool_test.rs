@@ -139,3 +139,51 @@ async fn glob_tool_has_correct_name_and_description() {
     assert_eq!(tool.name(), "glob");
     assert!(tool.description().contains("pattern"));
 }
+
+#[tokio::test]
+async fn glob_matches_relative_paths_and_excludes_directories() {
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    // Create nested structure
+    let src_dir = temp_dir.path().join("src");
+    let target_dir = temp_dir.path().join("target");
+    std::fs::create_dir(&src_dir).unwrap();
+    std::fs::create_dir(&target_dir).unwrap();
+
+    std::fs::write(src_dir.join("main.rs"), "fn main()").unwrap();
+    std::fs::write(src_dir.join("lib.rs"), "pub fn lib()").unwrap();
+    std::fs::write(target_dir.join("output.rs"), "generated").unwrap();
+
+    let tool = GlobTool::new(vec![temp_dir.path().to_path_buf()]).unwrap();
+
+    // Test: match "src/**/*.rs" - should find files in src subdirectory
+    let result = tool.execute(
+        test_context(),
+        json!({
+            "path": temp_dir.path().to_str().unwrap(),
+            "pattern": "src/**/*.rs"
+        }),
+    ).await.unwrap();
+
+    assert!(!result.is_error);
+    assert_eq!(result.output["count"].as_i64().unwrap(), 2);
+
+    // Test: exclude "target/**" pattern
+    let result = tool.execute(
+        test_context(),
+        json!({
+            "path": temp_dir.path().to_str().unwrap(),
+            "pattern": "**/*.rs",
+            "exclude": "target/**"
+        }),
+    ).await.unwrap();
+
+    assert!(!result.is_error);
+    // Should find main.rs and lib.rs but NOT target/output.rs
+    assert_eq!(result.output["count"].as_i64().unwrap(), 2);
+    let paths: Vec<&str> = result.output["results"].as_array().unwrap()
+        .iter()
+        .map(|r| r["path"].as_str().unwrap())
+        .collect();
+    assert!(!paths.iter().any(|p| p.contains("target/")));
+}

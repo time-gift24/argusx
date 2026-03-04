@@ -20,6 +20,11 @@ impl GrepTool {
         let guard = FsGuard::new(allowed_roots)?;
         Ok(Self { guard })
     }
+
+    /// Get default grep tool with current directory as allowed root
+    pub fn default() -> Result<Self, FsError> {
+        Self::new(vec![std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))])
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -163,8 +168,13 @@ impl Tool for GrepTool {
                 Err(_) => continue,
             };
 
+            // Calculate remaining slots for this file
+            let remaining = max_results.saturating_sub(total_matches);
+            // Use min of max_count (per-file) and remaining (global)
+            let file_max = max_count.map(|c| c.min(remaining)).unwrap_or(remaining);
+
             let file_path = path.to_path_buf();
-            let file_matches = search_content(&content, &re, context_lines, max_count)?;
+            let file_matches = search_content(&content, &re, context_lines, Some(file_max))?;
 
             total_matches += file_matches.len();
             results.push(json!({

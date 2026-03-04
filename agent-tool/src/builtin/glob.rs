@@ -21,6 +21,11 @@ impl GlobTool {
         let guard = FsGuard::new(allowed_roots)?;
         Ok(Self { guard })
     }
+
+    /// Get default glob tool with current directory as allowed root
+    pub fn default() -> Result<Self, FsError> {
+        Self::new(vec![std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))])
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -155,25 +160,32 @@ impl Tool for GlobTool {
                 continue;
             }
 
-            let file_name = path.file_name().unwrap_or_default().to_str().unwrap_or("");
+            // Get relative path from base directory for proper pattern matching
+            let relative_path = path.strip_prefix(&authorized_path)
+                .map(|p| p.to_string_lossy().to_string())
+                // Fallback to just filename if strip fails
+                .unwrap_or_else(|_| path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default());
 
-            // Check glob pattern
+            // Check glob pattern against relative path
             if let Some(ref g) = glob {
-                if !g.is_match(file_name) {
+                // Try matching relative path first, then filename as fallback
+                if !g.is_match(&relative_path) && !g.is_match(path.file_name().unwrap_or_default().to_str().unwrap_or("")) {
                     continue;
                 }
             }
 
-            // Check include pattern
+            // Check include pattern against relative path
             if let Some(ref inc) = include_glob {
-                if !inc.is_match(file_name) {
+                if !inc.is_match(&relative_path) && !inc.is_match(path.file_name().unwrap_or_default().to_str().unwrap_or("")) {
                     continue;
                 }
             }
 
-            // Check exclude pattern
+            // Check exclude pattern against relative path
             if let Some(ref exc) = exclude_glob {
-                if exc.is_match(file_name) {
+                if exc.is_match(&relative_path) || exc.is_match(path.file_name().unwrap_or_default().to_str().unwrap_or("")) {
                     continue;
                 }
             }
