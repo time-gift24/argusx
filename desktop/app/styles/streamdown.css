@@ -7,6 +7,19 @@
     white-space: normal;
   }
 
+  .llm-chat-markdown [data-streamdown="unordered-list"],
+  .llm-chat-markdown [data-streamdown="ordered-list"] {
+    list-style-position: inside !important;
+    margin-inline-start: 0 !important;
+    padding-inline-start: 0 !important;
+    text-align: left !important;
+  }
+
+  .llm-chat-markdown [data-streamdown="list-item"] > [data-streamdown="unordered-list"],
+  .llm-chat-markdown [data-streamdown="list-item"] > [data-streamdown="ordered-list"] {
+    padding-inline-start: 1.5rem !important;
+  }
+
   .llm-chat-markdown [data-streamdown="code-block-download-button"] {
     display: none !important;
   }

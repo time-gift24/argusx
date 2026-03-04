@@ -4,6 +4,7 @@ import type { AgentTurnVM } from "@/lib/stores/chat-store";
 
 import { Message, MessageResponse } from "@/components/ai/message";
 
+import { CHAT_MARKDOWN_CLASS } from "./chat-markdown-class";
 import { TurnProcessCard } from "./turn-process-card";
 import { sanitizeAssistantMarkdown } from "./sanitize-assistant-markdown";
 
@@ -20,7 +21,7 @@ export function AgentTurnCard({ sessionId, turn }: AgentTurnCardProps) {
     <Message from="assistant">
       <div className="w-full space-y-2">
         {shouldShowSummary && (
-          <MessageResponse className="llm-chat-markdown text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
+          <MessageResponse className={CHAT_MARKDOWN_CLASS}>
             {summaryText}
           </MessageResponse>
         )}

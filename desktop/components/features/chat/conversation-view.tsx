@@ -12,6 +12,7 @@ import { Message, MessageResponse } from "@/components/ai/message";
 import { BotIcon } from "lucide-react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 import { AgentTurnCard } from "./agent-turn-card";
+import { CHAT_MARKDOWN_CLASS } from "./chat-markdown-class";
 import { sanitizeAssistantMarkdown } from "./sanitize-assistant-markdown";
 import { Fragment, useEffect, useMemo } from "react";
 import { TurnCheckpoint } from "./turn-checkpoint";
@@ -122,7 +123,7 @@ export function ConversationView({ sessionId }: ConversationViewProps) {
                   key={item.message.id}
                 >
                   {item.message.role === "assistant" ? (
-                    <MessageResponse className="llm-chat-markdown text-[13px] leading-5 [&_li]:my-0.5 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1">
+                    <MessageResponse className={CHAT_MARKDOWN_CLASS}>
                       {assistantContent}
                     </MessageResponse>
                   ) : (

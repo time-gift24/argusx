@@ -31,6 +31,37 @@ import { StreamdownCode } from "@/components/ai/streamdown-code";
 
 import { STREAMDOWN_PLUGINS } from "@/components/ai/streamdown-plugins";
 
+type MarkdownUnorderedListProps = ComponentProps<"ul"> & { node?: unknown };
+type MarkdownOrderedListProps = ComponentProps<"ol"> & { node?: unknown };
+
+const MessageMarkdownUnorderedList = ({
+  className,
+  node: _node,
+  ...props
+}: MarkdownUnorderedListProps) => (
+  <ul
+    className={cn(
+      "list-inside list-disc pl-0 text-left [margin-inline-start:0] [li_&]:pl-6",
+      className
+    )}
+    {...props}
+  />
+);
+
+const MessageMarkdownOrderedList = ({
+  className,
+  node: _node,
+  ...props
+}: MarkdownOrderedListProps) => (
+  <ol
+    className={cn(
+      "list-inside list-decimal pl-0 text-left [margin-inline-start:0] [li_&]:pl-6",
+      className
+    )}
+    {...props}
+  />
+);
+
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
 };
@@ -327,6 +358,8 @@ export const MessageResponse = memo(
     <Streamdown
       components={{
         code: StreamdownCode,
+        ul: MessageMarkdownUnorderedList,
+        ol: MessageMarkdownOrderedList,
         ...components,
       }}
       className={cn(
