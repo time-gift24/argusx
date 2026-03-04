@@ -7,7 +7,7 @@ pub mod runtime;
 pub mod spec;
 pub mod trait_def;
 
-pub use builtin::{DomainCookiesTool, ReadFileTool, ShellTool};
+pub use builtin::{DomainCookiesTool, ReadFileTool, ShellTool, UpdatePlanTool};
 pub use context::{ToolContext, ToolResult};
 pub use error::ToolError;
 pub use registry::ToolRegistry;

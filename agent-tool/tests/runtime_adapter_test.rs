@@ -2,6 +2,57 @@ use agent_core::tools::{ToolExecutionContext, ToolExecutionErrorKind, ToolExecut
 use agent_tool::AgentToolRuntime;
 
 #[tokio::test]
+async fn default_builtins_expose_update_plan_tool_spec() {
+    use agent_core::tools::ToolCatalog;
+    let rt = AgentToolRuntime::default_with_builtins().await;
+
+    let spec = rt
+        .tool_spec("update_plan")
+        .await
+        .expect("update_plan should be registered by default");
+
+    assert_eq!(spec.name, "update_plan");
+    assert!(spec.description.contains("plan"));
+    assert_eq!(spec.input_schema["type"], serde_json::json!("object"));
+    assert_eq!(spec.input_schema["required"], serde_json::json!(["plan"]));
+}
+
+#[tokio::test]
+async fn default_builtins_list_includes_update_plan() {
+    use agent_core::tools::ToolCatalog;
+    let rt = AgentToolRuntime::default_with_builtins().await;
+
+    let tools = rt.list_tools().await;
+    assert!(tools.iter().any(|t| t.name == "update_plan"));
+}
+
+#[tokio::test]
+async fn runtime_adapter_executes_update_plan_tool() {
+    use agent_core::tools::{ToolExecutionContext, ToolExecutor};
+    let rt = AgentToolRuntime::default_with_builtins().await;
+    let out = rt
+        .execute_tool(
+            agent_core::ToolCall::new(
+                "update_plan",
+                serde_json::json!({
+                    "plan": [{ "step": "Write tests", "status": "in_progress" }]
+                }),
+            ),
+            ToolExecutionContext {
+                session_id: "s1".into(),
+                turn_id: "t1".into(),
+                epoch: 0,
+                cwd: None,
+            },
+        )
+        .await
+        .expect("update_plan should execute");
+
+    assert!(!out.is_error);
+    assert_eq!(out.output["plan"]["tasks"][0]["title"], "Write tests");
+}
+
+#[tokio::test]
 async fn runtime_adapter_executes_registered_tool() {
     let rt = AgentToolRuntime::default_with_builtins().await;
     let out = rt

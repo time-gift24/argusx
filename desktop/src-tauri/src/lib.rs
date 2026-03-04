@@ -26,6 +26,7 @@ use tokio::sync::{mpsc, RwLock};
 mod llm_runtime_config;
 mod persistence;
 mod secure_config;
+mod system_prompt;
 use llm_runtime_config::{
     list_available_models as derive_available_models, normalize_runtime_config,
     validate_turn_selection, AvailableModel, LlmRuntimeConfig, ProviderId,
@@ -664,6 +665,12 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
             model_config.model = model;
         }
     }
+
+    // Resolve system prompt: env override or default autonomy prompt
+    let prompt_override = std::env::var("ARGUSX_SYSTEM_PROMPT").ok();
+    model_config.system_prompt = Some(system_prompt::resolve_desktop_system_prompt(
+        prompt_override.as_deref(),
+    ));
 
     let tools = tauri::async_runtime::block_on(AgentToolRuntime::default_with_builtins());
     let model_adapter =
