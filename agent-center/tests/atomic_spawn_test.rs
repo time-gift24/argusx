@@ -16,7 +16,7 @@ async fn spawn_atomic_on_partial_failure() -> anyhow::Result<()> {
 
     // First spawn should succeed
     let spawn_req = SpawnRequest {
-        parent_thread_id: "parent-1".to_string(),
+        parent_thread_id: "root".to_string(),
         key: "child-1".to_string(),
         agent_name: "test-agent".to_string(),
         initial_input: "Hello".to_string(),

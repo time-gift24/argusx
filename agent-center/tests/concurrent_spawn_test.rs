@@ -59,7 +59,7 @@ async fn concurrent_spawn_with_same_key_is_idempotent() -> anyhow::Result<()> {
             .build()?
     );
 
-    let parent_id = "parent-1".to_string();
+    let parent_id = "root".to_string();
     let key = "child-1".to_string();
 
     // Spawn 10 concurrent requests with same (parent, key)

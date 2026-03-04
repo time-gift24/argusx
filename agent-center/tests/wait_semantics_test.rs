@@ -14,7 +14,7 @@ async fn wait_all_times_out_when_any_thread_not_terminal() -> anyhow::Result<()>
 
     // Spawn a thread that stays in Running state
     let spawn_req = agent_center::api::center::SpawnRequest {
-        parent_thread_id: "p1".to_string(),
+        parent_thread_id: "root".to_string(),
         key: "k1".to_string(),
         agent_name: "test-agent".to_string(),
         initial_input: "Hello".to_string(),

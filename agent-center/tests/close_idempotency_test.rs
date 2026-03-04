@@ -14,7 +14,7 @@ async fn close_is_idempotent() -> anyhow::Result<()> {
 
     // Spawn a thread
     let spawn_req = agent_center::api::center::SpawnRequest {
-        parent_thread_id: "p1".to_string(),
+        parent_thread_id: "root".to_string(),
         key: "k1".to_string(),
         agent_name: "test-agent".to_string(),
         initial_input: "Hello".to_string(),
@@ -53,7 +53,7 @@ async fn close_transitions_through_closing_state() -> anyhow::Result<()> {
 
     // Spawn a thread
     let spawn_req = agent_center::api::center::SpawnRequest {
-        parent_thread_id: "p1".to_string(),
+        parent_thread_id: "root".to_string(),
         key: "k1".to_string(),
         agent_name: "test-agent".to_string(),
         initial_input: "Hello".to_string(),

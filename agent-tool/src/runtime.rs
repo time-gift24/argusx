@@ -26,6 +26,16 @@ impl AgentToolRuntime {
         registry.register(grep_tool).await;
         Self { registry }
     }
+
+    /// Register an external tool
+    pub async fn register_tool<T: crate::Tool + 'static>(&self, tool: T) {
+        self.registry.register(tool).await;
+    }
+
+    /// Get the underlying registry for advanced tool registration
+    pub fn registry(&self) -> &ToolRegistry {
+        &self.registry
+    }
 }
 
 #[async_trait]

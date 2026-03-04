@@ -11,7 +11,8 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             status TEXT NOT NULL,
             agent_name TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            depth INTEGER NOT NULL DEFAULT 0
+            depth INTEGER NOT NULL DEFAULT 0,
+            initial_input TEXT
         );
 
         CREATE TABLE IF NOT EXISTS spawn_dedup (
@@ -27,6 +28,9 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
     // Migration: Add depth column to existing tables (ignore error if column exists)
     let _ = conn.execute("ALTER TABLE threads ADD COLUMN depth INTEGER NOT NULL DEFAULT 0", ());
+
+    // Migration: Add initial_input column (ignore error if column exists)
+    let _ = conn.execute("ALTER TABLE threads ADD COLUMN initial_input TEXT", ());
 
     Ok(())
 }

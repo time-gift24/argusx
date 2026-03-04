@@ -42,8 +42,8 @@ impl ThreadStore for SqliteThreadStore {
         let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         conn.execute(
             r#"
-            INSERT INTO threads (id, parent_thread_id, status, agent_name, created_at, depth)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            INSERT INTO threads (id, parent_thread_id, status, agent_name, created_at, depth, initial_input)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             ON CONFLICT(id) DO UPDATE SET
                 status = excluded.status,
                 agent_name = excluded.agent_name
@@ -55,6 +55,7 @@ impl ThreadStore for SqliteThreadStore {
                 thread.agent_name,
                 thread.created_at.to_rfc3339(),
                 thread.depth,
+                thread.initial_input,
             ],
         )?;
         Ok(())
@@ -63,7 +64,7 @@ impl ThreadStore for SqliteThreadStore {
     fn get_thread(&self, id: &str) -> Result<Option<ThreadRow>> {
         let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         let result = conn.query_row(
-            "SELECT id, parent_thread_id, status, agent_name, created_at, depth FROM threads WHERE id = ?1",
+            "SELECT id, parent_thread_id, status, agent_name, created_at, depth, initial_input FROM threads WHERE id = ?1",
             rusqlite::params![id],
             |row| {
                 Ok(ThreadRow {
@@ -75,6 +76,7 @@ impl ThreadStore for SqliteThreadStore {
                         .map(|dt| dt.with_timezone(&chrono::Utc))
                         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?,
                     depth: row.get(5)?,
+                    initial_input: row.get(6)?,
                 })
             },
         );
@@ -89,7 +91,7 @@ impl ThreadStore for SqliteThreadStore {
     fn get_all_threads(&self) -> Result<Vec<ThreadRow>> {
         let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         let mut stmt = conn.prepare(
-            "SELECT id, parent_thread_id, status, agent_name, created_at, depth FROM threads"
+            "SELECT id, parent_thread_id, status, agent_name, created_at, depth, initial_input FROM threads"
         )?;
 
         let threads = stmt.query_map([], |row| {
@@ -102,6 +104,7 @@ impl ThreadStore for SqliteThreadStore {
                     .map(|dt| dt.with_timezone(&chrono::Utc))
                     .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?,
                 depth: row.get(5)?,
+                initial_input: row.get(6)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
 
@@ -179,8 +182,8 @@ impl ThreadStore for SqliteThreadStore {
             // We won the race - insert the thread row
             tx.execute(
                 r#"
-                INSERT INTO threads (id, parent_thread_id, status, agent_name, created_at, depth)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                INSERT INTO threads (id, parent_thread_id, status, agent_name, created_at, depth, initial_input)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                 "#,
                 rusqlite::params![
                     thread.id,
@@ -189,6 +192,7 @@ impl ThreadStore for SqliteThreadStore {
                     thread.agent_name,
                     thread.created_at.to_rfc3339(),
                     thread.depth,
+                    thread.initial_input,
                 ],
             )?;
 

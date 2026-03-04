@@ -49,11 +49,19 @@ impl AgentCenter {
             return Err(anyhow::anyhow!("key and agent_name must be <= 256 characters"));
         }
 
-        // Look up parent depth
-        let parent_depth = if let Some(parent) = self.store.get_thread(&req.parent_thread_id)? {
-            parent.depth
+        // Look up parent and validate depth
+        let (parent_depth, is_root) = if req.parent_thread_id == "root" {
+            // Allow "root" as a special case for top-level threads
+            (0, true)
+        } else if let Some(parent) = self.store.get_thread(&req.parent_thread_id)? {
+            // Parent exists - use its depth
+            (parent.depth, false)
         } else {
-            0 // Root level if parent doesn't exist
+            // Parent doesn't exist and isn't "root" - reject to prevent bypass
+            return Err(anyhow::anyhow!(
+                "Parent thread {} does not exist. Use 'root' for top-level threads.",
+                req.parent_thread_id
+            ));
         };
 
         // Reserve slot first (fail fast if at limit)
@@ -65,14 +73,19 @@ impl AgentCenter {
         // Generate candidate thread ID
         let candidate_id = format!("thread-{}", uuid::Uuid::new_v4());
 
-        // Create thread row
+        // Create thread row with initial_input
         let thread = persistence::models::ThreadRow {
             id: candidate_id.clone(),
-            parent_thread_id: Some(req.parent_thread_id.clone()),
+            parent_thread_id: if is_root {
+                None
+            } else {
+                Some(req.parent_thread_id.clone())
+            },
             status: "Running".to_string(),
             agent_name: req.agent_name.clone(),
             created_at: chrono::Utc::now(),
             depth: child_depth,
+            initial_input: Some(req.initial_input.clone()),
         };
 
         // Atomically claim dedup slot and insert thread
@@ -88,6 +101,9 @@ impl AgentCenter {
                 // We won the race - thread already inserted atomically
                 // Store reservation mapped to thread_id
                 self.reservations.lock().await.insert(candidate_id.clone(), reservation);
+
+                // TODO: Dispatch initial_input to the agent runtime
+                // For now, initial_input is persisted and can be retrieved by the runtime
 
                 Ok(api::center::SpawnResponse { thread_id: candidate_id })
             }
@@ -189,15 +205,22 @@ impl AgentCenter {
         // Create state machine and transition
         let mut sm = core::lifecycle::ThreadStateMachine::new(current_status);
 
-        // Transition to Closing (if not already)
-        if sm.status() != core::lifecycle::ThreadStatus::Closing {
-            sm.transition_to(core::lifecycle::ThreadStatus::Closing)
+        // Handle force close
+        if req.force {
+            // Force: Skip Closing state, go directly to Closed
+            sm.transition_to(core::lifecycle::ThreadStatus::Closed)
+                .map_err(|e| anyhow::anyhow!("Invalid state transition: {:?}", e))?;
+        } else {
+            // Normal: Transition through Closing state
+            if sm.status() != core::lifecycle::ThreadStatus::Closing {
+                sm.transition_to(core::lifecycle::ThreadStatus::Closing)
+                    .map_err(|e| anyhow::anyhow!("Invalid state transition: {:?}", e))?;
+            }
+
+            // Transition to Closed
+            sm.transition_to(core::lifecycle::ThreadStatus::Closed)
                 .map_err(|e| anyhow::anyhow!("Invalid state transition: {:?}", e))?;
         }
-
-        // Transition to Closed
-        sm.transition_to(core::lifecycle::ThreadStatus::Closed)
-            .map_err(|e| anyhow::anyhow!("Invalid state transition: {:?}", e))?;
 
         // Persist final state
         let updated_thread = persistence::models::ThreadRow {
@@ -214,6 +237,27 @@ impl AgentCenter {
         Ok(api::center::CloseResponse {
             final_status: "Closed".to_string(),
         })
+    }
+
+    /// Mark a thread as completed (Succeeded or Failed) and release its slot
+    pub async fn mark_thread_complete(&self, thread_id: &str, success: bool) -> anyhow::Result<()> {
+        let thread = self.store.get_thread(thread_id)?
+            .ok_or_else(|| anyhow::anyhow!("Thread not found: {}", thread_id))?;
+
+        let final_status = if success { "Succeeded" } else { "Failed" };
+
+        let updated_thread = persistence::models::ThreadRow {
+            status: final_status.to_string(),
+            ..thread
+        };
+        self.store.upsert_thread(&updated_thread)?;
+
+        // Release reservation
+        if let Some(_reservation) = self.reservations.lock().await.remove(thread_id) {
+            // Reservation dropped - slot released
+        }
+
+        Ok(())
     }
 
     fn parse_status(&self, status: &str) -> anyhow::Result<core::lifecycle::ThreadStatus> {
@@ -275,9 +319,9 @@ impl AgentCenter {
     /// List available tool names
     pub fn list_tools(&self) -> Vec<String> {
         vec![
-            tools::SpawnAgentTool::name().to_string(),
-            tools::WaitTool::name().to_string(),
-            tools::CloseAgentTool::name().to_string(),
+            "spawn_agent".to_string(),
+            "wait".to_string(),
+            "close_agent".to_string(),
         ]
     }
 }

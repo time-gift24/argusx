@@ -14,7 +14,7 @@ async fn spawn_is_idempotent_by_parent_and_key() -> anyhow::Result<()> {
 
     // First spawn with parent=p1, key=k1
     let req1 = agent_center::api::center::SpawnRequest {
-        parent_thread_id: "p1".to_string(),
+        parent_thread_id: "root".to_string(),
         key: "k1".to_string(),
         agent_name: "test-agent".to_string(),
         initial_input: "Hello".to_string(),
@@ -25,7 +25,7 @@ async fn spawn_is_idempotent_by_parent_and_key() -> anyhow::Result<()> {
 
     // Second spawn with same parent+key should return same thread_id (idempotent)
     let req2 = agent_center::api::center::SpawnRequest {
-        parent_thread_id: "p1".to_string(),
+        parent_thread_id: "root".to_string(),
         key: "k1".to_string(),
         agent_name: "test-agent".to_string(),
         initial_input: "Hello".to_string(),
@@ -50,7 +50,7 @@ async fn spawn_respects_concurrency_limit() -> anyhow::Result<()> {
 
     // First spawn succeeds
     let req1 = agent_center::api::center::SpawnRequest {
-        parent_thread_id: "p1".to_string(),
+        parent_thread_id: "root".to_string(),
         key: "k1".to_string(),
         agent_name: "test-agent".to_string(),
         initial_input: "Hello".to_string(),
@@ -59,7 +59,7 @@ async fn spawn_respects_concurrency_limit() -> anyhow::Result<()> {
 
     // Second spawn with different key should fail due to concurrency limit
     let req2 = agent_center::api::center::SpawnRequest {
-        parent_thread_id: "p1".to_string(),
+        parent_thread_id: "root".to_string(),
         key: "k2".to_string(),
         agent_name: "test-agent".to_string(),
         initial_input: "Hello".to_string(),

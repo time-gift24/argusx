@@ -15,7 +15,7 @@ async fn e2e_spawn_wait_close_flow() -> anyhow::Result<()> {
 
     // Step 1: Spawn child agent
     let spawn_req = SpawnRequest {
-        parent_thread_id: "parent-1".to_string(),
+        parent_thread_id: "root".to_string(),
         key: "child-1".to_string(),
         agent_name: "test-agent".to_string(),
         initial_input: "Hello from parent".to_string(),

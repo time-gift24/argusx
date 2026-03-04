@@ -9,4 +9,5 @@ pub struct ThreadRow {
     pub agent_name: String,
     pub created_at: DateTime<Utc>,
     pub depth: u32,
+    pub initial_input: Option<String>,
 }
