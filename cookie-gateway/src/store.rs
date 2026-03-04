@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::SystemTime;
 use tokio::sync::RwLock;
 
 /// Whitelist of allowed domains for cookie storage
@@ -18,9 +19,15 @@ pub struct CookieData {
     pub expiration_date: Option<f64>,
 }
 
+#[derive(Debug, Clone)]
+pub struct CachedCookies {
+    pub cookies: Vec<CookieData>,
+    pub fetched_at: SystemTime,
+}
+
 /// Thread-safe cookie storage with domain whitelist validation
 pub struct CookieStore {
-    storage: Arc<RwLock<HashMap<String, Vec<CookieData>>>>,
+    storage: Arc<RwLock<HashMap<String, CachedCookies>>>,
     opt_in: Arc<RwLock<bool>>,
 }
 
@@ -55,12 +62,36 @@ impl CookieStore {
 
     /// Store cookies for a specific domain
     pub async fn store_cookies(&self, domain: &str, cookies: Vec<CookieData>) {
+        self.store_cookies_with_fetched_at(domain, cookies, SystemTime::now())
+            .await;
+    }
+
+    /// Store cookies for a specific domain with explicit timestamp.
+    /// This is mainly useful for deterministic tests.
+    pub async fn store_cookies_with_fetched_at(
+        &self,
+        domain: &str,
+        cookies: Vec<CookieData>,
+        fetched_at: SystemTime,
+    ) {
         let mut storage = self.storage.write().await;
-        storage.insert(domain.to_string(), cookies);
+        storage.insert(
+            domain.to_string(),
+            CachedCookies {
+                cookies,
+                fetched_at,
+            },
+        );
     }
 
     /// Retrieve cookies for a specific domain
     pub async fn get_cookies(&self, domain: &str) -> Option<Vec<CookieData>> {
+        let storage = self.storage.read().await;
+        storage.get(domain).map(|entry| entry.cookies.clone())
+    }
+
+    /// Retrieve cookies with fetched timestamp for a specific domain.
+    pub async fn get_cached(&self, domain: &str) -> Option<CachedCookies> {
         let storage = self.storage.read().await;
         storage.get(domain).cloned()
     }
