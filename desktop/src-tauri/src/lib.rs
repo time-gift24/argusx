@@ -709,6 +709,10 @@ fn resolve_sqlite_db_path(app_data_dir: Option<PathBuf>) -> PathBuf {
     resolve_sqlite_db_path_with_override(env_override.as_deref(), app_data_dir)
 }
 
+fn resolve_startup_db_path(app_data_dir: Option<PathBuf>) -> PathBuf {
+    resolve_sqlite_db_path(app_data_dir)
+}
+
 fn resolve_sqlite_db_path_with_override(
     env_override: Option<&str>,
     app_data_dir: Option<PathBuf>,
@@ -827,17 +831,15 @@ fn build_llm_client_from_runtime_config(cfg: &LlmRuntimeConfig) -> Result<LlmCli
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .setup(|app| {
-            let base_path = app
-                .path()
-                .app_data_dir()
-                .unwrap_or_else(|_| std::env::temp_dir().join("argusx-desktop-agent"))
-                .join("sessions");
-            std::fs::create_dir_all(&base_path)?;
-            let state = build_runtime_state(base_path).map_err(std::io::Error::other)?;
+            let db_path = resolve_startup_db_path(app.path().app_data_dir().ok());
+            if let Some(parent) = db_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let state = build_runtime_state(db_path).map_err(std::io::Error::other)?;
 
             // Start cookie gateway server
             let gateway = state.cookie_gateway.clone();
-            tokio::spawn(async move {
+            tauri::async_runtime::spawn(async move {
                 if let Err(e) = gateway.start().await {
                     eprintln!("Cookie gateway error: {}", e);
                 }
@@ -966,6 +968,19 @@ mod tests {
             std::env::temp_dir()
                 .join(SQLITE_DB_TEMP_DIR)
                 .join(SQLITE_DB_FILE_NAME)
+        );
+    }
+
+    #[test]
+    fn startup_db_path_resolves_to_sqlite_file_not_sessions_directory() {
+        let resolved = resolve_startup_db_path(Some(PathBuf::from("/var/app/data")));
+        assert_eq!(
+            resolved,
+            PathBuf::from("/var/app/data").join(SQLITE_DB_FILE_NAME)
+        );
+        assert_ne!(
+            resolved.file_name().and_then(|value| value.to_str()),
+            Some("sessions")
         );
     }
 }
