@@ -1,6 +1,6 @@
 "use client";
 
-import type { LanguageModelUsage } from "@/types";
+import type { LanguageModelUsage } from "ai";
 import type { ComponentProps } from "react";
 
 import { Button } from "@/components/ui/button";

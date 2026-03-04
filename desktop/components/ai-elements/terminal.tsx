@@ -1,7 +1,3 @@
-/**
- * @deprecated 已迁移到 components/ai/terminal.tsx
- * 请使用 `import { Terminal, TerminalContent, ... } from "@/components/ai/terminal"` 代替
- */
 "use client";
 
 import type { ComponentProps, HTMLAttributes } from "react";
@@ -26,30 +22,19 @@ interface TerminalContextType {
   output: string;
   isStreaming: boolean;
   autoScroll: boolean;
-  compact: boolean;
-  previewLines?: number;
-  expanded: boolean;
-  onToggleExpand?: (expanded: boolean) => void;
   onClear?: () => void;
 }
 
 const TerminalContext = createContext<TerminalContextType>({
   autoScroll: true,
-  compact: false,
-  expanded: true,
   isStreaming: false,
   output: "",
-  previewLines: undefined,
 });
 
 export type TerminalProps = HTMLAttributes<HTMLDivElement> & {
   output: string;
   isStreaming?: boolean;
   autoScroll?: boolean;
-  compact?: boolean;
-  previewLines?: number;
-  expanded?: boolean;
-  onToggleExpand?: (expanded: boolean) => void;
   onClear?: () => void;
 };
 
@@ -57,46 +42,21 @@ export const Terminal = ({
   output,
   isStreaming = false,
   autoScroll = true,
-  compact = false,
-  previewLines,
-  expanded = true,
-  onToggleExpand,
   onClear,
   className,
   children,
   ...props
 }: TerminalProps) => {
-  const hasCustomChildren = children !== undefined && children !== null;
   const contextValue = useMemo(
-    () => ({
-      autoScroll,
-      compact,
-      expanded,
-      isStreaming,
-      onClear,
-      onToggleExpand,
-      output,
-      previewLines,
-    }),
-    [
-      autoScroll,
-      compact,
-      expanded,
-      isStreaming,
-      onClear,
-      onToggleExpand,
-      output,
-      previewLines,
-    ]
+    () => ({ autoScroll, isStreaming, onClear, output }),
+    [autoScroll, isStreaming, onClear, output]
   );
 
   return (
     <TerminalContext.Provider value={contextValue}>
       <div
         className={cn(
-          "flex flex-col overflow-hidden",
-          !hasCustomChildren &&
-            "llm-chat-runtime-surface border bg-[var(--chat-runtime-surface-bg)] text-[var(--chat-runtime-surface-text)]",
+          "flex flex-col overflow-hidden rounded-lg border bg-zinc-950 text-zinc-100",
           className
         )}
         {...props}
@@ -127,23 +87,17 @@ export const TerminalHeader = ({
   className,
   children,
   ...props
-}: TerminalHeaderProps) => {
-  const { compact } = useContext(TerminalContext);
-  return (
-    <div
-      className={cn(
-        "flex items-center justify-between",
-        compact
-          ? "px-2 pt-1.5 pb-0"
-          : "px-2 pt-1.5 pb-0",
-        className
-      )}
-      {...props}
-    >
-      {children}
-    </div>
-  );
-};
+}: TerminalHeaderProps) => (
+  <div
+    className={cn(
+      "flex items-center justify-between border-zinc-800 border-b px-4 py-2",
+      className
+    )}
+    {...props}
+  >
+    {children}
+  </div>
+);
 
 export type TerminalTitleProps = HTMLAttributes<HTMLDivElement>;
 
@@ -151,21 +105,15 @@ export const TerminalTitle = ({
   className,
   children,
   ...props
-}: TerminalTitleProps) => {
-  const { compact } = useContext(TerminalContext);
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-1.5 text-xs text-[var(--chat-runtime-surface-label)]",
-        className
-      )}
-      {...props}
-    >
-      <TerminalIcon className={cn(compact ? "size-3.5" : "size-4")} />
-      {children ?? "Terminal"}
-    </div>
-  );
-};
+}: TerminalTitleProps) => (
+  <div
+    className={cn("flex items-center gap-2 text-sm text-zinc-400", className)}
+    {...props}
+  >
+    <TerminalIcon className="size-4" />
+    {children ?? "Terminal"}
+  </div>
+);
 
 export type TerminalStatusProps = HTMLAttributes<HTMLDivElement>;
 
@@ -174,7 +122,7 @@ export const TerminalStatus = ({
   children,
   ...props
 }: TerminalStatusProps) => {
-  const { compact, isStreaming } = useContext(TerminalContext);
+  const { isStreaming } = useContext(TerminalContext);
 
   if (!isStreaming) {
     return null;
@@ -182,16 +130,10 @@ export const TerminalStatus = ({
 
   return (
     <div
-      className={cn(
-        "flex items-center gap-2",
-        compact
-          ? "text-[11px] text-[var(--chat-runtime-surface-label)]"
-          : "text-[11px] text-[var(--chat-runtime-surface-label)]",
-        className
-      )}
+      className={cn("flex items-center gap-2 text-xs text-zinc-400", className)}
       {...props}
     >
-      {children ?? <Shimmer className={compact ? "w-12" : "w-16"} />}
+      {children ?? <Shimmer className="w-16" />}
     </div>
   );
 };
@@ -254,11 +196,11 @@ export const TerminalCopyButton = ({
   return (
     <Button
       className={cn(
-        "size-6 shrink-0 text-[var(--chat-runtime-surface-icon)] hover:bg-[var(--chat-runtime-surface-hover)] hover:text-[var(--chat-runtime-surface-text)]",
+        "size-7 shrink-0 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100",
         className
       )}
       onClick={copyToClipboard}
-      size="icon-sm"
+      size="icon"
       variant="ghost"
       {...props}
     >
@@ -283,11 +225,11 @@ export const TerminalClearButton = ({
   return (
     <Button
       className={cn(
-        "size-6 shrink-0 text-[var(--chat-runtime-surface-icon)] hover:bg-[var(--chat-runtime-surface-hover)] hover:text-[var(--chat-runtime-surface-text)]",
+        "size-7 shrink-0 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100",
         className
       )}
       onClick={onClear}
-      size="icon-sm"
+      size="icon"
       variant="ghost"
       {...props}
     >
@@ -303,71 +245,32 @@ export const TerminalContent = ({
   children,
   ...props
 }: TerminalContentProps) => {
-  const {
-    autoScroll,
-    compact,
-    expanded,
-    isStreaming,
-    onToggleExpand,
-    output,
-    previewLines,
-  } = useContext(TerminalContext);
+  const { output, isStreaming, autoScroll } = useContext(TerminalContext);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  const lines = output.split("\n");
-  const hasPreview =
-    typeof previewLines === "number" && previewLines > 0 && lines.length > previewLines;
-  const shouldClamp = Boolean(hasPreview && !expanded);
-  const visibleOutput = shouldClamp
-    ? lines.slice(0, previewLines ?? 0).join("\n")
-    : output;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: output triggers auto-scroll when new content arrives
   useEffect(() => {
     if (autoScroll && containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  }, [visibleOutput, autoScroll]);
+  }, [output, autoScroll]);
 
   return (
     <div
       className={cn(
-        compact
-          ? "max-h-56 overflow-auto px-2 pb-1.5 pt-0 font-mono text-[11px] leading-tight"
-          : "max-h-72 overflow-auto px-2 pb-1.5 pt-0 font-mono text-xs leading-tight",
+        "max-h-96 overflow-auto p-4 font-mono text-sm leading-relaxed",
         className
       )}
       ref={containerRef}
       {...props}
     >
       {children ?? (
-        <>
-          <pre className="whitespace-pre-wrap break-words">
-            <Ansi>{visibleOutput}</Ansi>
-            {shouldClamp && "\n..."}
-            {isStreaming && (
-              <span
-                className={cn(
-                  "ml-0.5 inline-block animate-pulse",
-                  compact
-                    ? "h-4 w-1.5 bg-[var(--chat-runtime-surface-text)]"
-                    : "h-4 w-1.5 bg-[var(--chat-runtime-surface-text)]"
-                )}
-              />
-            )}
-          </pre>
-          {hasPreview && onToggleExpand && (
-            <Button
-              className="mt-1 h-6 px-2 text-[11px]"
-              onClick={() => onToggleExpand(!expanded)}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              {expanded ? "Show less" : `Show all (${lines.length} lines)`}
-            </Button>
+        <pre className="whitespace-pre-wrap break-words">
+          <Ansi>{output}</Ansi>
+          {isStreaming && (
+            <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-zinc-100" />
           )}
-        </>
+        </pre>
       )}
     </div>
   );

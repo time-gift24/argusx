@@ -32,20 +32,12 @@ export interface QueueTodo {
   status?: "pending" | "completed";
 }
 
-export type QueueItemProps = ComponentProps<"li"> & {
-  compact?: boolean;
-};
+export type QueueItemProps = ComponentProps<"li">;
 
-export const QueueItem = ({
-  className,
-  compact = false,
-  ...props
-}: QueueItemProps) => (
+export const QueueItem = ({ className, ...props }: QueueItemProps) => (
   <li
     className={cn(
-      compact
-        ? "group flex flex-col gap-1 rounded-md px-2 py-0.5 text-xs transition-colors hover:bg-muted"
-        : "group flex flex-col gap-1 rounded-md px-3 py-1 text-sm transition-colors hover:bg-muted",
+      "group flex flex-col gap-1 rounded-md px-3 py-1 text-sm transition-colors hover:bg-muted",
       className
     )}
     {...props}
@@ -188,18 +180,15 @@ export const QueueItemFile = ({
   </span>
 );
 
-export type QueueListProps = ComponentProps<typeof ScrollArea> & {
-  compact?: boolean;
-};
+export type QueueListProps = ComponentProps<typeof ScrollArea>;
 
 export const QueueList = ({
   children,
   className,
-  compact = false,
   ...props
 }: QueueListProps) => (
-  <ScrollArea className={cn(compact ? "mt-1 -mb-0.5" : "mt-2 -mb-1", className)} {...props}>
-    <div className={cn(compact ? "max-h-32 pr-2.5" : "max-h-40 pr-4")}>
+  <ScrollArea className={cn("mt-2 -mb-1", className)} {...props}>
+    <div className="max-h-40 pr-4">
       <ul>{children}</ul>
     </div>
   </ScrollArea>
@@ -273,16 +262,12 @@ export const QueueSectionContent = ({
   <CollapsibleContent className={cn(className)} {...props} />
 );
 
-export type QueueProps = ComponentProps<"div"> & {
-  compact?: boolean;
-};
+export type QueueProps = ComponentProps<"div">;
 
-export const Queue = ({ className, compact = false, ...props }: QueueProps) => (
+export const Queue = ({ className, ...props }: QueueProps) => (
   <div
     className={cn(
-      compact
-        ? "flex flex-col gap-1.5 rounded-md border border-border/60 bg-background/60 px-2 py-1.5"
-        : "flex flex-col gap-2 rounded-xl border border-border bg-background px-3 pt-2 pb-2 shadow-xs",
+      "flex flex-col gap-2 rounded-xl border border-border bg-background px-3 pt-2 pb-2 shadow-xs",
       className
     )}
     {...props}

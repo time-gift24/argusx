@@ -164,10 +164,8 @@ export const InlineCitationCarouselIndex = ({
       return;
     }
 
-    queueMicrotask(() => {
-      setCount(api.scrollSnapList().length);
-      setCurrent(api.selectedScrollSnap() + 1);
-    });
+    setCount(api.scrollSnapList().length);
+    setCurrent(api.selectedScrollSnap() + 1);
 
     const handleSelect = () => {
       setCurrent(api.selectedScrollSnap() + 1);

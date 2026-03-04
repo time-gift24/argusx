@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "@/types";
+import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
 import type {
   ChangeEvent,
   ChangeEventHandler,
@@ -378,7 +378,6 @@ export type PromptInputProps = Omit<
   maxFiles?: number;
   // bytes
   maxFileSize?: number;
-  inputGroupClassName?: string;
   onError?: (err: {
     code: "max_files" | "max_file_size" | "accept";
     message: string;
@@ -397,7 +396,6 @@ export const PromptInput = ({
   syncHiddenInput,
   maxFiles,
   maxFileSize,
-  inputGroupClassName,
   onError,
   onSubmit,
   children,
@@ -676,7 +674,7 @@ export const PromptInput = ({
         }
       }
     },
-     
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cleanup only on unmount; filesRef always current
     [usingProvider]
   );
 
@@ -801,9 +799,7 @@ export const PromptInput = ({
         ref={formRef}
         {...props}
       >
-        <InputGroup className={cn("overflow-hidden", inputGroupClassName)}>
-          {children}
-        </InputGroup>
+        <InputGroup className="overflow-hidden">{children}</InputGroup>
       </form>
     </>
   );

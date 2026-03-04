@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import "./globals.css";
 import { AppLayout } from "@/components/layouts";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export const metadata: Metadata = {
   title: "ArgusX",
@@ -54,7 +55,9 @@ export default function RootLayout({
         <Script id="argusx-theme-init" strategy="beforeInteractive">
           {themeInitScript}
         </Script>
-        <AppLayout>{children}</AppLayout>
+        <TooltipProvider>
+          <AppLayout>{children}</AppLayout>
+        </TooltipProvider>
       </body>
     </html>
   );

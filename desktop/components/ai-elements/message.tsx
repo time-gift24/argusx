@@ -1,10 +1,6 @@
-/**
- * @deprecated 已迁移到 components/ai/message.tsx
- * 请使用 `import { Message, MessageResponse } from "@/components/ai/message"` 代替
- */
 "use client";
 
-import type { UIMessage } from "@/types";
+import type { UIMessage } from "ai";
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -19,6 +15,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { cjk } from "@streamdown/cjk";
+import { code } from "@streamdown/code";
+import { math } from "@streamdown/math";
+import { mermaid } from "@streamdown/mermaid";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import {
   createContext,
@@ -30,10 +30,6 @@ import {
   useState,
 } from "react";
 import { Streamdown } from "streamdown";
-
-import { StreamdownCode } from "./streamdown-code";
-
-import { STREAMDOWN_PLUGINS } from "./streamdown-plugins";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -326,18 +322,16 @@ export const MessageBranchPage = ({
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
+const streamdownPlugins = { cjk, code, math, mermaid };
+
 export const MessageResponse = memo(
-  ({ className, components, ...props }: MessageResponseProps) => (
+  ({ className, ...props }: MessageResponseProps) => (
     <Streamdown
-      components={{
-        code: StreamdownCode,
-        ...components,
-      }}
       className={cn(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className
       )}
-      plugins={STREAMDOWN_PLUGINS}
+      plugins={streamdownPlugins}
       {...props}
     />
   ),

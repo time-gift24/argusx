@@ -1,4 +1,4 @@
-import type { Experimental_GeneratedImage } from "@/types";
+import type { Experimental_GeneratedImage } from "ai";
 
 import { cn } from "@/lib/utils";
 

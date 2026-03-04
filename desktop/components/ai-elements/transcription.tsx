@@ -1,6 +1,6 @@
 "use client";
 
-import type { Experimental_TranscriptionResult as TranscriptionResult } from "@/types";
+import type { Experimental_TranscriptionResult as TranscriptionResult } from "ai";
 import type { ComponentProps, ReactNode } from "react";
 
 import { useControllableState } from "@radix-ui/react-use-controllable-state";

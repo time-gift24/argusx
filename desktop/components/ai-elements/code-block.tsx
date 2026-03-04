@@ -1,7 +1,3 @@
-/**
- * @deprecated 已迁移到 components/ai/code-block.tsx
- * 请使用 `import { CodeBlock, CodeBlockHeader, ... } from "@/components/ai/code-block"` 代替
- */
 "use client";
 
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
@@ -21,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { CheckIcon, CopyIcon, DownloadIcon } from "lucide-react";
+import { CheckIcon, CopyIcon } from "lucide-react";
 import {
   createContext,
   memo,
@@ -36,10 +32,10 @@ import { createHighlighter } from "shiki";
 
 // Shiki uses bitflags for font styles: 1=italic, 2=bold, 4=underline
 // biome-ignore lint/suspicious/noBitwiseOperators: shiki bitflag check
- 
+// eslint-disable-next-line no-bitwise -- shiki bitflag check
 const isItalic = (fontStyle: number | undefined) => fontStyle && fontStyle & 1;
 // biome-ignore lint/suspicious/noBitwiseOperators: shiki bitflag check
- 
+// eslint-disable-next-line no-bitwise -- shiki bitflag check
 // oxlint-disable-next-line eslint(no-bitwise)
 const isBold = (fontStyle: number | undefined) => fontStyle && fontStyle & 2;
 const isUnderline = (fontStyle: number | undefined) =>
@@ -107,7 +103,6 @@ type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string;
   language: BundledLanguage;
   showLineNumbers?: boolean;
-  compact?: boolean;
 };
 
 interface TokenizedCode {
@@ -118,53 +113,12 @@ interface TokenizedCode {
 
 interface CodeBlockContextType {
   code: string;
-  language: string;
-  compact: boolean;
 }
 
 // Context
 const CodeBlockContext = createContext<CodeBlockContextType>({
   code: "",
-  language: "text",
-  compact: false,
 });
-
-const languageExtensions: Record<string, string> = {
-  bash: "sh",
-  c: "c",
-  cpp: "cpp",
-  go: "go",
-  java: "java",
-  javascript: "js",
-  js: "js",
-  json: "json",
-  markdown: "md",
-  md: "md",
-  python: "py",
-  py: "py",
-  rust: "rs",
-  sh: "sh",
-  shell: "sh",
-  text: "txt",
-  toml: "toml",
-  ts: "ts",
-  typescript: "ts",
-  yaml: "yml",
-  yml: "yml",
-};
-
-const resolveCodeFilename = (language: string): string => {
-  const normalized = language.trim().toLowerCase();
-  if (!normalized) {
-    return "code.txt";
-  }
-  const extension = languageExtensions[normalized];
-  if (extension) {
-    return `code.${extension}`;
-  }
-  const safeExtension = normalized.replace(/[^a-z0-9-]/g, "");
-  return `code.${safeExtension || "txt"}`;
-};
 
 // Highlighter cache (singleton per language)
 const highlighterCache = new Map<
@@ -300,12 +254,10 @@ const CodeBlockBody = memo(
   ({
     tokenized,
     showLineNumbers,
-    compact,
     className,
   }: {
     tokenized: TokenizedCode;
     showLineNumbers: boolean;
-    compact: boolean;
     className?: string;
   }) => {
     const preStyle = useMemo(
@@ -324,19 +276,14 @@ const CodeBlockBody = memo(
     return (
       <pre
         className={cn(
-          "dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)] m-0",
-          compact
-            ? "p-0 text-[11px] leading-[1.75]"
-            : "p-0 text-xs leading-[1.75]",
+          "dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)] m-0 p-4 text-sm",
           className
         )}
         style={preStyle}
       >
         <code
           className={cn(
-            compact
-              ? "font-mono text-[11px] leading-[1.75]"
-              : "font-mono text-xs leading-[1.75]",
+            "font-mono text-sm",
             showLineNumbers && "[counter-increment:line_0] [counter-reset:line]"
           )}
         >
@@ -354,7 +301,6 @@ const CodeBlockBody = memo(
   (prevProps, nextProps) =>
     prevProps.tokenized === nextProps.tokenized &&
     prevProps.showLineNumbers === nextProps.showLineNumbers &&
-    prevProps.compact === nextProps.compact &&
     prevProps.className === nextProps.className
 );
 
@@ -363,16 +309,14 @@ CodeBlockBody.displayName = "CodeBlockBody";
 export const CodeBlockContainer = ({
   className,
   language,
-  compact = false,
   style,
   ...props
-}: HTMLAttributes<HTMLDivElement> & { language: string; compact?: boolean }) => (
+}: HTMLAttributes<HTMLDivElement> & { language: string }) => (
   <div
     className={cn(
-      "group llm-chat-runtime-surface relative w-full overflow-hidden border bg-[var(--chat-runtime-surface-bg)] text-[var(--chat-runtime-surface-text)]",
+      "group relative w-full overflow-hidden rounded-md border bg-background text-foreground",
       className
     )}
-    data-density={compact ? "compact" : "default"}
     data-language={language}
     style={{
       containIntrinsicSize: "auto 200px",
@@ -390,7 +334,7 @@ export const CodeBlockHeader = ({
 }: HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex items-center justify-between border-0 bg-transparent px-2 pb-0 pt-1.5 text-xs text-[var(--chat-runtime-surface-label)]",
+      "flex items-center justify-between border-b bg-muted/80 px-3 py-2 text-muted-foreground text-xs",
       className
     )}
     {...props}
@@ -424,7 +368,10 @@ export const CodeBlockActions = ({
   className,
   ...props
 }: HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex items-center gap-1", className)} {...props}>
+  <div
+    className={cn("-my-1 -mr-1 flex items-center gap-2", className)}
+    {...props}
+  >
     {children}
   </div>
 );
@@ -433,12 +380,10 @@ export const CodeBlockContent = ({
   code,
   language,
   showLineNumbers = false,
-  compact = false,
 }: {
   code: string;
   language: BundledLanguage;
   showLineNumbers?: boolean;
-  compact?: boolean;
 }) => {
   // Memoized raw tokens for immediate display
   const rawTokens = useMemo(() => createRawTokens(code), [code]);
@@ -452,11 +397,7 @@ export const CodeBlockContent = ({
     let cancelled = false;
 
     // Reset to raw tokens when code changes (shows current code, not stale tokens)
-    queueMicrotask(() => {
-      if (!cancelled) {
-        setTokenized(highlightCode(code, language) ?? rawTokens);
-      }
-    });
+    setTokenized(highlightCode(code, language) ?? rawTokens);
 
     // Subscribe to async highlighting result
     highlightCode(code, language, (result) => {
@@ -471,15 +412,8 @@ export const CodeBlockContent = ({
   }, [code, language, rawTokens]);
 
   return (
-    <div className={cn(
-      "relative overflow-auto px-2 pb-1.5 pt-0",
-      compact ? "max-h-56" : "max-h-72"
-    )}>
-      <CodeBlockBody
-        compact={compact}
-        showLineNumbers={showLineNumbers}
-        tokenized={tokenized}
-      />
+    <div className="relative overflow-auto">
+      <CodeBlockBody showLineNumbers={showLineNumbers} tokenized={tokenized} />
     </div>
   );
 };
@@ -488,28 +422,18 @@ export const CodeBlock = ({
   code,
   language,
   showLineNumbers = false,
-  compact = false,
   className,
   children,
   ...props
 }: CodeBlockProps) => {
-  const contextValue = useMemo(
-    () => ({ code, compact, language }),
-    [code, compact, language]
-  );
+  const contextValue = useMemo(() => ({ code }), [code]);
 
   return (
     <CodeBlockContext.Provider value={contextValue}>
-      <CodeBlockContainer
-        className={className}
-        compact={compact}
-        language={language}
-        {...props}
-      >
+      <CodeBlockContainer className={className} language={language} {...props}>
         {children}
         <CodeBlockContent
           code={code}
-          compact={compact}
           language={language}
           showLineNumbers={showLineNumbers}
         />
@@ -530,13 +454,11 @@ export const CodeBlockCopyButton = ({
   timeout = 2000,
   children,
   className,
-  disabled,
   ...props
 }: CodeBlockCopyButtonProps) => {
   const [isCopied, setIsCopied] = useState(false);
   const timeoutRef = useRef<number>(0);
   const { code } = useContext(CodeBlockContext);
-  const isDisabled = disabled || code.trim().length === 0;
 
   const copyToClipboard = useCallback(async () => {
     if (typeof window === "undefined" || !navigator?.clipboard?.writeText) {
@@ -570,71 +492,13 @@ export const CodeBlockCopyButton = ({
 
   return (
     <Button
-      className={cn(
-        "size-6 shrink-0 border-0 bg-transparent text-[var(--chat-runtime-surface-icon)] shadow-none hover:bg-[var(--chat-runtime-surface-hover)] hover:text-[var(--chat-runtime-surface-text)]",
-        className
-      )}
-      disabled={isDisabled}
+      className={cn("shrink-0", className)}
       onClick={copyToClipboard}
-      aria-label={isCopied ? "Copied code" : "Copy code"}
-      size="icon-sm"
-      title={isCopied ? "Copied code" : "Copy code"}
+      size="icon"
       variant="ghost"
       {...props}
     >
       {children ?? <Icon size={14} />}
-    </Button>
-  );
-};
-
-export type CodeBlockDownloadButtonProps = ComponentProps<typeof Button> & {
-  onDownload?: () => void;
-  onError?: (error: Error) => void;
-};
-
-export const CodeBlockDownloadButton = ({
-  onDownload,
-  onError,
-  children,
-  className,
-  disabled,
-  ...props
-}: CodeBlockDownloadButtonProps) => {
-  const { code, language } = useContext(CodeBlockContext);
-  const isDisabled = disabled || code.trim().length === 0;
-
-  const downloadCode = useCallback(() => {
-    try {
-      const blob = new Blob([code], { type: "text/plain;charset=utf-8" });
-      const url = window.URL.createObjectURL(blob);
-      const link = window.document.createElement("a");
-      link.href = url;
-      link.download = resolveCodeFilename(language);
-      window.document.body.append(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      onDownload?.();
-    } catch (error) {
-      onError?.(error as Error);
-    }
-  }, [code, language, onDownload, onError]);
-
-  return (
-    <Button
-      className={cn(
-        "size-6 shrink-0 border-0 bg-transparent text-[var(--chat-runtime-surface-icon)] shadow-none hover:bg-[var(--chat-runtime-surface-hover)] hover:text-[var(--chat-runtime-surface-text)]",
-        className
-      )}
-      disabled={isDisabled}
-      onClick={downloadCode}
-      aria-label="Download code"
-      size="icon-sm"
-      title="Download code"
-      variant="ghost"
-      {...props}
-    >
-      {children ?? <DownloadIcon size={14} />}
     </Button>
   );
 };

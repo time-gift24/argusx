@@ -1,6 +1,6 @@
 "use client";
 
-import type { Tool } from "@/types";
+import type { Tool } from "ai";
 import type { ComponentProps } from "react";
 
 import {
