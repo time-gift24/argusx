@@ -1,828 +1,679 @@
 # Cookie Gateway Extension Integration Design
 
-**Date:** 2026-03-04
-**Status:** Draft
-**Author:** Claude Sonnet 4.6
+**Date:** 2026-03-04  
+**Status:** Revised Draft  
+**Author:** Claude Sonnet 4.6 (review-reworked by Codex)
 
-## Overview
+## Review-Driven Revision Summary
 
-This document describes the design for integrating Cookie Gateway into the ArgusX desktop application, including Chrome extension packaging, distribution, and user onboarding flow.
+This revision resolves the core issues found in the previous draft:
 
-## Problem Statement
+1. Aligns with **Tauri v2** (`@tauri-apps/api/core`, v2 `tauri.conf.json` structure)
+2. Aligns with **current repository structure** (`desktop/app`, `desktop/components/layouts/app-layout.tsx`, existing commands)
+3. Replaces non-existent APIs with implementable interfaces
+4. Defines complete onboarding state machine and persistence strategy
+5. Adds executable packaging approach and explicit failure handling
+6. Strengthens security model for localhost gateway and extension communication
+7. Adds concrete performance constraints and test matrix
 
-1. Cookie Gateway is implemented but not integrated into the desktop application
-2. Chrome extension needs to be packaged and distributed to users
-3. Users need guidance to install the extension on first launch
-4. Connection status needs to be monitored and displayed in real-time
-5. Setup completion should be tracked to avoid showing the setup page on subsequent launches
+---
 
-## Design Goals
+## 1. Overview
 
-- **Seamless Integration:** Cookie Gateway should be a core capability for SRE agents
-- **User-Friendly Onboarding:** Clear step-by-step guide for extension installation
-- **Real-Time Feedback:** Visual indication of connection status
-- **Automatic Setup:** Detect successful connection and skip setup on future launches
-- **Error Resilience:** Graceful handling of missing extension or connection failures
+This document defines how to integrate `cookie-gateway` into the desktop app, including:
 
-## Architecture
+- Extension packaging into desktop bundle resources
+- First-run setup experience (`/setup`)
+- Gateway and extension connectivity detection
+- Setup completion persistence
+- Safe cookie retrieval for agent tooling
 
-### System Components
+Primary objective: deliver a stable first-run flow that is implementable in the current codebase without breaking existing desktop runtime behavior.
 
+---
+
+## 2. Current Baseline (Repository Reality)
+
+### 2.1 Desktop
+
+- Tauri version: **v2** (`desktop/src-tauri/Cargo.toml`)
+- Frontend invoke API currently uses `@tauri-apps/api/core`
+- Root Next.js layout (`desktop/app/layout.tsx`) is currently server layout with metadata and wraps `AppLayout`
+- Existing cookie-related commands in `desktop/src-tauri/src/lib.rs`:
+  - `get_cookie_opt_in`
+  - `set_cookie_opt_in`
+  - `open_extension_folder`
+
+### 2.2 Cookie Gateway
+
+- Gateway listens on `127.0.0.1:3456`
+- Available routes:
+  - `GET /health`
+  - `GET /ws` (and aliases)
+  - `POST /api/cookies/fetch`
+  - `GET|POST /api/cookies`
+- Extension command bus exists and already supports request/response flow
+
+### 2.3 Chrome Extension
+
+- Manifest v3 service worker model
+- WebSocket client connects to `ws://localhost:3456`
+- Supports `GET_COOKIES` and `OPEN_URL` actions
+
+---
+
+## 3. Scope and Non-Goals
+
+### 3.1 Scope
+
+- Desktop setup page and guard
+- Tauri commands for setup/status/download
+- Extension package build/copy integration
+- Setup persistence model
+- Cookie fetch path from desktop runtime to extension
+
+### 3.2 Non-Goals (Phase 1)
+
+- Browser auto-detection beyond Chrome
+- Auto-install extension into browser profile
+- Remote extension update system
+- Full diagnostics UI (only minimal troubleshooting copy in setup page)
+
+---
+
+## 4. Architecture
+
+### 4.1 Components
+
+```text
+Desktop (Tauri v2 + Next.js)
+├── Setup UI (/setup)
+├── Route Guard (client component inside AppLayout)
+├── Tauri Commands
+│   ├── get_cookie_gateway_status
+│   ├── export_cookie_extension_bundle
+│   ├── get_cookie_setup_state
+│   ├── complete_cookie_setup
+│   ├── skip_cookie_setup
+│   ├── get_cookie_opt_in          (existing)
+│   ├── set_cookie_opt_in          (existing)
+│   └── open_extension_folder      (existing)
+└── AppState
+    ├── Arc<CookieGateway>
+    ├── Arc<RwLock<CookieSetupState>>
+    └── reqwest::Client (reused for health checks)
+
+Cookie Gateway (localhost:3456)
+├── /health
+├── /ws
+├── /api/cookies
+└── /api/cookies/fetch
+
+Chrome Extension
+├── background.js (WebSocket + command executor)
+└── manifest.json
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Desktop App (Tauri)                       │
-│                                                              │
-│  ┌──────────────────┐         ┌─────────────────────────┐  │
-│  │  Setup Page      │         │  Main Dashboard         │  │
-│  │  /app/setup      │         │  /app & /app/chat       │  │
-│  │                  │         │                         │  │
-│  │  - Extension DL  │◄───────►│  - Agent Chat           │  │
-│  │  - Install Guide │         │  - Use Cookie Tool      │  │
-│  │  - Conn Status   │         │                         │  │
-│  └────────┬─────────┘         └───────────┬─────────────┘  │
-│           │                               │                  │
-│           │ invoke()                      │ invoke()         │
-│           ▼                               ▼                  │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │      Tauri Commands (src-tauri/src/lib.rs)           │   │
-│  │                                                       │   │
-│  │  - get_extension_status()                            │   │
-│  │  - download_extension() -> .crx file path            │   │
-│  │  - check_gateway_connection() -> bool                │   │
-│  │  - fetch_cookies(domain) -> Vec<CookieData>          │   │
-│  │  - get_init_state() -> InitState                     │   │
-│  │  - set_init_completed()                              │   │
-│  └────────┬──────────────────────────────────────────────┘   │
-└───────────┼──────────────────────────────────────────────────┘
-            │
-            │ Rust API calls (Arc<CookieGateway>)
-            ▼
-┌───────────────────────────────────────────────────────────┐
-│         Cookie Gateway (localhost:3456)                    │
-│                                                            │
-│  ┌──────────────┐         ┌──────────────────────┐        │
-│  │ HTTP Server  │         │  WebSocket Server    │        │
-│  │  /health     │         │  /ws                 │        │
-│  │  /api/cookies│◄────────┤                      │        │
-│  │  /api/fetch  │         │  Chrome Extension    │        │
-│  └──────────────┘         │  Connection          │        │
-│                           └──────────────────────┘        │
-└───────────────────────────────────────────────────────────┘
-            ▲
-            │ WebSocket (ws://localhost:3456)
-            │
-┌───────────────────────────────────────────────────────────┐
-│         Chrome Extension (cookie-gateway-client)           │
-│                                                            │
-│  - background.js (WebSocket client)                        │
-│  - Responds to GET_COOKIES commands                        │
-│  - Auto-reconnect on disconnect                            │
-└───────────────────────────────────────────────────────────┘
+
+### 4.2 Key Interactions
+
+1. Desktop boot starts gateway in background task.
+2. Route guard reads setup state + live gateway status.
+3. If setup required, redirect to `/setup`.
+4. User exports extension bundle, opens extension folder, installs extension.
+5. Extension connects over WebSocket.
+6. Setup page detects connection, marks setup completed, redirects to `/`.
+
+---
+
+## 5. Setup State Machine
+
+```text
+NOT_STARTED
+  ├─(user enters setup)────────────> WAITING_EXTENSION
+  ├─(user clicks skip)─────────────> SKIPPED
+  └─(extension connected + confirm)-> COMPLETED
+
+WAITING_EXTENSION
+  ├─(extension connected)──────────> CONNECTED
+  ├─(user clicks skip)─────────────> SKIPPED
+  └─(app restart)──────────────────> WAITING_EXTENSION
+
+CONNECTED
+  └─(complete setup)───────────────> COMPLETED
+
+SKIPPED
+  ├─(user opens setup manually)────> WAITING_EXTENSION
+  └─(settings reset)───────────────> NOT_STARTED
+
+COMPLETED
+  └─(settings reset)───────────────> NOT_STARTED
 ```
 
-### Key Design Decisions
+**Important:** `SKIPPED` and `COMPLETED` are different states.  
+Do not use a single `setup_completed: bool` for both.
 
-1. **Gateway Lifecycle:** Cookie Gateway starts automatically when Tauri app launches using `tokio::spawn`
-2. **Extension Distribution:** Extension packaged as Tauri resource, copied to user directory on download
-3. **State Persistence:** Init state stored in `~/.config/argusx/init_state.json`
-4. **Connection Detection:** Setup page polls every 2 seconds via `check_gateway_connection()`
+---
 
-## Implementation Details
+## 6. Data Model and Persistence
 
-### 1. Tauri Commands
+### 6.1 Rust Data Structures
 
-**File:** `desktop/src-tauri/src/lib.rs`
-
-#### Data Structures
+**File:** `desktop/src-tauri/src/lib.rs` (or extracted `cookie_setup.rs`)
 
 ```rust
-use tauri::State;
-use std::sync::Arc;
-use cookie_gateway::{CookieGateway, CookieData};
+use serde::{Deserialize, Serialize};
 
-pub struct AppState {
-    cookie_gateway: Arc<CookieGateway>,
-    init_state: Arc<Mutex<InitState>>,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CookieSetupPhase {
+    NotStarted,
+    WaitingExtension,
+    Connected,
+    Completed,
+    Skipped,
 }
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct InitState {
-    pub extension_installed: bool,
-    pub setup_completed: bool,
-    pub last_connection_check: Option<String>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct CookieSetupState {
+    pub phase: CookieSetupPhase,
+    pub updated_at: String,
+    pub skipped_reason: Option<String>,
+    pub version: u32,
 }
 
-#[derive(serde::Serialize)]
-pub struct ExtensionStatus {
+impl Default for CookieSetupState {
+    fn default() -> Self {
+        Self {
+            phase: CookieSetupPhase::NotStarted,
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            skipped_reason: None,
+            version: 1,
+        }
+    }
+}
+```
+
+### 6.2 Storage Location
+
+- Path: `<app_data_dir>/cookie_setup_state.json`
+- Write policy:
+  - write only when state changes
+  - atomic write (`*.tmp` then rename)
+  - tolerate corruption by resetting to default and logging warning
+
+---
+
+## 7. Backend API Contract (Tauri Commands)
+
+### 7.1 Command Surface
+
+```rust
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct CookieGatewayStatus {
     pub gateway_running: bool,
     pub extension_connected: bool,
-    pub extension_path: Option<String>,
+    pub setup_phase: CookieSetupPhase,
 }
 
-#[derive(serde::Serialize)]
-pub struct CookieFetchResult {
-    pub domain: String,
-    pub count: usize,
-    pub source: String, // "cache" | "refresh"
-    pub cookies: Vec<CookieData>,
+#[tauri::command]
+async fn get_cookie_gateway_status(state: tauri::State<'_, AppState>) -> Result<CookieGatewayStatus, String>;
+
+#[tauri::command]
+async fn export_cookie_extension_bundle(app: tauri::AppHandle) -> Result<String, String>;
+
+#[tauri::command]
+async fn get_cookie_setup_state(state: tauri::State<'_, AppState>) -> Result<CookieSetupState, String>;
+
+#[tauri::command]
+async fn complete_cookie_setup(state: tauri::State<'_, AppState>) -> Result<(), String>;
+
+#[tauri::command]
+async fn skip_cookie_setup(
+    reason: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String>;
+```
+
+### 7.2 AppState Extension
+
+```rust
+struct AppState {
+    // existing fields...
+    cookie_gateway: std::sync::Arc<cookie_gateway::CookieGateway>,
+    cookie_setup_state: std::sync::Arc<tokio::sync::RwLock<CookieSetupState>>,
+    cookie_gateway_health_client: reqwest::Client,
 }
 ```
 
-#### Command Functions
+### 7.3 Gateway Accessors Needed in `cookie-gateway`
+
+`cookie-gateway` currently does not expose extension connection status and fetch API on `CookieGateway` directly.  
+Add these methods:
+
+**File:** `cookie-gateway/src/lib.rs`
 
 ```rust
-// 1. Check extension and gateway status
-#[tauri::command]
-async fn get_extension_status(
-    state: State<'_, Arc<AppState>>,
-) -> Result<ExtensionStatus, String> {
-    let gateway_running = check_gateway_health().await?;
-    let extension_connected = state.cookie_gateway.has_connected_extension().await;
-    let extension_path = get_extension_resource_path()?;
-
-    Ok(ExtensionStatus {
-        gateway_running,
-        extension_connected,
-        extension_path: Some(extension_path),
-    })
-}
-
-// 2. Download/export extension file
-#[tauri::command]
-async fn download_extension(
-    app: tauri::AppHandle,
-) -> Result<String, String> {
-    let resource_path = get_extension_resource_path()?;
-    let download_dir = app.path_resolver()
-        .resolve_path(ResourceType::Download)
-        .ok_or("Failed to resolve download directory")?;
-
-    let dest_path = download_dir.join("argusx-cookie-extension.zip");
-
-    std::fs::copy(&resource_path, &dest_path)
-        .map_err(|e| format!("Failed to copy extension: {}", e))?;
-
-    Ok(dest_path.to_string_lossy().to_string())
-}
-
-// 3. Check gateway connection status
-#[tauri::command]
-async fn check_gateway_connection(
-    state: State<'_, Arc<AppState>>,
-) -> Result<bool, String> {
-    let health = check_gateway_health().await?;
-
-    if health {
-        let mut init_state = state.init_state.lock().await;
-        init_state.last_connection_check = Some(chrono::Utc::now().to_rfc3339());
-        save_init_state(&init_state)?;
+impl CookieGateway {
+    pub async fn is_extension_connected(&self) -> bool {
+        self.state.command_bus.is_connected().await
     }
 
-    Ok(health && state.cookie_gateway.has_connected_extension().await)
+    pub async fn fetch_cookies(
+        &self,
+        domain: &str,
+        refresh_after: std::time::Duration,
+    ) -> Result<crate::tool::CookieFetchOutput, crate::error::CookieGatewayError> {
+        self.state.cookie_fetch_tool.fetch(domain, refresh_after).await
+    }
 }
+```
 
-// 4. Fetch cookies for specified domain
-#[tauri::command]
-async fn fetch_cookies(
-    domain: String,
-    refresh_after_ms: Option<u64>,
-    state: State<'_, Arc<AppState>>,
-) -> Result<CookieFetchResult, String> {
-    let refresh_after = std::time::Duration::from_millis(
-        refresh_after_ms.unwrap_or(300_000) // Default 5 minutes
-    );
+**File:** `cookie-gateway/src/command_bus.rs`
 
-    let result = state.cookie_gateway
-        .fetch_cookies(&domain, refresh_after)
+```rust
+impl GatewayCommandBus {
+    pub async fn is_connected(&self) -> bool {
+        self.connection.read().await.is_some()
+    }
+}
+```
+
+### 7.4 Health Check Helper (Client Reuse)
+
+```rust
+async fn check_gateway_health(client: &reqwest::Client) -> bool {
+    client
+        .get("http://127.0.0.1:3456/health")
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
         .await
-        .map_err(|e| format!("Failed to fetch cookies: {}", e))?;
-
-    Ok(CookieFetchResult {
-        domain: result.domain,
-        count: result.count,
-        source: match result.source {
-            cookie_gateway::CookieFetchSource::Cache => "cache".to_string(),
-            cookie_gateway::CookieFetchSource::Refresh => "refresh".to_string(),
-        },
-        cookies: result.cookies,
-    })
-}
-
-// 5. Get initialization state
-#[tauri::command]
-async fn get_init_state(
-    state: State<'_, Arc<AppState>>,
-) -> Result<InitState, String> {
-    let init_state = state.init_state.lock().await;
-    Ok(init_state.clone())
-}
-
-// 6. Mark initialization as completed
-#[tauri::command]
-async fn set_init_completed(
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    let mut init_state = state.init_state.lock().await;
-    init_state.setup_completed = true;
-    save_init_state(&init_state)?;
-    Ok(())
+        .map(|res| res.status().is_success())
+        .unwrap_or(false)
 }
 ```
 
-#### Helper Functions
+---
 
-```rust
-async fn check_gateway_health() -> Result<bool, String> {
-    use reqwest::Client;
-    let client = Client::new();
+## 8. Frontend Design
 
-    match client.get("http://localhost:3456/health").send().await {
-        Ok(response) => Ok(response.status().is_success()),
-        Err(_) => Ok(false),
-    }
-}
+### 8.1 New Setup Route
 
-fn get_extension_resource_path() -> Result<String, String> {
-    Ok("resources/chrome-extension.zip".to_string())
-}
+- Create: `desktop/app/setup/page.tsx`
+- Use `@tauri-apps/api/core` invoke API
+- Poll status with interval + in-flight guard to avoid overlapping requests
+- Show explicit troubleshooting actions:
+  - export extension bundle
+  - open extension folder
+  - re-check now
+  - skip for now
 
-fn save_init_state(state: &InitState) -> Result<(), String> {
-    // Save to app_data_dir/init_state.json
-    // Implementation omitted for brevity
-    Ok(())
-}
-```
+### 8.2 Startup Guard Placement
 
-#### App Initialization
+Do **not** convert `desktop/app/layout.tsx` to client component.  
+Keep root layout server-compatible.
 
-```rust
-fn main() {
-    tauri::Builder::default()
-        .setup(|app| {
-            // Start cookie gateway
-            let gateway = CookieGateway::new(CookieStore::new());
-            let gateway_clone = gateway.clone();
+Add guard in client layer:
 
-            tauri::async_runtime::spawn(async move {
-                gateway_clone.start().await.expect("Failed to start cookie gateway");
-            });
+- Modify: `desktop/components/layouts/app-layout.tsx`
+- Add `CookieSetupGate` (new component) around `children`
 
-            // Initialize app state
-            let init_state = load_or_create_init_state()?;
-            let app_state = Arc::new(AppState {
-                cookie_gateway: gateway,
-                init_state: Arc::new(Mutex::new(init_state)),
-            });
+**File:** `desktop/components/features/setup/cookie-setup-gate.tsx`
 
-            app.manage(app_state);
-
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            get_extension_status,
-            download_extension,
-            check_gateway_connection,
-            fetch_cookies,
-            get_init_state,
-            set_init_completed,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
-```
-
-### 2. Frontend Setup Page
-
-**File:** `desktop/app/setup/page.tsx`
-
-```typescript
+```tsx
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { invoke } from "@tauri-apps/api/tauri";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import {
-  CheckCircle2,
-  XCircle,
-  Download,
-  ExternalLink,
-  Loader2,
-  Chrome,
-} from "lucide-react";
-import { useToast } from "@/components/ui/use-toast";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
 
-interface ExtensionStatus {
-  gateway_running: boolean;
-  extension_connected: boolean;
-  extension_path: string | null;
-}
-
-interface InitState {
-  extension_installed: boolean;
-  setup_completed: boolean;
-  last_connection_check: string | null;
-}
-
-export default function SetupPage() {
+export function CookieSetupGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { toast } = useToast();
-  const [status, setStatus] = useState<ExtensionStatus | null>(null);
-  const [downloading, setDownloading] = useState(false);
-
-  // Check connection status every 2 seconds
-  useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const status = await invoke<ExtensionStatus>("get_extension_status");
-        setStatus(status);
-
-        // If extension connected and setup not completed, mark as complete
-        if (status.extension_connected) {
-          const initState = await invoke<InitState>("get_init_state");
-          if (!initState.setup_completed) {
-            await invoke("set_init_completed");
-            toast({
-              title: "设置完成",
-              description: "Chrome 扩展已成功连接，正在跳转...",
-            });
-            setTimeout(() => router.push("/"), 2000);
-          }
-        }
-      } catch (error) {
-        console.error("Failed to check status:", error);
-      }
-    };
-
-    checkStatus();
-    const interval = setInterval(checkStatus, 2000);
-    return () => clearInterval(interval);
-  }, [router, toast]);
-
-  const handleDownloadExtension = async () => {
-    setDownloading(true);
-    try {
-      const path = await invoke<string>("download_extension");
-      toast({
-        title: "扩展已下载",
-        description: `文件保存在: ${path}`,
-      });
-    } catch (error) {
-      toast({
-        title: "下载失败",
-        description: String(error),
-        variant: "destructive",
-      });
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  const handleOpenExtensions = () => {
-    invoke("open_chrome_extensions").catch(console.error);
-  };
-
-  const handleSkip = async () => {
-    try {
-      await invoke("set_init_completed");
-      router.push("/");
-    } catch (error) {
-      console.error("Failed to skip setup:", error);
-    }
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-2xl">初始化设置</CardTitle>
-              <CardDescription className="mt-1">
-                安装 Chrome 扩展以启用 Cookie Gateway 功能
-              </CardDescription>
-            </div>
-            <Chrome className="h-8 w-8 text-muted-foreground" />
-          </div>
-        </CardHeader>
-
-        <CardContent className="space-y-6">
-          {/* Step 1: Download Extension */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">步骤 1</Badge>
-              <span className="font-semibold">下载 Chrome 扩展</span>
-            </div>
-            <Button
-              onClick={handleDownloadExtension}
-              disabled={downloading}
-              className="w-full"
-            >
-              {downloading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  下载中...
-                </>
-              ) : (
-                <>
-                  <Download className="mr-2 h-4 w-4" />
-                  下载扩展文件 (.zip)
-                </>
-              )}
-            </Button>
-          </div>
-
-          <Separator />
-
-          {/* Step 2: Install Extension */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">步骤 2</Badge>
-              <span className="font-semibold">安装扩展</span>
-            </div>
-            <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
-              <li>打开 Chrome 浏览器</li>
-              <li>
-                在地址栏输入{" "}
-                <code className="bg-muted px-1 rounded">chrome://extensions</code>
-              </li>
-              <li>开启右上角的"开发者模式"</li>
-              <li>将下载的 .zip 文件拖拽到页面中</li>
-              <li>点击"添加扩展程序"确认安装</li>
-            </ol>
-            <Button variant="outline" onClick={handleOpenExtensions}>
-              <ExternalLink className="mr-2 h-4 w-4" />
-              打开 Chrome 扩展页面
-            </Button>
-          </div>
-
-          <Separator />
-
-          {/* Step 3: Verify Connection */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">步骤 3</Badge>
-              <span className="font-semibold">验证连接状态</span>
-            </div>
-
-            <div className="space-y-2">
-              {/* Gateway Status */}
-              <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                <div className="flex items-center gap-2">
-                  {status?.gateway_running ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-500" />
-                  ) : (
-                    <XCircle className="h-5 w-5 text-red-500" />
-                  )}
-                  <span className="text-sm">Cookie Gateway 服务</span>
-                </div>
-                <Badge variant={status?.gateway_running ? "default" : "secondary"}>
-                  {status?.gateway_running ? "运行中" : "未启动"}
-                </Badge>
-              </div>
-
-              {/* Extension Status */}
-              <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                <div className="flex items-center gap-2">
-                  {status?.extension_connected ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-500" />
-                  ) : (
-                    <Loader2 className="h-5 w-5 animate-spin text-yellow-500" />
-                  )}
-                  <span className="text-sm">Chrome 扩展连接</span>
-                </div>
-                <Badge variant={status?.extension_connected ? "default" : "secondary"}>
-                  {status?.extension_connected ? "已连接" : "等待连接"}
-                </Badge>
-              </div>
-            </div>
-
-            {status?.extension_connected && (
-              <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
-                <p className="text-sm text-green-700 flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4" />
-                  扩展连接成功！正在跳转到主页...
-                </p>
-              </div>
-            )}
-          </div>
-
-          <Separator />
-
-          {/* Skip Button */}
-          <div className="flex justify-end">
-            <Button variant="ghost" onClick={handleSkip}>
-              跳过设置
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-```
-
-### 3. Startup Flow
-
-**File:** `desktop/app/layout.tsx`
-
-```typescript
-"use client";
-
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { invoke } from "@tauri-apps/api/tauri";
-import { Loader2 } from "lucide-react";
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  const [checking, setChecking] = useState(true);
+  const pathname = usePathname();
+  const inflight = useRef(false);
 
   useEffect(() => {
-    const checkInitState = async () => {
+    if (!isTauri()) return;
+    let cancelled = false;
+
+    const check = async () => {
+      if (inflight.current) return;
+      inflight.current = true;
       try {
-        const state = await invoke<{
-          extension_installed: boolean;
-          setup_completed: boolean;
-          last_connection_check: string | null;
-        }>("get_init_state");
+        const status = await invoke<{ setup_phase: string; extension_connected: boolean }>(
+          "get_cookie_gateway_status",
+        );
+        if (cancelled) return;
 
-        // If setup not completed and extension not connected, redirect to setup
-        if (!state.setup_completed) {
-          const status = await invoke<{
-            gateway_running: boolean;
-            extension_connected: boolean;
-          }>("get_extension_status");
+        const needsSetup =
+          status.setup_phase !== "completed" &&
+          status.setup_phase !== "skipped" &&
+          !status.extension_connected;
 
-          if (!status.extension_connected) {
-            router.push("/setup");
-          }
-        }
-      } catch (error) {
-        console.error("Failed to check init state:", error);
+        if (needsSetup && pathname !== "/setup") router.replace("/setup");
+        if (!needsSetup && pathname === "/setup") router.replace("/");
       } finally {
-        setChecking(false);
+        inflight.current = false;
       }
     };
 
-    checkInitState();
-  }, [router]);
+    void check();
+    const timer = setInterval(() => void check(), 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [pathname, router]);
 
-  if (checking) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">加载中...</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    // ... original layout content
-  );
+  return <>{children}</>;
 }
 ```
 
-### 4. Extension Packaging
+---
+
+## 9. Extension Packaging and Distribution
+
+### 9.1 Build Pipeline
+
+1. Build extension archive during Tauri build
+2. Copy `chrome-extension.zip` into `desktop/src-tauri/resources/`
+3. Bundle as app resource
+4. On setup page, export to user-accessible directory
+
+### 9.2 `tauri.conf.json` (v2-aligned)
 
 **File:** `desktop/src-tauri/tauri.conf.json`
 
 ```json
 {
+  "$schema": "https://schema.tauri.app/config/2",
   "build": {
-    "beforeBuildCommand": "pnpm build",
-    "beforeDevCommand": "pnpm dev",
-    "devPath": "http://localhost:3000",
-    "distDir": "../out"
+    "beforeDevCommand": "pnpm run dev",
+    "beforeBuildCommand": "pnpm run build",
+    "devUrl": "http://localhost:3000",
+    "frontendDist": "../out"
   },
-  "tauri": {
-    "bundle": {
-      "resources": [
-        "resources/*"
-      ]
-    },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": [
+      "resources/chrome-extension.zip"
+    ]
+  },
+  "app": {
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ws://localhost:3456 http://localhost:3456"
+      "csp": "default-src 'self'; connect-src 'self' ws://127.0.0.1:3456 http://127.0.0.1:3456;"
     }
   }
 }
 ```
+
+### 9.3 `build.rs` (executable form)
 
 **File:** `desktop/src-tauri/build.rs`
 
 ```rust
+use std::path::PathBuf;
 use std::process::Command;
-use std::path::Path;
 
 fn main() {
-    // Build Chrome extension before Tauri app
-    println!("cargo:rerun-if-changed=../cookie-gateway/chrome-extension");
+    tauri_build::build();
+    println!("cargo:rerun-if-changed=../../cookie-gateway/chrome-extension");
 
-    // Run extension packaging script
-    let output = Command::new("../cookie-gateway/chrome-extension/build-extension.sh")
-        .current_dir("../cookie-gateway/chrome-extension")
-        .output()
-        .expect("Failed to build Chrome extension");
+    let extension_dir = PathBuf::from("../../cookie-gateway/chrome-extension");
+    let script = extension_dir.join("build-extension.sh");
 
-    if !output.status.success() {
-        panic!("Chrome extension build failed: {:?}", output.stderr);
+    let status = Command::new("bash")
+        .arg(script)
+        .current_dir(&extension_dir)
+        .status()
+        .expect("failed to run extension build script");
+
+    if !status.success() {
+        panic!("extension build script failed");
     }
 
-    // Copy extension to resources directory
-    let from = Path::new("../cookie-gateway/chrome-extension/dist/chrome-extension.zip");
-    let to = Path::new("resources/chrome-extension.zip");
-    std::fs::create_dir_all("resources").expect("Failed to create resources dir");
-    std::fs::copy(from, to).expect("Failed to copy extension");
+    let from = extension_dir.join("dist/chrome-extension.zip");
+    let to_dir = PathBuf::from("resources");
+    let to = to_dir.join("chrome-extension.zip");
 
-    println!("cargo:warning=Chrome extension packaged successfully");
+    std::fs::create_dir_all(&to_dir).expect("failed to create resources dir");
+    std::fs::copy(&from, &to).expect("failed to copy extension zip");
 }
 ```
+
+### 9.4 Extension Packaging Script
 
 **File:** `cookie-gateway/chrome-extension/build-extension.sh`
 
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-set -e
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+DIST="$ROOT/dist"
+ZIP_PATH="$DIST/chrome-extension.zip"
 
-echo "Building Chrome extension..."
+mkdir -p "$DIST"
+rm -f "$ZIP_PATH"
 
-# Create output directory
-mkdir -p dist
+cd "$ROOT"
+zip -r "$ZIP_PATH" manifest.json background.js popup.html
 
-# Package extension (simplified: create zip directly)
-cd "$(dirname "$0")"
-zip -r dist/chrome-extension.zip \
-    manifest.json \
-    background.js \
-    popup.html
-
-echo "Extension packaged: dist/chrome-extension.zip"
-echo "Size: $(du -h dist/chrome-extension.zip | cut -f1)"
+echo "Extension packaged: $ZIP_PATH"
 ```
 
-### 5. Error Handling
+---
 
-**File:** `desktop/src-tauri/src/lib.rs`
+## 10. Error Handling
 
-```rust
-#[derive(Debug, serde::Serialize)]
-pub enum AppError {
-    GatewayNotRunning,
-    ExtensionNotConnected,
-    CookieFetchFailed(String),
-    FileSystemError(String),
-    StateError(String),
-}
+### 10.1 Error Model
 
-impl std::fmt::Display for AppError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            AppError::GatewayNotRunning => write!(f, "Cookie Gateway 服务未运行"),
-            AppError::ExtensionNotConnected => write!(f, "Chrome 扩展未连接"),
-            AppError::CookieFetchFailed(msg) => write!(f, "获取 Cookie 失败: {}", msg),
-            AppError::FileSystemError(msg) => write!(f, "文件操作失败: {}", msg),
-            AppError::StateError(msg) => write!(f, "状态管理错误: {}", msg),
-        }
-    }
-}
+- Backend returns structured stringified error JSON for UI mapping
+- UI maps error code to localized user message
+- Fatal errors do not crash setup page; setup stays interactive
+
+### 10.2 Error Categories
+
+| Code | Source | User Action |
+|---|---|---|
+| `GATEWAY_NOT_RUNNING` | Health check failed | Retry, restart app |
+| `EXTENSION_NOT_CONNECTED` | No ws client | Open extension page and reload extension |
+| `EXTENSION_EXPORT_FAILED` | File export failed | Choose another directory, check permissions |
+| `STATE_PERSIST_FAILED` | JSON write failed | Retry, check disk space |
+| `COOKIE_FETCH_FAILED` | Gateway tool path | Retry, inspect domain whitelist / opt-in |
+
+### 10.3 Boundary Cases to Handle Explicitly
+
+1. Port `3456` already in use
+2. Extension installed but service worker sleeping (temporary disconnect)
+3. Download/export directory unavailable
+4. Corrupted setup state file
+5. App starts without Tauri context (web dev mode fallback)
+
+---
+
+## 11. Security Design
+
+### 11.1 Localhost Boundary
+
+- Gateway binds `127.0.0.1` only
+- Frontend CSP only allows localhost gateway endpoints
+- No external endpoint required for setup flow
+
+### 11.2 Extension Command Surface Hardening
+
+Phase 1 requirement:
+
+- Keep `GET_COOKIES` enabled
+- Gate `OPEN_URL` behind explicit feature flag (default off)
+- Reject unknown action types
+
+### 11.3 Handshake and Authentication (Required for production hardening)
+
+Add lightweight handshake token:
+
+1. Desktop generates random token at boot
+2. Gateway sends challenge on connection
+3. Extension must echo signed token in `CLIENT_HELLO`
+4. Unverified clients are disconnected and ignored
+
+This mitigates unauthorized local process command injection.
+
+### 11.4 Sensitive Data Handling
+
+- Never log raw cookie values
+- UI shows counts/status only
+- Cookie payload kept in memory; no disk persistence for cookie contents
+
+---
+
+## 12. Performance Design
+
+### 12.1 Polling Strategy
+
+- Setup page polling:
+  - first 60s: every 2s
+  - after 60s: every 5s
+- Use in-flight guard to avoid stacked requests
+
+### 12.2 Backend Efficiency
+
+- Reuse one `reqwest::Client` in `AppState`
+- Write setup state only on actual transition
+- Use in-memory cookie cache with configurable `refresh_after_ms` (default 5 min)
+
+### 12.3 Target Limits
+
+- Setup status check P95 latency < 100ms (local)
+- CPU overhead from polling < 1% while setup page is open
+- No unbounded pending request growth on repeated reconnect failures
+
+---
+
+## 13. User Experience and Onboarding
+
+### 13.1 Setup Page Steps
+
+1. Export extension package
+2. Open extension folder and installation instructions
+3. Verify live connection
+4. Confirm completion
+
+### 13.2 UX Requirements
+
+- Must show current state (`gateway_running`, `extension_connected`, `setup_phase`)
+- Must expose retry button
+- Must provide skip action with explicit warning
+- Must auto-redirect only after state becomes `completed`
+
+### 13.3 Copy Improvements
+
+- Replace ambiguous "拖拽 zip 即可安装" with browser-version-safe instructions:
+  - unzip package
+  - open `chrome://extensions`
+  - enable developer mode
+  - click "Load unpacked"
+  - choose extracted directory
+
+---
+
+## 14. Testing Strategy
+
+### 14.1 Rust Unit and Integration Tests
+
+1. `CookieSetupState` persistence read/write and corruption recovery
+2. Gateway status command with mocked health client
+3. `skip` vs `complete` transition correctness
+4. `is_extension_connected` behavior with/without active websocket client
+
+Run:
+
+```bash
+cargo test -p cookie-gateway
+cargo test -p desktop cookie
 ```
 
-**File:** `desktop/lib/errors.ts`
+### 14.2 Frontend Tests (Vitest + RTL)
 
-```typescript
-export class AppError extends Error {
-  constructor(
-    public code: string,
-    message: string,
-    public userMessage?: string
-  ) {
-    super(message);
-  }
-}
+1. Setup page renders step-by-step guidance
+2. Error toast appears for command failure
+3. Auto-redirect when status switches to connected/completed
+4. Route guard redirects correctly
 
-export const ERROR_CODES = {
-  GATEWAY_NOT_RUNNING: "GATEWAY_NOT_RUNNING",
-  EXTENSION_NOT_CONNECTED: "EXTENSION_NOT_CONNECTED",
-  COOKIE_FETCH_FAILED: "COOKIE_FETCH_FAILED",
-} as const;
+Run:
+
+```bash
+pnpm --dir desktop test
 ```
 
-## Testing Strategy
+### 14.3 Manual Acceptance Checklist
 
-### Unit Tests (Rust)
+- [ ] Fresh install enters `/setup`
+- [ ] Gateway auto-starts and `/health` returns 200
+- [ ] Extension package exports successfully
+- [ ] Extension connection badge turns green after install
+- [ ] Skip does not mark setup as completed
+- [ ] Restart respects `completed` and skips setup
+- [ ] Cookie fetch from chat tool works for whitelisted domain
 
-```rust
-#[tokio::test]
-async fn test_get_extension_status() {
-    let state = create_test_state().await;
-    let status = get_extension_status(State(state)).await.unwrap();
+---
 
-    assert!(status.gateway_running);
-    assert!(!status.extension_connected);
-}
+## 15. Technical Debt and Follow-ups
 
-#[tokio::test]
-async fn test_fetch_cookies_without_extension() {
-    let state = create_test_state().await;
+1. Move setup persistence from JSON file to SQLite table (unify app state storage)
+2. Replace polling with push events from backend (`tauri::Emitter`)
+3. Add diagnostics page for connection troubleshooting
+4. Add browser matrix support (Edge, Firefox)
+5. Add extension update mechanism and signature validation
 
-    let result = fetch_cookies(
-        "example.com".to_string(),
-        None,
-        State(state),
-    ).await;
+---
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        AppError::ExtensionNotConnected => (),
-        _ => panic!("Expected ExtensionNotConnected error"),
-    }
-}
-```
+## 16. Migration and Rollout
 
-### E2E Tests (TypeScript)
+### Phase 1
 
-```typescript
-test("should redirect to setup page on first launch", async ({ page }) => {
-  await page.evaluate(() => localStorage.clear());
-  await page.goto("/");
-  await expect(page).toHaveURL("/setup");
-});
+- Add backend command surface and setup state storage
+- Add setup page and route guard
+- Package extension into resources
 
-test("should display connection status", async ({ page }) => {
-  await page.goto("/setup");
+### Phase 2
 
-  const gatewayStatus = page.getByText("Cookie Gateway 服务");
-  await expect(gatewayStatus).toContainText("运行中");
+- Integrate cookie tool usage in chat workflows
+- Add security handshake token
 
-  const extensionStatus = page.getByText("Chrome 扩展连接");
-  await expect(extensionStatus).toContainText("等待连接");
-});
-```
+### Phase 3
 
-## Manual Testing Checklist
+- Observability and diagnostics
+- Multi-browser support
 
-- [ ] Clear app data and launch, should redirect to /setup
-- [ ] Gateway service should auto-start (localhost:3456/health)
-- [ ] Download extension button should work
-- [ ] Extension should install successfully in Chrome
-- [ ] Setup page should show real-time connection status
-- [ ] Should auto-redirect to main page on successful connection
-- [ ] State should persist (restart should skip setup)
-- [ ] Cookie fetching should work in Chat page
-- [ ] Error messages should be user-friendly
+---
 
-## Performance Considerations
+## 17. Success Metrics
 
-- **Connection Check Frequency:** 2-second interval to balance responsiveness and resource usage
-- **State Caching:** Init state only written when changed
-- **WebSocket Reuse:** Gateway uses single WebSocket connection
-- **Cookie Caching:** Default 5-minute cache to reduce extension requests
+- Setup completion rate >= 90%
+- Median setup time <= 2 minutes
+- Extension connection success rate >= 95%
+- Setup-related fatal errors per 1k sessions < 5
+- Cookie fetch success rate (whitelisted domains) >= 99%
 
-## Security Considerations
+---
 
-- Extension only connects to localhost:3456
-- CSP configured to allow WebSocket connections
-- No external network requests from extension
-- Cookies stored in memory, not persisted to disk
+## 18. Open Questions
 
-## Future Enhancements
+1. Should `OPEN_URL` remain enabled in extension for Phase 1, or be disabled by default?
+2. Is JSON state storage acceptable for Phase 1, or should we directly use SQLite now?
+3. Should we expose a settings entry to re-run setup after skip/completion?
 
-1. **Auto-detect extension installation:** Monitor registry/file system for Chrome extension
-2. **Guided tour:** Add interactive tutorial after setup
-3. **Multiple browser support:** Support Firefox, Edge extensions
-4. **Connection diagnostics:** Add troubleshooting page for connection issues
-5. **Extension auto-update:** Implement update mechanism for extension
+---
 
-## Migration Path
+## 19. References
 
-1. **Phase 1:** Implement basic setup flow (this design)
-2. **Phase 2:** Add cookie usage in agent tools
-3. **Phase 3:** Integrate with specific SRE workflows
-4. **Phase 4:** Add advanced features (auto-detect, multi-browser)
-
-## Success Metrics
-
-- Setup completion rate > 90%
-- Time to complete setup < 2 minutes
-- Extension connection success rate > 95%
-- Zero data loss on app restart
-- User satisfaction score > 4.5/5
-
-## References
-
-- [Cookie Gateway Implementation](../../cookie-gateway/src/lib.rs)
-- [Chrome Extension Manifest](../../cookie-gateway/chrome-extension/manifest.json)
-- [Tauri Commands Documentation](https://tauri.app/v1/guides/features/command/)
+- [Cookie Gateway Core](../../cookie-gateway/src/lib.rs)
+- [Gateway HTTP Routes](../../cookie-gateway/src/gateway.rs)
+- [Gateway Command Bus](../../cookie-gateway/src/command_bus.rs)
+- [Desktop Tauri Commands](../../desktop/src-tauri/src/lib.rs)
+- [Desktop App Layout](../../desktop/components/layouts/app-layout.tsx)
+- [Tauri v2 Commands](https://tauri.app/develop/calling-rust/)
 - [Next.js App Router](https://nextjs.org/docs/app)
