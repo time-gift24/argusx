@@ -26,6 +26,7 @@ use tokio::sync::{mpsc, RwLock};
 mod llm_runtime_config;
 mod persistence;
 mod secure_config;
+mod system_prompt;
 use llm_runtime_config::{
     list_available_models as derive_available_models, normalize_runtime_config,
     validate_turn_selection, AvailableModel, LlmRuntimeConfig, ProviderId,
