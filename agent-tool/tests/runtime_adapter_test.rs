@@ -2,6 +2,22 @@ use agent_core::tools::{ToolExecutionContext, ToolExecutionErrorKind, ToolExecut
 use agent_tool::AgentToolRuntime;
 
 #[tokio::test]
+async fn default_builtins_expose_update_plan_tool_spec() {
+    use agent_core::tools::ToolCatalog;
+    let rt = AgentToolRuntime::default_with_builtins().await;
+
+    let spec = rt
+        .tool_spec("update_plan")
+        .await
+        .expect("update_plan should be registered by default");
+
+    assert_eq!(spec.name, "update_plan");
+    assert!(spec.description.contains("plan"));
+    assert_eq!(spec.input_schema["type"], serde_json::json!("object"));
+    assert_eq!(spec.input_schema["required"], serde_json::json!(["plan"]));
+}
+
+#[tokio::test]
 async fn runtime_adapter_executes_registered_tool() {
     let rt = AgentToolRuntime::default_with_builtins().await;
     let out = rt
