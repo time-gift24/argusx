@@ -1,6 +1,6 @@
 import type { AgentTurnVM, QueueItemVM, ToolCallVM } from "@/lib/stores/chat-store";
 
-export type TurnProcessSectionKey = "reasoning" | "plan" | "tools" | "terminal";
+export type TurnProcessSectionKey = "reasoning" | "plan" | "tools" | "terminal" | "queue";
 
 export type TurnProcessStatus =
   | "thinking"
@@ -302,6 +302,23 @@ export const buildTurnProcessVM = (turn: AgentTurnVM): TurnProcessVM => {
       headerLabel: turn.plan.isStreaming ? "Planning..." : "Plan",
       isStreaming: turn.plan.isStreaming,
       defaultOpen: turn.plan.isStreaming,
+    });
+  }
+
+  if (turn.todoQueue && turn.todoQueue.todos.length > 0) {
+    const completed = turn.todoQueue.todos.filter(
+      (todo) => todo.status === "completed"
+    ).length;
+    const hasActive = turn.todoQueue.todos.some(
+      (todo) => todo.status === "in_progress"
+    );
+    sections.push({
+      key: "queue",
+      title: "Queue",
+      preview: `${completed}/${turn.todoQueue.todos.length} done`,
+      headerLabel: hasActive ? "Running queue..." : "Queue",
+      isStreaming: hasActive,
+      defaultOpen: hasActive,
     });
   }
 

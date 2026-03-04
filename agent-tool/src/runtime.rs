@@ -4,7 +4,7 @@ use agent_core::tools::{
 use agent_core::{ToolCall, ToolResult as CoreToolResult};
 use async_trait::async_trait;
 
-use crate::{GlobTool, GrepTool, ReadTool, ToolContext, ToolError, ToolRegistry};
+use crate::{GlobTool, GrepTool, ReadTool, UpdatePlanTool, ToolContext, ToolError, ToolRegistry};
 
 pub struct AgentToolRuntime {
     registry: ToolRegistry,
@@ -21,9 +21,11 @@ impl AgentToolRuntime {
         let read_tool = ReadTool::default().expect("Failed to create default ReadTool");
         let glob_tool = GlobTool::default().expect("Failed to create default GlobTool");
         let grep_tool = GrepTool::default().expect("Failed to create default GrepTool");
+        let update_plan_tool = UpdatePlanTool;
         registry.register(read_tool).await;
         registry.register(glob_tool).await;
         registry.register(grep_tool).await;
+        registry.register(update_plan_tool).await;
         Self { registry }
     }
 

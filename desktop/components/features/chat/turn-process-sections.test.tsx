@@ -523,4 +523,65 @@ describe("TurnProcessSections runtime contract", () => {
     // Fenced code block should be highlighted
     expect(container.querySelector('[data-highlighted="true"]')).toBeTruthy();
   });
+
+  describe("Queue section", () => {
+    it("renders five-state todo queue items with correct status indicators", () => {
+      const turn = createTurn({
+        todoQueue: {
+          todos: [
+            {
+              id: "todo-1",
+              title: "Pending Task",
+              status: "pending",
+            },
+            {
+              id: "todo-2",
+              title: "In Progress Task",
+              status: "in_progress",
+            },
+            {
+              id: "todo-3",
+              title: "Blocked Task",
+              status: "blocked",
+            },
+            {
+              id: "todo-4",
+              title: "Completed Task",
+              status: "completed",
+            },
+            {
+              id: "todo-5",
+              title: "Failed Task",
+              status: "failed",
+            },
+          ],
+          updatedAt: Date.now(),
+        },
+      });
+      const vm = createVm({
+        sections: [
+          {
+            key: "queue",
+            title: "Queue",
+            preview: "3/5 done",
+            isStreaming: false,
+            defaultOpen: true,
+          },
+        ],
+      });
+
+      render(<TurnProcessSections sessionId={SESSION_ID} turn={turn} vm={vm} />);
+
+      // Verify all status indicators are rendered with correct visual state
+      const indicators = screen.getAllByRole("listitem");
+      expect(indicators).toHaveLength(5);
+
+      // Verify specific status text
+      expect(screen.getByText("Pending Task")).toBeInTheDocument();
+      expect(screen.getByText("In Progress Task")).toBeInTheDocument();
+      expect(screen.getByText("Blocked Task")).toBeInTheDocument();
+      expect(screen.getByText("Completed Task")).toBeInTheDocument();
+      expect(screen.getByText("Failed Task")).toBeInTheDocument();
+    });
+  });
 });

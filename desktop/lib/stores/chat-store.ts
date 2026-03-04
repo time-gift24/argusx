@@ -115,6 +115,20 @@ export interface PlanVM {
   isStreaming: boolean;
 }
 
+export interface TodoQueueItemVM {
+  id: string;
+  title: string;
+  description?: string;
+  status: "pending" | "in_progress" | "blocked" | "completed" | "failed";
+}
+
+export interface TodoQueueVM {
+  todos: TodoQueueItemVM[];
+  updatedAt: number;
+}
+
+const VALID_TODO_STATUSES = ["pending", "in_progress", "blocked", "completed", "failed"] as const;
+
 export type AgentTurnStatus =
   | "started"
   | "streaming"
@@ -149,6 +163,7 @@ export interface AgentTurnVM {
   terminal: TerminalVM;
   plan?: PlanVM;
   planSource?: "structured" | "reasoning-fallback";
+  todoQueue?: TodoQueueVM;
   error?: string;
   lastSeq: number;
 }
@@ -340,6 +355,101 @@ const normalizeTasks = (raw: unknown): TaskVM[] => {
     .filter((task): task is TaskVM => task !== undefined);
 };
 
+const normalizeTodoStatus = (
+  status: unknown
+): TodoQueueItemVM["status"] => {
+  if (
+    status === "pending" ||
+    status === "in_progress" ||
+    status === "blocked" ||
+    status === "completed" ||
+    status === "failed"
+  ) {
+    return status;
+  }
+  return "pending";
+};
+
+const normalizeTodoItem = (raw: unknown, index: number): TodoQueueItemVM | undefined => {
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+
+  const id =
+    typeof raw.id === "string" && raw.id.trim().length > 0
+      ? raw.id.trim()
+      : `todo-${index + 1}`;
+
+  const title =
+    typeof raw.title === "string" && raw.title.trim().length > 0
+      ? raw.title.trim()
+      : typeof raw.step === "string" && raw.step.trim().length > 0
+        ? raw.step.trim()
+        : undefined;
+
+  if (!title) {
+    return undefined;
+  }
+
+  const description =
+    typeof raw.description === "string" && raw.description.trim().length > 0
+      ? raw.description.trim()
+      : undefined;
+
+  return {
+    id,
+    title,
+    description,
+    status: normalizeTodoStatus(raw.status),
+  };
+};
+
+const parseTodoQueueFromPlan = (planOutput: unknown): TodoQueueVM | undefined => {
+  if (!isRecord(planOutput) || !isRecord(planOutput.queue)) {
+    return undefined;
+  }
+
+  const queue = planOutput.queue;
+  if (!Array.isArray(queue.todos)) {
+    return undefined;
+  }
+
+  const todos = queue.todos
+    .map((item, index) => normalizeTodoItem(item, index))
+    .filter((todo): todo is TodoQueueItemVM => todo !== undefined);
+
+  if (todos.length === 0) {
+    return undefined;
+  }
+
+  return {
+    todos,
+    updatedAt: Date.now(),
+  };
+};
+
+const deriveTodoQueueFromTasks = (tasks: TaskVM[]): TodoQueueVM | undefined => {
+  if (tasks.length === 0) {
+    return undefined;
+  }
+
+  const todos: TodoQueueItemVM[] = tasks.map((task) => ({
+    id: task.id,
+    title: task.title,
+    description: task.description,
+    status: task.status === "completed" ? "completed" : "pending",
+  }));
+
+  return {
+    todos,
+    updatedAt: Date.now(),
+  };
+};
+
+const isTodoStatus = (status: unknown): status is TodoQueueItemVM["status"] => {
+  return VALID_TODO_STATUSES.includes(status as TodoQueueItemVM["status"]);
+};
+
 const patchPlanWithTask = (
   existingPlan: PlanVM | undefined,
   rawTask: unknown,
@@ -481,7 +591,19 @@ const parsePlanFromUpdatePlanToolResult = (
     plan: output.plan,
   } as unknown as AgentEventPayload;
 
-  return parseStructuredPlanFromEvent("plan_updated", wrappedEvent, turn.plan);
+  const plan = parseStructuredPlanFromEvent("plan_updated", wrappedEvent, turn.plan);
+
+  // Parse todoQueue from queue.todos if present
+  const todoQueue = parseTodoQueueFromPlan(output.plan);
+
+  // Set todoQueue if parsed, or derive from plan.tasks as fallback
+  if (todoQueue) {
+    turn.todoQueue = todoQueue;
+  } else if (plan && plan.tasks.length > 0) {
+    turn.todoQueue = deriveTodoQueueFromTasks(plan.tasks);
+  }
+
+  return plan;
 };
 
 const applyStructuredPlanOrTaskEvent = (

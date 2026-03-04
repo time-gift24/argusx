@@ -29,15 +29,23 @@ export interface QueueTodo {
   id: string;
   title: string;
   description?: string;
-  status?: "pending" | "completed";
+  status?: "pending" | "in_progress" | "blocked" | "completed" | "failed";
 }
 
-export type QueueItemProps = ComponentProps<"li">;
+export type QueueItemProps = ComponentProps<"li"> & {
+  compact?: boolean;
+};
 
-export const QueueItem = ({ className, ...props }: QueueItemProps) => (
+export const QueueItem = ({
+  className,
+  compact = false,
+  ...props
+}: QueueItemProps) => (
   <li
     className={cn(
-      "group flex flex-col gap-1 rounded-md px-3 py-1 text-sm transition-colors hover:bg-muted",
+      compact
+        ? "group flex flex-col gap-1 rounded-md px-2 py-0.5 text-xs transition-colors hover:bg-muted"
+        : "group flex flex-col gap-1 rounded-md px-3 py-1 text-sm transition-colors hover:bg-muted",
       className
     )}
     {...props}
@@ -46,24 +54,37 @@ export const QueueItem = ({ className, ...props }: QueueItemProps) => (
 
 export type QueueItemIndicatorProps = ComponentProps<"span"> & {
   completed?: boolean;
+  status?: QueueTodo["status"];
+};
+
+const STATUS_INDICATOR_STYLES: Record<QueueTodo["status"], string> = {
+  pending: "border-muted-foreground/50 bg-transparent",
+  in_progress: "border-blue-400 bg-blue-400/20",
+  blocked: "border-amber-400 bg-amber-400/20",
+  completed: "border-muted-foreground/20 bg-muted-foreground/10",
+  failed: "border-red-500/40 bg-red-500/20",
 };
 
 export const QueueItemIndicator = ({
   completed = false,
+  status,
   className,
   ...props
-}: QueueItemIndicatorProps) => (
-  <span
-    className={cn(
-      "mt-0.5 inline-block size-2.5 rounded-full border",
-      completed
-        ? "border-muted-foreground/20 bg-muted-foreground/10"
-        : "border-muted-foreground/50",
-      className
-    )}
-    {...props}
-  />
-);
+}: QueueItemIndicatorProps) => {
+  // Derive status from completed prop for backward compatibility
+  const derivedStatus = status ?? (completed ? "completed" : "pending");
+
+  return (
+    <span
+      className={cn(
+        "mt-0.5 inline-block size-2.5 rounded-full border",
+        STATUS_INDICATOR_STYLES[derivedStatus],
+        className
+      )}
+      {...props}
+    />
+  );
+};
 
 export type QueueItemContentProps = ComponentProps<"span"> & {
   completed?: boolean;
@@ -97,10 +118,8 @@ export const QueueItemDescription = ({
 }: QueueItemDescriptionProps) => (
   <div
     className={cn(
-      "ml-6 text-xs",
-      completed
-        ? "text-muted-foreground/40 line-through"
-        : "text-muted-foreground",
+      "line-clamp-2 text-xs text-muted-foreground/50",
+      completed && "line-through",
       className
     )}
     {...props}

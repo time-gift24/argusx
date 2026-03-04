@@ -30,6 +30,13 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai/tool";
+import {
+  Queue,
+  QueueItem,
+  QueueItemIndicator,
+  QueueItemContent,
+  QueueList,
+} from "@/components/ai-elements/queue";
 import { SURFACE_ICON_GHOST_BUTTON_CLASS } from "@/components/ai-elements/class-names";
 import { STREAMDOWN_PLUGINS, StreamdownCode } from "@/components/ai";
 import { useChatStore } from "@/lib/stores/chat-store";
@@ -37,6 +44,7 @@ import { cn } from "@/lib/utils";
 import { Streamdown } from "streamdown";
 import {
   LightbulbIcon,
+  ListTodoIcon,
   TerminalIcon,
   WrenchIcon,
 } from "lucide-react";
@@ -297,6 +305,49 @@ export function TurnProcessSections({
     );
   };
 
+  const renderQueue = (section: TurnProcessSectionVM) => {
+    if (!turn.todoQueue) {
+      return null;
+    }
+
+    return (
+      <RuntimeProcessSection
+        icon={ListTodoIcon}
+        isStreaming={section.isStreaming}
+        key={section.key}
+        label={section.headerLabel || section.title}
+        onOpenChange={(nextOpen) =>
+          setTurnSectionExpanded(sessionId, turn.id, section.key, nextOpen)
+        }
+        open={isSectionOpen(section)}
+        detail={section.headerDetail}
+        contentClassName="px-[var(--chat-runtime-code-padding-x)] py-[var(--chat-runtime-code-padding-y)]"
+      >
+        <Queue>
+          <QueueList>
+            {turn.todoQueue.todos.map((todo) => (
+              <QueueItem key={todo.id} compact>
+                <div className="flex items-start gap-2">
+                  <QueueItemIndicator status={todo.status} />
+                  <div className="flex-1 min-w-0">
+                    <QueueItemContent completed={todo.status === "completed"}>
+                      {todo.title}
+                    </QueueItemContent>
+                    {todo.description && (
+                      <QueueItemDescription completed={todo.status === "completed"}>
+                        {todo.description}
+                      </QueueItemDescription>
+                    )}
+                  </div>
+                </div>
+              </QueueItem>
+            ))}
+          </QueueList>
+        </Queue>
+      </RuntimeProcessSection>
+    );
+  };
+
   return (
     <div className="space-y-1.5">
       {vm.sections.map((section) => {
@@ -309,7 +360,13 @@ export function TurnProcessSections({
         if (section.key === "tools") {
           return renderTools(section);
         }
-        return renderTerminal(section);
+        if (section.key === "terminal") {
+          return renderTerminal(section);
+        }
+        if (section.key === "queue") {
+          return renderQueue(section);
+        }
+        return null;
       })}
     </div>
   );
