@@ -426,6 +426,46 @@ const parseStructuredPlanFromEvent = (
   };
 };
 
+const parsePlanFromUpdatePlanToolResult = (
+  turn: AgentTurnVM,
+  event: AgentEventPayload
+): PlanVM | undefined => {
+  // Extract plan from update_plan tool result in tool_call_completed event
+  const eventType = event.type;
+  if (eventType !== "tool_call_completed") {
+    return undefined;
+  }
+
+  const result = event.result;
+  if (!isRecord(result)) {
+    return undefined;
+  }
+
+  const callId = typeof result.call_id === "string" ? result.call_id : "";
+  if (!callId || !isRecord(result.output)) {
+    return undefined;
+  }
+
+  // Find the tool call to verify it's update_plan
+  const tool = turn.tools.find((item) => item.callId === callId);
+  if (tool?.toolName !== "update_plan") {
+    return undefined;
+  }
+
+  const output = result.output as Record<string, unknown>;
+  if (!isRecord(output.plan)) {
+    return undefined;
+  }
+
+  // Reuse existing parseStructuredPlanFromEvent with wrapped event
+  const wrappedEvent = {
+    type: "plan_updated",
+    plan: output.plan,
+  } as unknown as AgentEventPayload;
+
+  return parseStructuredPlanFromEvent("plan_updated", wrappedEvent, turn.plan);
+};
+
 const applyStructuredPlanOrTaskEvent = (
   turn: AgentTurnVM,
   eventType: string,
@@ -1534,6 +1574,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
               turn.terminal.output = errorText;
             }
             turn.terminal.updatedAt = now;
+          }
+          // Extract structured plan from update_plan tool result
+          const toolPlan = parsePlanFromUpdatePlanToolResult(turn, event);
+          if (toolPlan) {
+            turn.plan = toolPlan;
+            turn.planSource = "structured";
           }
           applyStructuredPlanOrTaskEvent(turn, eventType, event);
           if (eventType === "done" || eventType === "turn_done") {
