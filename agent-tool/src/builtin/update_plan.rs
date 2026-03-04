@@ -72,6 +72,10 @@ impl Tool for UpdatePlanTool {
         let mut in_progress_count = 0usize;
         let mut tasks = Vec::with_capacity(payload.plan.len());
         for (idx, item) in payload.plan.iter().enumerate() {
+            let trimmed_step = item.step.trim();
+            if trimmed_step.is_empty() {
+                return Err(ToolError::InvalidArgs("step cannot be empty".to_string()));
+            }
             let status = item.status.as_str();
             if !matches!(status, "pending" | "in_progress" | "completed") {
                 return Err(ToolError::InvalidArgs(format!("invalid status: {}", item.status)));
@@ -81,7 +85,7 @@ impl Tool for UpdatePlanTool {
             }
             tasks.push(json!({
                 "id": format!("task-{}", idx + 1),
-                "title": item.step.trim(),
+                "title": trimmed_step,
                 "status": status,
             }));
         }

@@ -47,3 +47,50 @@ async fn update_plan_rejects_multiple_in_progress_steps() {
 
     assert!(err.to_string().contains("in_progress"));
 }
+
+#[tokio::test]
+async fn update_plan_accepts_zero_in_progress_steps() {
+    // Relaxed rule: 0 in_progress is allowed (even with pending steps)
+    use agent_tool::{Tool, ToolContext};
+    let tool = agent_tool::builtin::update_plan::UpdatePlanTool;
+    let result = tool
+        .execute(
+            ToolContext {
+                session_id: "s1".into(),
+                turn_id: "t1".into(),
+            },
+            serde_json::json!({
+                "plan": [
+                    { "step": "Step A", "status": "pending" },
+                    { "step": "Step B", "status": "pending" }
+                ]
+            }),
+        )
+        .await
+        .expect("0 in_progress should be allowed");
+
+    assert!(!result.is_error);
+    assert_eq!(result.output["plan"]["tasks"][0]["status"], "pending");
+}
+
+#[tokio::test]
+async fn update_plan_rejects_empty_step() {
+    use agent_tool::{Tool, ToolContext};
+    let tool = agent_tool::builtin::update_plan::UpdatePlanTool;
+    let err = tool
+        .execute(
+            ToolContext {
+                session_id: "s1".into(),
+                turn_id: "t1".into(),
+            },
+            serde_json::json!({
+                "plan": [
+                    { "step": "   ", "status": "pending" }
+                ]
+            }),
+        )
+        .await
+        .expect_err("empty step should be rejected");
+
+    assert!(err.to_string().contains("empty"));
+}
