@@ -1,5 +1,6 @@
 pub mod domain_cookies;
 pub mod file;
+pub mod fs;
 pub mod shell;
 pub mod update_plan;
 
