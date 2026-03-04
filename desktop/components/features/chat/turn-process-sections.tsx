@@ -30,6 +30,7 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai/tool";
+import { Queue } from "@/components/ai-elements/queue";
 import { SURFACE_ICON_GHOST_BUTTON_CLASS } from "@/components/ai-elements/class-names";
 import { STREAMDOWN_PLUGINS, StreamdownCode } from "@/components/ai";
 import { useChatStore } from "@/lib/stores/chat-store";
@@ -37,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { Streamdown } from "streamdown";
 import {
   LightbulbIcon,
+  ListTodoIcon,
   TerminalIcon,
   WrenchIcon,
 } from "lucide-react";
@@ -297,6 +299,29 @@ export function TurnProcessSections({
     );
   };
 
+  const renderQueue = (section: TurnProcessSectionVM) => {
+    if (!turn.todoQueue) {
+      return null;
+    }
+
+    return (
+      <RuntimeProcessSection
+        icon={ListTodoIcon}
+        isStreaming={section.isStreaming}
+        key={section.key}
+        label={section.headerLabel || section.title}
+        onOpenChange={(nextOpen) =>
+          setTurnSectionExpanded(sessionId, turn.id, section.key, nextOpen)
+        }
+        open={isSectionOpen(section)}
+        detail={section.headerDetail}
+        contentClassName="px-[var(--chat-runtime-code-padding-x)] py-[var(--chat-runtime-code-padding-y)]"
+      >
+        <Queue todos={turn.todoQueue.todos} compact />
+      </RuntimeProcessSection>
+    );
+  };
+
   return (
     <div className="space-y-1.5">
       {vm.sections.map((section) => {
@@ -309,7 +334,13 @@ export function TurnProcessSections({
         if (section.key === "tools") {
           return renderTools(section);
         }
-        return renderTerminal(section);
+        if (section.key === "terminal") {
+          return renderTerminal(section);
+        }
+        if (section.key === "queue") {
+          return renderQueue(section);
+        }
+        return null;
       })}
     </div>
   );

@@ -448,27 +448,6 @@ const isTodoStatus = (status: unknown): status is TodoQueueItemVM["status"] => {
   return VALIDTodoStatuses.includes(status as TodoQueueItemVM["status"]);
 };
 
-const normalizeTodoStatus = (status: unknown): TodoQueueItemVM["status"] => {
-  if (isTodoStatus(status)) {
-    return status;
-  }
-  return "pending";
-};
-
-const deriveTodoQueueFromTasks = (tasks: TaskVM[]): TodoQueueVM => {
-  const todos: TodoQueueItemVM[] = tasks.map((task) => ({
-    id: task.id,
-    title: task.title,
-    description: task.description,
-    status: task.status === "completed" ? "completed" : "pending",
-  }));
-
-  return {
-    todos,
-    updatedAt: Date.now(),
-  };
-};
-
 const patchPlanWithTask = (
   existingPlan: PlanVM | undefined,
   rawTask: unknown,
@@ -615,8 +594,10 @@ const parsePlanFromUpdatePlanToolResult = (
   // Parse todoQueue from queue.todos if present
   const todoQueue = parseTodoQueueFromPlan(output.plan);
 
-  // Derive todoQueue from plan.tasks if queue.todos not missing
-  if (!todoQueue && plan.tasks.length > 0) {
+  // Set todoQueue if parsed, or derive from plan.tasks as fallback
+  if (todoQueue) {
+    turn.todoQueue = todoQueue;
+  } else if (plan.tasks.length > 0) {
     turn.todoQueue = deriveTodoQueueFromTasks(plan.tasks);
   }
 
