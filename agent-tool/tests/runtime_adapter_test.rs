@@ -15,6 +15,13 @@ async fn default_builtins_expose_update_plan_tool_spec() {
     assert!(spec.description.contains("plan"));
     assert_eq!(spec.input_schema["type"], serde_json::json!("object"));
     assert_eq!(spec.input_schema["required"], serde_json::json!(["plan"]));
+
+    // Verify task status enum includes all five states
+    let task_status_enum = &spec.input_schema["properties"]["plan"]["items"]["properties"]["status"]["enum"];
+    assert_eq!(
+        task_status_enum,
+        &serde_json::json!(["pending", "in_progress", "blocked", "completed", "failed"])
+    );
 }
 
 #[tokio::test]
