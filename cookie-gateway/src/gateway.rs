@@ -151,11 +151,6 @@ async fn fetch_cookies(
         });
     }
 
-    // Validate whitelist
-    if !state.store.is_whitelisted(&domain) {
-        return Err(CookieGatewayError::DomainNotWhitelisted { domain });
-    }
-
     // Check opt-in
     if !state.store.is_opted_in().await {
         return Err(CookieGatewayError::UserNotOptedIn);

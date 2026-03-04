@@ -198,3 +198,30 @@ async fn test_fetch_cookies_returns_503_without_connected_extension() {
 
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
+
+#[tokio::test]
+async fn test_fetch_tool_accepts_non_whitelisted_domain() {
+    let store = CookieStore::new();
+    store.set_opt_in(true).await;
+    let state = GatewayState::with_store(Arc::new(store));
+    let app = app(state);
+
+    let payload = serde_json::json!({
+        "domain": "github.com",
+        "refresh_after_ms": 1
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/cookies/fetch")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+}
