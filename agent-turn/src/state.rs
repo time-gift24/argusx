@@ -48,6 +48,22 @@ impl Default for TurnEngineConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubAgentToolState {
+    pub call_id: String,
+    pub tool_name: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubAgentState {
+    pub thread_id: String,
+    pub agent_name: String,
+    pub status: String,
+    pub active_tools: HashMap<String, SubAgentToolState>,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct TurnState {
     pub meta: SessionMeta,
@@ -70,6 +86,7 @@ pub struct TurnState {
     pub seen_event_ids: HashSet<String>,
     pub transcript: Vec<TranscriptItem>,
     pub last_request_inputs: Vec<InputEnvelope>,
+    pub sub_agents: HashMap<String, SubAgentState>,
 }
 
 impl TurnState {
@@ -95,6 +112,7 @@ impl TurnState {
             seen_event_ids: HashSet::new(),
             transcript: Vec::new(),
             last_request_inputs: Vec::new(),
+            sub_agents: HashMap::new(),
         }
     }
 

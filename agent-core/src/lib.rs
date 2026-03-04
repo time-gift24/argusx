@@ -8,7 +8,7 @@ pub mod traits;
 pub mod transcript_item;
 
 pub use error::{AgentError, RuntimeError, TransientError};
-pub use events::{RunStreamEvent, ToolCallStatus, TurnStats, UiThreadEvent};
+pub use events::{RunStreamEvent, SubAgentToolSnapshot, ToolCallStatus, TurnStats, UiThreadEvent};
 pub use model::{
     new_id, Id, InputEnvelope, InputPart, InputSource, ModelOutputEvent, ModelRequest, SessionMeta,
     ToolCall, ToolResult, TurnRequest, Usage,

@@ -56,6 +56,7 @@ const createTurn = (overrides?: Partial<AgentTurnVM>): AgentTurnVM => ({
       updatedAt: 4,
     },
   ],
+  subAgents: [],
   queue: {
     items: [
       {

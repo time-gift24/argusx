@@ -64,6 +64,22 @@ export interface ToolCallVM {
   updatedAt: number;
 }
 
+export interface SubAgentToolVM {
+  callId: string;
+  toolName: string;
+  status: string;
+  updatedAt: number;
+}
+
+export interface SubAgentVM {
+  threadId: string;
+  agentName: string;
+  status: string;
+  tools: SubAgentToolVM[];
+  errorText?: string;
+  updatedAt: number;
+}
+
 export interface QueueItemVM {
   callId: string;
   toolName: string;
@@ -128,6 +144,7 @@ export interface AgentTurnVM {
   assistantText: string;
   reasoning: ReasoningVM;
   tools: ToolCallVM[];
+  subAgents: SubAgentVM[];
   queue: QueueVM;
   terminal: TerminalVM;
   plan?: PlanVM;
@@ -234,6 +251,7 @@ const createEmptyTurn = (
       status: "idle",
     },
     tools: [],
+    subAgents: [],
     queue: { items: [] },
     terminal: {
       stdout: "",
@@ -560,6 +578,53 @@ const upsertToolCall = (
   return next;
 };
 
+const normalizeSubAgentToolStatus = (status: string): string => {
+  const normalized = status.toLowerCase();
+  if (normalized === "queued" || normalized === "planned" || normalized === "in_progress") {
+    return "waiting";
+  }
+  if (normalized === "running") {
+    return "running";
+  }
+  if (normalized === "completed" || normalized === "done" || normalized === "succeeded") {
+    return "completed";
+  }
+  if (normalized === "failed" || normalized === "error") {
+    return "failed";
+  }
+  return normalized;
+};
+
+const upsertSubAgent = (
+  subAgents: SubAgentVM[],
+  threadId: string,
+  updates: Partial<Omit<SubAgentVM, "threadId">>
+): SubAgentVM[] => {
+  const now = Date.now();
+  const index = subAgents.findIndex((subAgent) => subAgent.threadId === threadId);
+  if (index === -1) {
+    return [
+      ...subAgents,
+      {
+        threadId,
+        agentName: "sub-agent",
+        status: "running",
+        tools: [],
+        updatedAt: now,
+        ...updates,
+      },
+    ];
+  }
+
+  const next = [...subAgents];
+  next[index] = {
+    ...next[index],
+    ...updates,
+    updatedAt: now,
+  };
+  return next;
+};
+
 const deriveTerminalTextFromToolResult = (value: unknown): string | undefined => {
   if (typeof value === "string") {
     return value.trim().length > 0 ? value : undefined;
@@ -719,6 +784,7 @@ const toStoreTurn = (turn: BackendChatTurnSummary): AgentTurnVM => ({
     status: "idle",
   },
   tools: [],
+  subAgents: [],
   queue: { items: [] },
   terminal: {
     stdout: "",
@@ -1393,6 +1459,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               ...existingTurn.terminal,
             },
             tools: [...existingTurn.tools],
+            subAgents: [...existingTurn.subAgents],
           };
 
           const updateSessionStatus = (status: ChatStatus) => {
@@ -1574,6 +1641,61 @@ export const useChatStore = create<ChatState>((set, get) => ({
               turn.terminal.output = errorText;
             }
             turn.terminal.updatedAt = now;
+          }
+          if (eventType === "sub_agent_updated") {
+            const threadId = String(event.thread_id ?? "");
+            if (threadId.length > 0) {
+              const status = String(event.status ?? "running").toLowerCase();
+              const agentName = String(event.agent_name ?? "sub-agent");
+              const errorText =
+                typeof event.error === "string" && event.error.trim().length > 0
+                  ? event.error
+                  : undefined;
+              const activeTools = Array.isArray(event.active_tools)
+                ? event.active_tools
+                    .map((item) => {
+                      if (
+                        typeof item !== "object" ||
+                        item === null ||
+                        !("call_id" in item) ||
+                        !("tool_name" in item)
+                      ) {
+                        return null;
+                      }
+                      const callId = String((item as Record<string, unknown>).call_id ?? "");
+                      const toolName = String(
+                        (item as Record<string, unknown>).tool_name ?? "tool"
+                      );
+                      if (!callId) {
+                        return null;
+                      }
+                      return {
+                        callId,
+                        toolName,
+                        status: normalizeSubAgentToolStatus(
+                          String((item as Record<string, unknown>).status ?? "running")
+                        ),
+                        updatedAt: now,
+                      };
+                    })
+                    .filter((item): item is SubAgentToolVM => item !== null)
+                : [];
+
+              turn.subAgents = upsertSubAgent(turn.subAgents, threadId, {
+                agentName,
+                status,
+                tools: activeTools,
+                errorText,
+              });
+
+              if (
+                status === "running" ||
+                status === "pending" ||
+                status === "waiting"
+              ) {
+                sessions = updateSessionStatus("tool-call");
+              }
+            }
           }
           // Extract structured plan from update_plan tool result
           const toolPlan = parsePlanFromUpdatePlanToolResult(turn, event);

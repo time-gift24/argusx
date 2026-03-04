@@ -12,6 +12,8 @@ pub struct SpawnRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpawnResponse {
     pub thread_id: String,
+    pub status: String,
+    pub agent_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,6 +33,26 @@ pub struct WaitRequest {
 pub struct WaitResponse {
     pub timed_out: bool,
     pub statuses: HashMap<String, String>,
+    #[serde(default)]
+    pub snapshots: HashMap<String, ThreadSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ThreadToolSnapshot {
+    pub call_id: String,
+    pub tool_name: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ThreadSnapshot {
+    pub thread_id: String,
+    pub status: String,
+    pub agent_name: String,
+    #[serde(default)]
+    pub active_tools: Vec<ThreadToolSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,4 +70,3 @@ pub struct CloseResponse {
 pub struct ReconcileReport {
     pub repaired_count: usize,
 }
-

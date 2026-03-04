@@ -18,6 +18,13 @@ pub struct TurnStats {
     pub total_output_tokens: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubAgentToolSnapshot {
+    pub call_id: Id,
+    pub tool_name: String,
+    pub status: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RunStreamEvent {
@@ -79,6 +86,14 @@ pub enum RunStreamEvent {
     ToolExecutionError {
         turn_id: Id,
         result: ToolResult,
+    },
+    SubAgentUpdated {
+        turn_id: Id,
+        thread_id: Id,
+        agent_name: String,
+        status: String,
+        active_tools: Vec<SubAgentToolSnapshot>,
+        error: Option<String>,
     },
     ModelCompleted {
         turn_id: Id,
@@ -175,6 +190,14 @@ pub enum UiThreadEvent {
     ToolCallCompleted {
         turn_id: Id,
         result: ToolResult,
+    },
+    SubAgentUpdated {
+        turn_id: Id,
+        thread_id: Id,
+        agent_name: String,
+        status: String,
+        active_tools: Vec<SubAgentToolSnapshot>,
+        error: Option<String>,
     },
     Warning {
         turn_id: Id,

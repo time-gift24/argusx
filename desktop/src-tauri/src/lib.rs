@@ -1,18 +1,19 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::process::Command;
 
+use agent_center::dispatch::{DispatchRequest, ThreadDispatcher};
+use agent_center::AgentCenter;
 use agent_core::{
-    new_id, InputEnvelope, RunEventStream, Runtime, SessionMeta, TurnRequest, TurnStatus,
-    UiEventStream,
+    new_id, InputEnvelope, RunEventStream, RunStreamEvent, Runtime, SessionMeta, ToolCallStatus,
+    TurnRequest, TurnStatus, UiEventStream, UiThreadEvent,
 };
 use agent_session::{SessionConfig, SessionFilter, SessionRuntime, SqliteSessionStore};
 use agent_tool::AgentToolRuntime;
 use agent_turn::adapters::bigmodel::BigModelAdapterConfig;
 use agent_turn::BigModelModelAdapter;
-use agent_center::AgentCenter;
 use cookie_gateway::{CookieGateway, CookieStore};
 use futures::StreamExt;
 use llm_client::{LlmChunkStream, LlmClient, LlmError, LlmRequest, LlmResponse, ProviderAdapter};
@@ -131,6 +132,159 @@ struct AppState {
     runtime_config_bootstrap_error: Arc<RwLock<Option<String>>>,
     frontend_to_backend_session: Arc<RwLock<HashMap<String, String>>>,
     cookie_gateway: Arc<CookieGateway>,
+}
+
+struct DesktopThreadDispatcher {
+    runtime: Arc<RuntimeHandle>,
+    center: Arc<AgentCenter>,
+    llm_runtime_config: Arc<RwLock<LlmRuntimeConfig>>,
+}
+
+impl DesktopThreadDispatcher {
+    async fn resolve_child_target(&self) -> Result<(String, String), String> {
+        let cfg = self.llm_runtime_config.read().await;
+        let provider = cfg
+            .default_provider
+            .clone()
+            .or_else(|| cfg.configured_providers().into_iter().next())
+            .ok_or_else(|| "no configured provider for sub-agent dispatch".to_string())?;
+        let provider_cfg = cfg.provider(&provider);
+        let model = provider_cfg.models.first().cloned().ok_or_else(|| {
+            format!(
+                "provider '{}' has no enabled models",
+                provider.as_adapter_id()
+            )
+        })?;
+        Ok((provider.as_adapter_id().to_string(), model))
+    }
+}
+
+#[async_trait::async_trait]
+impl ThreadDispatcher for DesktopThreadDispatcher {
+    async fn dispatch(&self, req: DispatchRequest) -> anyhow::Result<()> {
+        let thread_id = req.thread_id.clone();
+        let run = async {
+            let (provider, model) = self
+                .resolve_child_target()
+                .await
+                .map_err(anyhow::Error::msg)?;
+
+            self.center
+                .report_thread_status(&thread_id, "Running")
+                .await?;
+
+            let child_session_id = self
+                .runtime
+                .create_session(None, Some(format!("Sub-agent {}", req.agent_name)))
+                .await
+                .map_err(|err| {
+                    anyhow::Error::msg(format!("create sub-agent session failed: {err}"))
+                })?;
+
+            let request = TurnRequest {
+                meta: SessionMeta::new(child_session_id, thread_id.clone()),
+                provider,
+                model,
+                initial_input: InputEnvelope::user_text(req.initial_input),
+                transcript: Vec::new(),
+            };
+
+            let streams =
+                self.runtime.run_turn(request).await.map_err(|err| {
+                    anyhow::Error::msg(format!("run sub-agent turn failed: {err}"))
+                })?;
+
+            let mut run_stream = streams.run;
+            let mut ui_stream = streams.ui;
+            let mut run_closed = false;
+            let mut ui_closed = false;
+            let mut saw_terminal = false;
+
+            while !run_closed || !ui_closed {
+                tokio::select! {
+                    run_event = run_stream.next(), if !run_closed => {
+                        match run_event {
+                            Some(RunStreamEvent::TurnDone { .. }) => {
+                                saw_terminal = true;
+                                self.center.report_thread_status(&thread_id, "Succeeded").await?;
+                            }
+                            Some(RunStreamEvent::TurnFailed { message, cancelled, .. }) => {
+                                saw_terminal = true;
+                                self.center.report_thread_error(&thread_id, message).await?;
+                                let status = if cancelled { "Cancelled" } else { "Failed" };
+                                self.center.report_thread_status(&thread_id, status).await?;
+                            }
+                            Some(_) => {}
+                            None => {
+                                run_closed = true;
+                            }
+                        }
+                    }
+                    ui_event = ui_stream.next(), if !ui_closed => {
+                        match ui_event {
+                            Some(UiThreadEvent::ToolCallRequested { call_id, tool_name, .. }) => {
+                                self.center.report_thread_tool_status(&thread_id, call_id, tool_name, "waiting").await?;
+                            }
+                            Some(UiThreadEvent::ToolQueued { call_id, tool_name, .. }) => {
+                                self.center.report_thread_tool_status(&thread_id, call_id, tool_name, "waiting").await?;
+                            }
+                            Some(UiThreadEvent::ToolDequeued { call_id, tool_name, .. }) => {
+                                self.center.report_thread_tool_status(&thread_id, call_id, tool_name, "running").await?;
+                            }
+                            Some(UiThreadEvent::ToolCallProgress { call_id, status, .. }) => {
+                                let mapped = match status {
+                                    ToolCallStatus::Planned => "waiting",
+                                    ToolCallStatus::Running => "running",
+                                    ToolCallStatus::Completed => "completed",
+                                    ToolCallStatus::Failed => "failed",
+                                };
+                                self.center.report_thread_tool_status(&thread_id, call_id, "tool", mapped).await?;
+                            }
+                            Some(UiThreadEvent::ToolCallCompleted { result, .. }) => {
+                                if result.is_error {
+                                    if let Some(err) = result.output.get("error").and_then(serde_json::Value::as_str) {
+                                        self.center.report_thread_error(&thread_id, err).await?;
+                                    }
+                                    self.center.report_thread_tool_status(&thread_id, result.call_id, "tool", "failed").await?;
+                                } else {
+                                    self.center.report_thread_tool_status(&thread_id, result.call_id, "tool", "completed").await?;
+                                }
+                            }
+                            Some(_) => {}
+                            None => {
+                                ui_closed = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !saw_terminal {
+                self.center
+                    .report_thread_error(
+                        &thread_id,
+                        "sub-agent stream ended without terminal event",
+                    )
+                    .await?;
+                self.center
+                    .report_thread_status(&thread_id, "Failed")
+                    .await?;
+            }
+
+            Ok::<(), anyhow::Error>(())
+        };
+
+        if let Err(err) = run.await {
+            let _ = self
+                .center
+                .report_thread_error(&thread_id, err.to_string())
+                .await;
+            let _ = self.center.report_thread_status(&thread_id, "Failed").await;
+            return Err(err);
+        }
+
+        Ok(())
+    }
 }
 
 const SQLITE_DB_PATH_ENV: &str = "ARGUSX_DESKTOP_DB_PATH";
@@ -461,10 +615,7 @@ async fn restore_turn_checkpoint(
             .await
             .map_err(|err| format!("failed to resolve session by turn id: {err}"))?
         else {
-            return Err(format!(
-                "在任何会话中未找到轮次 {}",
-                payload.turn_id
-            ));
+            return Err(format!("在任何会话中未找到轮次 {}", payload.turn_id));
         };
         state
             .frontend_to_backend_session
@@ -599,10 +750,7 @@ async fn get_cookie_opt_in(state: State<'_, AppState>) -> Result<bool, String> {
 }
 
 #[tauri::command]
-async fn set_cookie_opt_in(
-    state: State<'_, AppState>,
-    enabled: bool,
-) -> Result<(), String> {
+async fn set_cookie_opt_in(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     state.cookie_gateway.store().set_opt_in(enabled).await;
     Ok(())
 }
@@ -699,25 +847,35 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
         SqliteSessionStore::new(base_path)
             .map_err(|err| format!("failed to initialize sqlite session store: {err}"))?,
     );
-    let runtime = SessionRuntime::with_store_and_config(
+    let runtime = Arc::new(SessionRuntime::with_store_and_config(
         sqlite_store,
         Arc::clone(&model_adapter),
         Arc::new(tools),
         SessionConfig {
             max_parallel_tools: 4,
         },
-    );
+    ));
+    let llm_runtime_config = Arc::new(RwLock::new(runtime_cfg.clone()));
+
+    let dispatcher = Arc::new(DesktopThreadDispatcher {
+        runtime: Arc::clone(&runtime),
+        center: Arc::clone(&agent_center),
+        llm_runtime_config: Arc::clone(&llm_runtime_config),
+    });
+    tauri::async_runtime::block_on(async {
+        agent_center.set_dispatcher(dispatcher).await;
+    });
 
     // Initialize cookie gateway
     let cookie_store = CookieStore::new();
     let cookie_gateway = Arc::new(CookieGateway::new(cookie_store));
 
     Ok(AppState {
-        runtime: Arc::new(runtime),
+        runtime,
         model_adapter,
         chat_repo: Arc::new(chat_repo),
         runtime_config_repo: Arc::new(runtime_config_repo),
-        llm_runtime_config: Arc::new(RwLock::new(runtime_cfg)),
+        llm_runtime_config,
         runtime_config_bootstrap_error: Arc::new(RwLock::new(runtime_config_bootstrap_error)),
         frontend_to_backend_session: Arc::new(RwLock::new(HashMap::new())),
         cookie_gateway,
@@ -737,12 +895,14 @@ fn resolve_sqlite_db_path_with_override(
     env_override: Option<&str>,
     app_data_dir: Option<PathBuf>,
 ) -> PathBuf {
-    if let Some(path) = env_override.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(path) = env_override
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         return PathBuf::from(path);
     }
 
-    let base_dir = app_data_dir
-        .unwrap_or_else(|| std::env::temp_dir().join(SQLITE_DB_TEMP_DIR));
+    let base_dir = app_data_dir.unwrap_or_else(|| std::env::temp_dir().join(SQLITE_DB_TEMP_DIR));
     base_dir.join(SQLITE_DB_FILE_NAME)
 }
 
@@ -963,10 +1123,8 @@ mod tests {
     #[test]
     fn resolve_sqlite_db_path_uses_env_override_when_present() {
         let app_data_dir = Some(PathBuf::from("/var/app/data"));
-        let resolved = resolve_sqlite_db_path_with_override(
-            Some("/tmp/argusx-custom.sqlite3"),
-            app_data_dir,
-        );
+        let resolved =
+            resolve_sqlite_db_path_with_override(Some("/tmp/argusx-custom.sqlite3"), app_data_dir);
         assert_eq!(resolved, PathBuf::from("/tmp/argusx-custom.sqlite3"));
     }
 

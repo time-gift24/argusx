@@ -68,6 +68,7 @@ const createTurn = (
       status: "streaming",
     },
     tools: [],
+    subAgents: [],
     queue: { items: [] },
     terminal: {
       stdout: "",

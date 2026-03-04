@@ -41,46 +41,7 @@ pub fn parse_sse_stream<S>(stream: S) -> impl Stream<Item = SseEvent>
 where
     S: Stream<Item = Bytes> + Unpin,
 {
-    use async_stream::stream;
-
-    stream! {
-        let mut buffer = String::new();
-        let mut event_name: Option<String> = None;
-        let mut event_data: Vec<String> = Vec::new();
-        let mut lines_stream = std::pin::pin!(stream);
-
-        while let Some(bytes) = lines_stream.next().await {
-            if let Ok(text) = std::str::from_utf8(&bytes) {
-                buffer.push_str(text);
-                while let Some(line) = pop_next_line(&mut buffer) {
-                    if line.is_empty() {
-                        if let Some(event) = build_event(event_name.take(), &mut event_data) {
-                            yield event;
-                        }
-                        continue;
-                    }
-
-                    if line.starts_with(':') {
-                        continue;
-                    }
-
-                    if let Some(name) = line.strip_prefix("event:") {
-                        event_name = Some(name.trim_start().to_string());
-                        continue;
-                    }
-
-                    if let Some(data) = parse_data_field(&line) {
-                        event_data.push(data);
-                    }
-                }
-            }
-        }
-
-        // Flush trailing event payload if connection closes without final blank line.
-        if let Some(event) = build_event(event_name.take(), &mut event_data) {
-            yield event;
-        }
-    }
+    parse_sse_stream_result(stream.map(Ok::<Bytes, LlmError>)).filter_map(|item| item.ok())
 }
 
 /// Parse an SSE byte stream that can fail while reading from transport.
@@ -91,16 +52,18 @@ where
 {
     async_stream::try_stream! {
         let mut buffer = String::new();
+        let mut utf8_pending = Vec::new();
         let mut event_name: Option<String> = None;
         let mut event_data: Vec<String> = Vec::new();
         let mut lines_stream = std::pin::pin!(stream);
 
         while let Some(item) = lines_stream.next().await {
             let bytes = item.map_err(Into::into)?;
-            let text = std::str::from_utf8(&bytes).map_err(|err| LlmError::ParseError {
-                message: format!("invalid UTF-8 in SSE stream: {}", err),
+            append_utf8_chunk(&mut utf8_pending, &bytes, &mut buffer).map_err(|err| {
+                LlmError::ParseError {
+                    message: format!("invalid UTF-8 in SSE stream: {}", err),
+                }
             })?;
-            buffer.push_str(text);
 
             while let Some(line) = pop_next_line(&mut buffer) {
                 if line.is_empty() {
@@ -123,6 +86,12 @@ where
                     event_data.push(data);
                 }
             }
+        }
+
+        if !utf8_pending.is_empty() {
+            std::str::from_utf8(&utf8_pending).map_err(|err| LlmError::ParseError {
+                message: format!("invalid UTF-8 in SSE stream: {}", err),
+            })?;
         }
 
         if let Some(event) = build_event(event_name.take(), &mut event_data) {
@@ -190,6 +159,44 @@ fn build_event(event_name: Option<String>, data_lines: &mut Vec<String>) -> Opti
     }
 
     Some(SseEvent::Data(data))
+}
+
+fn append_utf8_chunk(
+    pending: &mut Vec<u8>,
+    incoming: &[u8],
+    output: &mut String,
+) -> Result<(), std::str::Utf8Error> {
+    pending.extend_from_slice(incoming);
+
+    while !pending.is_empty() {
+        match std::str::from_utf8(pending) {
+            Ok(text) => {
+                output.push_str(text);
+                pending.clear();
+                return Ok(());
+            }
+            Err(err) => {
+                let valid_up_to = err.valid_up_to();
+                if valid_up_to > 0 {
+                    // `valid_up_to` always points to a valid UTF-8 prefix.
+                    let valid =
+                        std::str::from_utf8(&pending[..valid_up_to]).expect("valid UTF-8 prefix");
+                    output.push_str(valid);
+                    pending.drain(..valid_up_to);
+                    continue;
+                }
+
+                if err.error_len().is_none() {
+                    // Incomplete multibyte sequence at chunk boundary; wait for the next chunk.
+                    return Ok(());
+                }
+
+                return Err(err);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -302,5 +309,27 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert!(matches!(events[0], Ok(SseEvent::Data(ref s)) if s == "hello"));
         assert!(matches!(events[1], Err(LlmError::NetworkError { .. })));
+    }
+
+    #[tokio::test]
+    async fn parse_result_stream_handles_utf8_split_across_chunks() {
+        let payload = "data: {\"content\":\"你\"}\n\n".as_bytes().to_vec();
+        let split_at = payload
+            .iter()
+            .position(|byte| *byte == 0xE4)
+            .expect("contains multibyte utf-8 leading byte")
+            + 1;
+        let first = Bytes::copy_from_slice(&payload[..split_at]);
+        let second = Bytes::copy_from_slice(&payload[split_at..]);
+
+        let events = parse_sse_stream_result(stream::iter(vec![
+            Ok::<Bytes, LlmError>(first),
+            Ok::<Bytes, LlmError>(second),
+        ]))
+        .collect::<Vec<_>>()
+        .await;
+
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], Ok(SseEvent::Data(ref s)) if s == "{\"content\":\"你\"}"));
     }
 }

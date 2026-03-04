@@ -162,7 +162,37 @@ const toolStateToCompactStatus = (
   return "Waiting";
 };
 
+const subAgentStatusToCompactStatus = (
+  status: string
+): TurnProcessCompactItemVM["status"] => {
+  const normalized = status.toLowerCase();
+  if (normalized === "failed" || normalized === "cancelled" || normalized === "closed") {
+    return "Failed";
+  }
+  if (normalized === "succeeded" || normalized === "completed" || normalized === "done") {
+    return "Completed";
+  }
+  if (normalized === "running" || normalized === "pending" || normalized === "waiting") {
+    return "Running";
+  }
+  return "Waiting";
+};
+
 const buildToolCompactItems = (turn: AgentTurnVM): TurnProcessCompactItemVM[] => {
+  const subAgentItems = [...turn.subAgents]
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map((subAgent) => {
+      const activeTool = [...subAgent.tools].sort((a, b) => b.updatedAt - a.updatedAt).at(0);
+      const label = activeTool
+        ? `${subAgent.agentName} · ${activeTool.toolName}`
+        : subAgent.agentName;
+      return {
+        id: `subagent:${subAgent.threadId}`,
+        label,
+        status: subAgentStatusToCompactStatus(subAgent.status),
+      };
+    });
+
   const itemsFromQueue = [...turn.queue.items]
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .map((item) => ({
@@ -172,16 +202,17 @@ const buildToolCompactItems = (turn: AgentTurnVM): TurnProcessCompactItemVM[] =>
     }));
 
   if (itemsFromQueue.length > 0) {
-    return itemsFromQueue;
+    return [...itemsFromQueue, ...subAgentItems];
   }
 
-  return [...turn.tools]
+  const toolItems = [...turn.tools]
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .map((tool) => ({
       id: tool.callId,
       label: tool.toolName,
       status: toolStateToCompactStatus(tool.state),
     }));
+  return [...toolItems, ...subAgentItems];
 };
 
 const buildToolsHeaderDetail = (items: TurnProcessCompactItemVM[]): string | undefined => {
@@ -211,7 +242,11 @@ const resolveStatus = (turn: AgentTurnVM): TurnProcessStatus => {
     turn.queue.items.some(
       (item) => item.status === "running" || item.status === "waiting"
     ) ||
-    turn.tools.some((tool) => TOOL_RUNNING_STATES.has(tool.state));
+    turn.tools.some((tool) => TOOL_RUNNING_STATES.has(tool.state)) ||
+    turn.subAgents.some((subAgent) => {
+      const status = subAgent.status.toLowerCase();
+      return status === "running" || status === "pending" || status === "waiting";
+    });
 
   if (hasToolActivity) {
     return "tool-call";
@@ -270,16 +305,27 @@ export const buildTurnProcessVM = (turn: AgentTurnVM): TurnProcessVM => {
     });
   }
 
-  if (turn.tools.length > 0 || turn.queue.items.length > 0) {
+  if (turn.tools.length > 0 || turn.queue.items.length > 0 || turn.subAgents.length > 0) {
     const compactItems = buildToolCompactItems(turn);
     const isStreaming =
-      queue.running > 0 || queue.waiting > 0 || turn.tools.some((tool) => TOOL_RUNNING_STATES.has(tool.state));
+      queue.running > 0 ||
+      queue.waiting > 0 ||
+      turn.tools.some((tool) => TOOL_RUNNING_STATES.has(tool.state)) ||
+      turn.subAgents.some((subAgent) => {
+        const status = subAgent.status.toLowerCase();
+        return status === "running" || status === "pending" || status === "waiting";
+      });
     const latest = [...turn.queue.items]
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .at(0);
+    const latestSubAgent = [...turn.subAgents]
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .at(0);
     const queuePreview = latest
       ? `${latest.toolName} · ${queueStatusLabel[latest.status]}`
-      : `${turn.tools.length} tools`;
+      : latestSubAgent
+        ? `${latestSubAgent.agentName} · ${latestSubAgent.status.toLowerCase()}`
+        : `${turn.tools.length + turn.subAgents.length} tools`;
     sections.push({
       key: "tools",
       title: "Tools",
@@ -309,7 +355,7 @@ export const buildTurnProcessVM = (turn: AgentTurnVM): TurnProcessVM => {
   }
 
   const metrics: TurnProcessMetrics = {
-    toolCount: turn.tools.length,
+    toolCount: turn.tools.length + turn.subAgents.length,
     queue,
     terminalLines,
     durationMs: turn.terminal.durationMs,

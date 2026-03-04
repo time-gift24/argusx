@@ -22,6 +22,7 @@ const createTurn = (overrides?: Partial<AgentTurnVM>): AgentTurnVM => ({
     status: "streaming",
   },
   tools: [],
+  subAgents: [],
   queue: { items: [] },
   terminal: {
     stdout: "",

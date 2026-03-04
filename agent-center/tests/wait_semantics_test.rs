@@ -32,10 +32,14 @@ async fn wait_all_times_out_when_any_thread_not_terminal() -> anyhow::Result<()>
     let wait_resp = center.wait(wait_req).await?;
 
     // Should timeout because thread is still running
-    assert!(wait_resp.timed_out, "should timeout when thread not terminal");
+    assert!(
+        wait_resp.timed_out,
+        "should timeout when thread not terminal"
+    );
 
     // Should return status map
     assert!(wait_resp.statuses.contains_key(&thread_id));
+    assert!(wait_resp.snapshots.contains_key(&thread_id));
 
     Ok(())
 }
@@ -45,9 +49,7 @@ async fn wait_clamps_timeout_to_valid_range() -> anyhow::Result<()> {
     let temp = tempdir()?;
     let db_path = temp.path().join("test.db");
 
-    let center = AgentCenter::builder()
-        .db_path(db_path)
-        .build()?;
+    let center = AgentCenter::builder().db_path(db_path).build()?;
 
     // Test timeout clamping: 0 -> 1000 (minimum)
     let wait_req = agent_center::api::center::WaitRequest {

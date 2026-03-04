@@ -1,10 +1,12 @@
 use agent_core::{
-    InputEnvelope, RunStreamEvent, RuntimeEvent, ToolCallStatus, ToolResult, TranscriptItem,
-    TurnStats, UiThreadEvent,
+    InputEnvelope, RunStreamEvent, RuntimeEvent, SubAgentToolSnapshot, ToolCallStatus, ToolResult,
+    TranscriptItem, TurnStats, UiThreadEvent,
 };
 
 use crate::effect::Effect;
-use crate::state::{Lifecycle, ModelState, TurnEngineConfig, TurnState};
+use crate::state::{
+    Lifecycle, ModelState, SubAgentState, SubAgentToolState, TurnEngineConfig, TurnState,
+};
 use crate::transition::Transition;
 
 const REASONING_CHAR_LIMIT: u32 = 24_000;
@@ -391,13 +393,13 @@ fn on_tool_result(tr: &mut Transition, epoch: u64, result: ToolResult, is_error:
         return;
     }
     let call_id = result.call_id.clone();
-    if tr.state.inflight_tools.remove(&call_id).is_none() {
+    let Some(call) = tr.state.inflight_tools.remove(&call_id) else {
         tr.add_run_event(RunStreamEvent::ProtocolWarning {
             turn_id: tr.state.meta.turn_id.clone(),
             message: format!("tool result without inflight call: {call_id}"),
         });
         return;
-    }
+    };
 
     tr.add_item(TranscriptItem::tool_result(epoch, result.clone()));
 
@@ -428,6 +430,8 @@ fn on_tool_result(tr: &mut Transition, epoch: u64, result: ToolResult, is_error:
         result: result.clone(),
     });
 
+    apply_sub_agent_updates_from_tool_result(tr, &call.tool_name, &call.arguments, &result);
+
     tr.state
         .enqueue_input(InputEnvelope::tool_json(result.output));
 
@@ -435,6 +439,232 @@ fn on_tool_result(tr: &mut Transition, epoch: u64, result: ToolResult, is_error:
         let next_epoch = tr.state.epoch.saturating_add(1);
         start_model_from_pending(tr, next_epoch);
     }
+}
+
+fn apply_sub_agent_updates_from_tool_result(
+    tr: &mut Transition,
+    tool_name: &str,
+    call_args: &serde_json::Value,
+    result: &ToolResult,
+) {
+    match tool_name {
+        "spawn_agent" => on_spawn_agent_result(tr, call_args, result),
+        "wait" => on_wait_result(tr, result),
+        "close_agent" => on_close_agent_result(tr, call_args, result),
+        _ => {}
+    }
+}
+
+fn on_spawn_agent_result(tr: &mut Transition, call_args: &serde_json::Value, result: &ToolResult) {
+    if result.is_error {
+        return;
+    }
+
+    let Some(thread_id) = result
+        .output
+        .get("thread_id")
+        .and_then(serde_json::Value::as_str)
+    else {
+        return;
+    };
+
+    let agent_name = result
+        .output
+        .get("agent_name")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            call_args
+                .get("agent_name")
+                .and_then(serde_json::Value::as_str)
+        })
+        .unwrap_or("sub-agent")
+        .to_string();
+    let status = result
+        .output
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("Running")
+        .to_string();
+
+    upsert_sub_agent_snapshot(
+        tr,
+        thread_id.to_string(),
+        agent_name,
+        status,
+        Vec::new(),
+        None,
+    );
+}
+
+fn on_wait_result(tr: &mut Transition, result: &ToolResult) {
+    if result.is_error {
+        return;
+    }
+
+    let statuses = result
+        .output
+        .get("statuses")
+        .and_then(serde_json::Value::as_object);
+    let snapshots = result
+        .output
+        .get("snapshots")
+        .and_then(serde_json::Value::as_object);
+
+    let mut thread_ids = std::collections::BTreeSet::new();
+    if let Some(statuses) = statuses {
+        thread_ids.extend(statuses.keys().cloned());
+    }
+    if let Some(snapshots) = snapshots {
+        thread_ids.extend(snapshots.keys().cloned());
+    }
+
+    for thread_id in thread_ids {
+        let status = statuses
+            .and_then(|map| map.get(&thread_id))
+            .and_then(serde_json::Value::as_str)
+            .map(ToString::to_string)
+            .or_else(|| {
+                snapshots
+                    .and_then(|map| map.get(&thread_id))
+                    .and_then(|v| v.get("status"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(ToString::to_string)
+            })
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        let snapshot = snapshots.and_then(|map| map.get(&thread_id));
+        let agent_name = snapshot
+            .and_then(|v| v.get("agent_name"))
+            .and_then(serde_json::Value::as_str)
+            .map(ToString::to_string)
+            .or_else(|| {
+                tr.state
+                    .sub_agents
+                    .get(&thread_id)
+                    .map(|s| s.agent_name.clone())
+            })
+            .unwrap_or_else(|| "sub-agent".to_string());
+        let active_tools = snapshot
+            .and_then(|v| v.get("active_tools"))
+            .and_then(parse_sub_agent_tools)
+            .unwrap_or_default();
+        let error = snapshot
+            .and_then(|v| v.get("error"))
+            .and_then(serde_json::Value::as_str)
+            .map(ToString::to_string);
+
+        upsert_sub_agent_snapshot(tr, thread_id, agent_name, status, active_tools, error);
+    }
+}
+
+fn on_close_agent_result(tr: &mut Transition, call_args: &serde_json::Value, result: &ToolResult) {
+    let thread_id = result
+        .output
+        .get("thread_id")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            call_args
+                .get("thread_id")
+                .and_then(serde_json::Value::as_str)
+        });
+    let Some(thread_id) = thread_id else {
+        return;
+    };
+
+    let status = result
+        .output
+        .get("final_status")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("Closed")
+        .to_string();
+    let agent_name = tr
+        .state
+        .sub_agents
+        .get(thread_id)
+        .map(|s| s.agent_name.clone())
+        .unwrap_or_else(|| "sub-agent".to_string());
+
+    upsert_sub_agent_snapshot(
+        tr,
+        thread_id.to_string(),
+        agent_name,
+        status,
+        Vec::new(),
+        None,
+    );
+}
+
+fn parse_sub_agent_tools(value: &serde_json::Value) -> Option<Vec<SubAgentToolSnapshot>> {
+    let arr = value.as_array()?;
+    let mut tools = Vec::with_capacity(arr.len());
+    for item in arr {
+        let call_id = item.get("call_id").and_then(serde_json::Value::as_str)?;
+        let tool_name = item
+            .get("tool_name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("tool");
+        let status = item
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("running");
+        tools.push(SubAgentToolSnapshot {
+            call_id: call_id.to_string(),
+            tool_name: tool_name.to_string(),
+            status: status.to_string(),
+        });
+    }
+    Some(tools)
+}
+
+fn upsert_sub_agent_snapshot(
+    tr: &mut Transition,
+    thread_id: String,
+    agent_name: String,
+    status: String,
+    active_tools: Vec<SubAgentToolSnapshot>,
+    error: Option<String>,
+) {
+    let active_tools_map = active_tools
+        .iter()
+        .map(|tool| {
+            (
+                tool.call_id.clone(),
+                SubAgentToolState {
+                    call_id: tool.call_id.clone(),
+                    tool_name: tool.tool_name.clone(),
+                    status: tool.status.clone(),
+                },
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+
+    tr.state.sub_agents.insert(
+        thread_id.clone(),
+        SubAgentState {
+            thread_id: thread_id.clone(),
+            agent_name: agent_name.clone(),
+            status: status.clone(),
+            active_tools: active_tools_map,
+            error: error.clone(),
+        },
+    );
+
+    tr.add_run_event(RunStreamEvent::SubAgentUpdated {
+        turn_id: tr.state.meta.turn_id.clone(),
+        thread_id: thread_id.clone(),
+        agent_name: agent_name.clone(),
+        status: status.clone(),
+        active_tools: active_tools.clone(),
+        error: error.clone(),
+    });
+    tr.add_ui_event(UiThreadEvent::SubAgentUpdated {
+        turn_id: tr.state.meta.turn_id.clone(),
+        thread_id,
+        agent_name,
+        status,
+        active_tools,
+        error,
+    });
 }
 
 fn maybe_finalize(tr: &mut Transition) {
@@ -1129,6 +1359,121 @@ mod single_event_tests {
             .run_events
             .iter()
             .any(|e| matches!(e, RunStreamEvent::ToolExecutionDone { .. })));
+    }
+
+    #[test]
+    fn tool_result_spawn_agent_emits_sub_agent_update() {
+        let state = StateBuilder::new("s1", "t1")
+            .with_lifecycle(Lifecycle::Active)
+            .with_model_state(ModelState::Streaming)
+            .with_inflight_tool(
+                "c1",
+                tool_call(
+                    "c1",
+                    "spawn_agent",
+                    serde_json::json!({"agent_name": "researcher"}),
+                ),
+            )
+            .build();
+
+        let result = reduce(
+            state,
+            EventBuilder::tool_result_ok(
+                "c1",
+                serde_json::json!({
+                    "thread_id": "thread-1",
+                    "status": "Running",
+                    "agent_name": "researcher"
+                }),
+            )
+            .build(),
+            &test_config(),
+        );
+
+        let sub_agent = result
+            .state
+            .sub_agents
+            .get("thread-1")
+            .expect("sub-agent snapshot should be recorded");
+        assert_eq!(sub_agent.agent_name, "researcher");
+        assert_eq!(sub_agent.status, "Running");
+        assert!(sub_agent.active_tools.is_empty());
+
+        assert!(result.ui_events.iter().any(|event| matches!(
+            event,
+            UiThreadEvent::SubAgentUpdated { thread_id, .. } if thread_id == "thread-1"
+        )));
+        assert!(result.run_events.iter().any(|event| matches!(
+            event,
+            RunStreamEvent::SubAgentUpdated { thread_id, .. } if thread_id == "thread-1"
+        )));
+    }
+
+    #[test]
+    fn tool_result_wait_updates_sub_agent_active_tools() {
+        let state = StateBuilder::new("s1", "t1")
+            .with_lifecycle(Lifecycle::Active)
+            .with_model_state(ModelState::Streaming)
+            .with_inflight_tool(
+                "c2",
+                tool_call(
+                    "c2",
+                    "wait",
+                    serde_json::json!({"thread_ids": ["thread-1"], "mode": "any", "timeout_ms": 30000}),
+                ),
+            )
+            .build();
+
+        let result = reduce(
+            state,
+            EventBuilder::tool_result_ok(
+                "c2",
+                serde_json::json!({
+                    "timed_out": false,
+                    "statuses": {
+                        "thread-1": "Running"
+                    },
+                    "snapshots": {
+                        "thread-1": {
+                            "thread_id": "thread-1",
+                            "status": "Running",
+                            "agent_name": "researcher",
+                            "active_tools": [
+                                {
+                                    "call_id": "tool-1",
+                                    "tool_name": "read",
+                                    "status": "running"
+                                }
+                            ]
+                        }
+                    }
+                }),
+            )
+            .build(),
+            &test_config(),
+        );
+
+        let sub_agent = result
+            .state
+            .sub_agents
+            .get("thread-1")
+            .expect("wait snapshot should update sub-agent state");
+        assert_eq!(sub_agent.status, "Running");
+        assert_eq!(sub_agent.agent_name, "researcher");
+        assert_eq!(sub_agent.active_tools.len(), 1);
+        assert_eq!(
+            sub_agent
+                .active_tools
+                .get("tool-1")
+                .map(|tool| tool.tool_name.as_str()),
+            Some("read")
+        );
+
+        assert!(result.ui_events.iter().any(|event| matches!(
+            event,
+            UiThreadEvent::SubAgentUpdated { thread_id, active_tools, .. }
+                if thread_id == "thread-1" && active_tools.len() == 1
+        )));
     }
 
     /// Test: ToolResultOk - Unknown call_id is ignored

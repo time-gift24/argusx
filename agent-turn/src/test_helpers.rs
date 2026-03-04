@@ -39,7 +39,7 @@ use agent_core::{
 };
 use serde_json::json;
 
-use crate::state::{Lifecycle, ModelState, TurnEngineConfig, TurnState};
+use crate::state::{Lifecycle, ModelState, SubAgentState, TurnEngineConfig, TurnState};
 use crate::transition::Transition;
 
 // =============================================================================
@@ -148,6 +148,7 @@ pub struct StateBuilder {
     seen_event_ids: HashSet<String>,
     transcript: Vec<TranscriptItem>,
     last_request_inputs: Vec<InputEnvelope>,
+    sub_agents: HashMap<String, SubAgentState>,
 }
 
 impl StateBuilder {
@@ -175,6 +176,7 @@ impl StateBuilder {
             seen_event_ids: HashSet::new(),
             transcript: Vec::new(),
             last_request_inputs: Vec::new(),
+            sub_agents: HashMap::new(),
         }
     }
 
@@ -202,6 +204,7 @@ impl StateBuilder {
             seen_event_ids: state.seen_event_ids,
             transcript: state.transcript,
             last_request_inputs: state.last_request_inputs,
+            sub_agents: state.sub_agents,
         }
     }
 
@@ -359,6 +362,7 @@ impl StateBuilder {
             seen_event_ids: self.seen_event_ids,
             transcript: self.transcript,
             last_request_inputs: self.last_request_inputs,
+            sub_agents: self.sub_agents,
         }
     }
 }

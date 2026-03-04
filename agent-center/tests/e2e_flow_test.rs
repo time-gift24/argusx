@@ -1,4 +1,4 @@
-use agent_center::api::center::{SpawnRequest, WaitRequest, WaitMode, CloseRequest};
+use agent_center::api::center::{CloseRequest, SpawnRequest, WaitMode, WaitRequest};
 use agent_center::AgentCenter;
 use tempfile::tempdir;
 
@@ -22,7 +22,12 @@ async fn e2e_spawn_wait_close_flow() -> anyhow::Result<()> {
     };
     let spawn_resp = center.spawn(spawn_req).await?;
     let thread_id = spawn_resp.thread_id;
-    assert!(!thread_id.is_empty(), "spawned thread should have non-empty ID");
+    assert!(
+        !thread_id.is_empty(),
+        "spawned thread should have non-empty ID"
+    );
+    assert_eq!(spawn_resp.status, "Running");
+    assert_eq!(spawn_resp.agent_name, "test-agent");
 
     // Step 2: Wait for thread (should timeout since thread is still Running)
     let wait_req = WaitRequest {
@@ -31,7 +36,10 @@ async fn e2e_spawn_wait_close_flow() -> anyhow::Result<()> {
         timeout_ms: 100, // Short timeout
     };
     let wait_resp = center.wait(wait_req).await?;
-    assert!(wait_resp.timed_out, "wait should timeout for running thread");
+    assert!(
+        wait_resp.timed_out,
+        "wait should timeout for running thread"
+    );
 
     // Step 3: Close the thread
     let close_req = CloseRequest {
@@ -48,11 +56,21 @@ async fn e2e_spawn_wait_close_flow() -> anyhow::Result<()> {
         timeout_ms: 1000,
     };
     let wait_resp2 = center.wait(wait_req2).await?;
-    assert!(!wait_resp2.timed_out, "wait should not timeout for closed thread");
+    assert!(
+        !wait_resp2.timed_out,
+        "wait should not timeout for closed thread"
+    );
     assert_eq!(
         wait_resp2.statuses.get(&thread_id),
         Some(&"Closed".to_string()),
         "thread status should be Closed"
+    );
+    assert_eq!(
+        wait_resp2
+            .snapshots
+            .get(&thread_id)
+            .map(|snapshot| snapshot.status.as_str()),
+        Some("Closed")
     );
 
     // Step 5: Verify close is idempotent
@@ -61,7 +79,10 @@ async fn e2e_spawn_wait_close_flow() -> anyhow::Result<()> {
         force: false,
     };
     let close_resp2 = center.close(close_req2).await?;
-    assert_eq!(close_resp2.final_status, "Closed", "close should be idempotent");
+    assert_eq!(
+        close_resp2.final_status, "Closed",
+        "close should be idempotent"
+    );
 
     Ok(())
 }

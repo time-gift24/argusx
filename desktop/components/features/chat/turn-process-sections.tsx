@@ -210,6 +210,34 @@ export function TurnProcessSections({
           </Tool>
         );
       })}
+      {turn.subAgents.length > 0 && (
+        <div className="space-y-2 rounded-md border border-border/60 px-3 py-2">
+          {turn.subAgents.map((subAgent) => {
+            const activeTool = [...subAgent.tools]
+              .sort((a, b) => b.updatedAt - a.updatedAt)
+              .at(0);
+            const detail = activeTool
+              ? `${activeTool.toolName} · ${activeTool.status}`
+              : subAgent.status;
+            return (
+              <div
+                className="flex items-center justify-between gap-3 text-xs text-[var(--chat-runtime-text-secondary)]"
+                key={subAgent.threadId}
+              >
+                <div className="min-w-0 truncate">
+                  <span className="font-medium text-foreground/90">
+                    {subAgent.agentName}
+                  </span>
+                  <span className="ml-2 text-[11px] opacity-80">{subAgent.threadId}</span>
+                </div>
+                <div className="shrink-0 text-[11px] uppercase tracking-wide opacity-90">
+                  {detail}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </RuntimeProcessSection>
   );
 

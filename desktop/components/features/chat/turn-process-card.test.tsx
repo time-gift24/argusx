@@ -67,6 +67,7 @@ const createTurn = (): AgentTurnVM => ({
     status: "idle",
   },
   tools: [],
+  subAgents: [],
   queue: { items: [] },
   terminal: {
     stdout: "",
