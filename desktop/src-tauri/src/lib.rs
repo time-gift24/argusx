@@ -666,6 +666,12 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
         }
     }
 
+    // Resolve system prompt: env override or default autonomy prompt
+    let prompt_override = std::env::var("ARGUSX_SYSTEM_PROMPT").ok();
+    model_config.system_prompt = Some(system_prompt::resolve_desktop_system_prompt(
+        prompt_override.as_deref(),
+    ));
+
     let tools = tauri::async_runtime::block_on(AgentToolRuntime::default_with_builtins());
     let model_adapter =
         Arc::new(BigModelModelAdapter::new(Arc::new(llm_client)).with_config(model_config));
