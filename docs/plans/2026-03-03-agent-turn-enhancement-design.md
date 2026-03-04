@@ -347,3 +347,8 @@ Frontend subscribes/render new turn stream
 - ✅ Permanent errors fail fast with user-friendly messaging
 - ✅ Manual retry from checkpoint works after terminal failure
 - ✅ No hanging turns after timeout supervision
+
+## Legacy Compatibility
+
+- `collaboration_mode` remains an upstream compatibility concern.
+- Current phase delivers autonomy through tool/prompt integration, not runtime mode state.
