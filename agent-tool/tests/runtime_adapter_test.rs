@@ -141,3 +141,23 @@ async fn default_runtime_rejects_read_file_tool() {
     // Should be User error because tool doesn't exist
     assert!(matches!(err.kind, ToolExecutionErrorKind::User));
 }
+
+#[tokio::test]
+async fn access_denied_maps_to_user_error_kind() {
+    let rt = AgentToolRuntime::default_with_builtins().await;
+    let err = rt
+        .execute_tool(
+            agent_core::ToolCall::new("read", serde_json::json!({"path": "/etc/passwd", "mode": "text"})),
+            ToolExecutionContext {
+                session_id: "s1".into(),
+                turn_id: "t1".into(),
+                epoch: 0,
+                cwd: None,
+            },
+        )
+        .await
+        .expect_err("access denied should return error");
+    // Access denied should be User error (policy denial), not Runtime
+    assert!(matches!(err.kind, ToolExecutionErrorKind::User));
+    assert!(err.message.contains("Access denied"));
+}
