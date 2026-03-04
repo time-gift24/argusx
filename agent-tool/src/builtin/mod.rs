@@ -1,10 +1,12 @@
 pub mod domain_cookies;
 pub mod file;
 pub mod fs;
+pub mod read;
 pub mod shell;
 pub mod update_plan;
 
 pub use domain_cookies::DomainCookiesTool;
 pub use file::ReadFileTool;
+pub use read::ReadTool;
 pub use shell::ShellTool;
 pub use update_plan::UpdatePlanTool;
