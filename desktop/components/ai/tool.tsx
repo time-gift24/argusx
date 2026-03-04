@@ -1,7 +1,3 @@
-/**
- * @deprecated 已迁移到 components/ai/tool.tsx
- * 请使用 `import { Tool, ToolContent, ... } from "@/components/ai/tool"` 代替
- */
 "use client";
 
 import type { DynamicToolUIPart, ToolUIPart } from "@/types";
@@ -36,7 +32,7 @@ import {
 import {
   COLLAPSIBLE_CONTENT_ANIMATION_CLASS,
   SURFACE_ICON_GHOST_BUTTON_CLASS,
-} from "./class-names";
+} from "@/components/ai-elements/class-names";
 
 export type ToolProps = ComponentProps<typeof Collapsible> & {
   compact?: boolean;

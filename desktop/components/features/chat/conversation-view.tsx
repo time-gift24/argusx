@@ -8,7 +8,7 @@ import {
   ConversationContent,
   ConversationEmptyState,
 } from "@/components/ai-elements/conversation";
-import { Message, MessageResponse } from "@/components/ai-elements/message";
+import { Message, MessageResponse } from "@/components/ai/message";
 import { BotIcon } from "lucide-react";
 import { useStickToBottomContext } from "use-stick-to-bottom";
 import { AgentTurnCard } from "./agent-turn-card";

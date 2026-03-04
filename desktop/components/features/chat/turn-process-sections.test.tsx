@@ -483,4 +483,43 @@ describe("TurnProcessSections runtime contract", () => {
     expect(scoped).toBeTruthy();
     expect(scoped?.querySelector('[data-streamdown="inline-code"]')).toBeTruthy();
   });
+
+  it("keeps inline code non-highlighted while preserving block code rendering", () => {
+    mocks.state.turnUiState = {
+      [SESSION_ID]: {
+        [TURN_ID]: {
+          processExpanded: false,
+          sectionExpanded: { reasoning: true },
+          codeExpanded: {},
+        },
+      },
+    };
+
+    const turn = createTurn({
+      reasoning: {
+        text: "This has `inline` code and:\n\n```ts\nconst x = 1;\n```",
+      },
+    });
+    const vm = createVm({
+      sections: [
+        {
+          key: "reasoning",
+          title: "Reasoning",
+          preview: "Streaming reasoning...",
+          isStreaming: true,
+          defaultOpen: false,
+          headerLabel: "Thinking...",
+        },
+      ],
+    });
+
+    const { container } = render(
+      <TurnProcessSections sessionId={SESSION_ID} turn={turn} vm={vm} />
+    );
+
+    // Inline code should not be highlighted
+    expect(container.querySelector(".llm-chat-markdown :not(pre) > code")).toBeTruthy();
+    // Fenced code block should be highlighted
+    expect(container.querySelector('[data-highlighted="true"]')).toBeTruthy();
+  });
 });

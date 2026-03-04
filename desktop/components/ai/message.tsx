@@ -1,7 +1,3 @@
-/**
- * @deprecated 已迁移到 components/ai/message.tsx
- * 请使用 `import { Message, MessageResponse } from "@/components/ai/message"` 代替
- */
 "use client";
 
 import type { UIMessage } from "@/types";
@@ -31,9 +27,9 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 
-import { StreamdownCode } from "./streamdown-code";
+import { StreamdownCode } from "@/components/ai/streamdown-code";
 
-import { STREAMDOWN_PLUGINS } from "./streamdown-plugins";
+import { STREAMDOWN_PLUGINS } from "@/components/ai/streamdown-plugins";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];

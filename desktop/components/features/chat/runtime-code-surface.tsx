@@ -12,12 +12,12 @@ import {
   CodeBlockFilename,
   CodeBlockHeader,
   CodeBlockTitle,
-} from "@/components/ai-elements/code-block";
+} from "@/components/ai/code-block";
 import {
   Terminal,
   TerminalContent,
   TerminalCopyButton,
-} from "@/components/ai-elements/terminal";
+} from "@/components/ai/terminal";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CheckIcon, CopyIcon } from "lucide-react";
@@ -32,6 +32,7 @@ export interface RuntimeCodeSurfaceProps
   code: string;
   language?: string;
   isIncomplete?: boolean;
+  highlighted?: boolean;
   mode?: RuntimeCodeSurfaceMode;
   previewLines?: number;
 }
@@ -50,6 +51,7 @@ export function RuntimeCodeSurface({
   code,
   language,
   isIncomplete = false,
+  highlighted = true,
   mode = "code",
   previewLines = DEFAULT_PREVIEW_LINES,
   className,
@@ -104,6 +106,7 @@ export function RuntimeCodeSurface({
               "llm-chat-code-surface llm-chat-terminal-surface llm-chat-runtime-surface overflow-hidden",
               className
             )}
+            data-highlighted={highlighted}
           >
             <CodeBlockHeader className="border-0 bg-transparent px-[var(--chat-runtime-code-padding-x)] pb-0 pt-[var(--chat-runtime-code-padding-y)]">
               <CodeBlockTitle className="text-[var(--chat-runtime-surface-label)]">
@@ -129,32 +132,75 @@ export function RuntimeCodeSurface({
       );
     }
 
+    // Code mode: use syntax highlighting only when highlighted=true
+    if (!highlighted) {
+      return (
+        <div
+          className={cn(
+            "llm-chat-code-surface llm-chat-runtime-surface",
+            className
+          )}
+          data-highlighted="false"
+          {...props}
+        >
+          <CodeBlockHeader>
+            <CodeBlockTitle>
+              <CodeBlockFilename>{language || "code"}</CodeBlockFilename>
+            </CodeBlockTitle>
+            <CodeBlockActions>
+              <Button
+                aria-label={copyLabel}
+                className={cn(
+                  SURFACE_ICON_GHOST_BUTTON_CLASS,
+                  "[&_svg]:size-[14px]"
+                )}
+                disabled={!hasCode}
+                onClick={copyToClipboard}
+                size="icon-sm"
+                type="button"
+                variant="ghost"
+              >
+                <CopyStateIcon size={14} />
+              </Button>
+            </CodeBlockActions>
+          </CodeBlockHeader>
+          <div className="px-[var(--chat-runtime-code-padding-x)] pb-[var(--chat-runtime-code-padding-y)] font-mono [font-size:var(--chat-runtime-code-font-size)] [line-height:var(--chat-runtime-code-line-height)]">
+            <pre className="m-0 whitespace-pre-wrap break-words">
+              <code>{code}</code>
+            </pre>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <CodeBlock
-        className={cn("llm-chat-code-surface", className)}
-        code={code}
-        compact
-        language={(language || "text") as BundledLanguage}
-        showLineNumbers={false}
-        {...props}
-      >
-        <CodeBlockHeader>
-          <CodeBlockTitle>
-            <CodeBlockFilename>{language || "text"}</CodeBlockFilename>
-          </CodeBlockTitle>
-          <CodeBlockActions>
-            <CodeBlockCopyButton
-              aria-label={copyLabel}
-              className={cn(
-                SURFACE_ICON_GHOST_BUTTON_CLASS,
-                "[&_svg]:size-[14px]"
-              )}
-              disabled={!hasCode}
-              title={copyLabel}
-            />
-          </CodeBlockActions>
-        </CodeBlockHeader>
-      </CodeBlock>
+      <div data-highlighted="true">
+        <CodeBlock
+          className={cn("llm-chat-code-surface", className)}
+          code={code}
+          compact
+          language={(language || "text") as BundledLanguage}
+          showLineNumbers={false}
+          {...props}
+        >
+          <CodeBlockHeader>
+            <CodeBlockTitle>
+              <CodeBlockFilename>{language || "text"}</CodeBlockFilename>
+            </CodeBlockTitle>
+            <CodeBlockActions>
+              <CodeBlockCopyButton
+                aria-label={copyLabel}
+                className={cn(
+                  SURFACE_ICON_GHOST_BUTTON_CLASS,
+                  "[&_svg]:size-[14px]"
+                )}
+                disabled={!hasCode}
+                title={copyLabel}
+              />
+            </CodeBlockActions>
+          </CodeBlockHeader>
+        </CodeBlock>
+      </div>
     );
   }
 

@@ -3,6 +3,7 @@
 import type { ComponentProps, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
+import { getRuntimeSurfaceClass } from "@/components/ai";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import {
   Collapsible,
@@ -76,50 +77,52 @@ export function RuntimeProcessSection({
   }, [isStreaming]);
 
   return (
-    <Collapsible
-      className={cn("mb-0", className)}
-      onOpenChange={onOpenChange}
-      open={open}
-      {...props}
-    >
-      <CollapsibleTrigger
-        className={cn(
-          "flex h-8 w-full items-center justify-start gap-1.5 px-2.5 py-1.5 text-left hover:text-foreground",
-          triggerClassName
-        )}
+    <div className={cn(getRuntimeSurfaceClass("process"), className)}>
+      <Collapsible
+        className="mb-0"
+        onOpenChange={onOpenChange}
+        open={open}
+        {...props}
       >
-        <Icon className="size-3.5 shrink-0 text-[var(--chat-runtime-text-secondary)]" />
-        <span className="truncate text-xs font-medium leading-4 text-[var(--chat-runtime-text-secondary)]">
-          {isStreaming ? (
-            <Shimmer as="span" duration={1}>
-              {label}
-            </Shimmer>
-          ) : (
-            label
-          )}
-        </span>
-        {detail ? (
-          <span className="truncate text-[11px] leading-4 text-[var(--chat-runtime-text-secondary)]">
-            {detail}
-          </span>
-        ) : null}
-        {(isStreaming || hasDuration) && (
-          <span className="shrink-0 text-[11px] leading-4 text-[var(--chat-runtime-text-secondary)]">
-            {elapsedSeconds}s
-          </span>
-        )}
-        <ChevronDownIcon
+        <CollapsibleTrigger
           className={cn(
-            "size-3.5 shrink-0 text-[var(--chat-runtime-text-secondary)] transition-transform",
-            open && "rotate-180"
+            "flex h-8 w-full items-center justify-start gap-1.5 px-2.5 py-1.5 text-left hover:text-foreground",
+            triggerClassName
           )}
-        />
-      </CollapsibleTrigger>
-      <CollapsibleContent
-        className={cn(COLLAPSIBLE_CONTENT_ANIMATION_CLASS, contentClassName)}
-      >
-        {children}
-      </CollapsibleContent>
-    </Collapsible>
+        >
+          <Icon className="size-3.5 shrink-0 text-[var(--chat-runtime-text-secondary)]" />
+          <span className="truncate text-xs font-medium leading-4 text-[var(--chat-runtime-text-secondary)]">
+            {isStreaming ? (
+              <Shimmer as="span" duration={1}>
+                {label}
+              </Shimmer>
+            ) : (
+              label
+            )}
+          </span>
+          {detail ? (
+            <span className="truncate text-[11px] leading-4 text-[var(--chat-runtime-text-secondary)]">
+              {detail}
+            </span>
+          ) : null}
+          {(isStreaming || hasDuration) && (
+            <span className="shrink-0 text-[11px] leading-4 text-[var(--chat-runtime-text-secondary)]">
+              {elapsedSeconds}s
+            </span>
+          )}
+          <ChevronDownIcon
+            className={cn(
+              "size-3.5 shrink-0 text-[var(--chat-runtime-text-secondary)] transition-transform",
+              open && "rotate-180"
+            )}
+          />
+        </CollapsibleTrigger>
+        <CollapsibleContent
+          className={cn(COLLAPSIBLE_CONTENT_ANIMATION_CLASS, contentClassName)}
+        >
+          {children}
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
   );
 }

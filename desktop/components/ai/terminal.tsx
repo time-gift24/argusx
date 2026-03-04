@@ -1,7 +1,3 @@
-/**
- * @deprecated 已迁移到 components/ai/terminal.tsx
- * 请使用 `import { Terminal, TerminalContent, ... } from "@/components/ai/terminal"` 代替
- */
 "use client";
 
 import type { ComponentProps, HTMLAttributes } from "react";
@@ -20,7 +16,7 @@ import {
   useState,
 } from "react";
 
-import { Shimmer } from "./shimmer";
+import { Shimmer } from "@/components/ai-elements/shimmer";
 
 interface TerminalContextType {
   output: string;

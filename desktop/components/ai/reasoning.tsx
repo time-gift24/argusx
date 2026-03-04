@@ -1,7 +1,3 @@
-/**
- * @deprecated 已迁移到 components/ai/reasoning.tsx
- * 请使用 `import { Reasoning, ReasoningContent, ... } from "@/components/ai/reasoning"` 代替
- */
 "use client";
 
 import type { ComponentProps, ReactNode } from "react";
@@ -26,11 +22,11 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 
-import { StreamdownCode } from "./streamdown-code";
+import { StreamdownCode } from "@/components/ai/streamdown-code";
 
-import { COLLAPSIBLE_CONTENT_ANIMATION_CLASS } from "./class-names";
-import { Shimmer } from "./shimmer";
-import { STREAMDOWN_PLUGINS } from "./streamdown-plugins";
+import { COLLAPSIBLE_CONTENT_ANIMATION_CLASS } from "@/components/ai-elements/class-names";
+import { Shimmer } from "@/components/ai-elements/shimmer";
+import { STREAMDOWN_PLUGINS } from "@/components/ai/streamdown-plugins";
 
 interface ReasoningContextValue {
   isStreaming: boolean;

@@ -1,7 +1,3 @@
-/**
- * @deprecated 已迁移到 components/ai/plan.tsx
- * 请使用 `import { Plan, PlanContent, ... } from "@/components/ai/plan"` 代替
- */
 "use client";
 
 import type { ComponentProps } from "react";
@@ -25,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { ChevronsUpDownIcon } from "lucide-react";
 import { createContext, useContext } from "react";
 
-import { Shimmer } from "./shimmer";
+import { Shimmer } from "@/components/ai-elements/shimmer";
 
 interface PlanContextValue {
   isStreaming: boolean;
