@@ -290,14 +290,19 @@ fn search_file(
 
     // Now add context lines by re-reading the file
     // We need to rebuild the matches with context
+    // Note: SinkMatch::line_number() is 1-based, convert to 0-based for array indexing
     let mut matches_with_context = Vec::new();
     for m in &matches {
         let line_num = m.get("line_number").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-        let context_start = line_num.saturating_sub(context_lines);
-        let context_end = (line_num + context_lines).min(total_lines);
+        // Convert from 1-based to 0-based index
+        let line_idx = line_num.saturating_sub(1);
+
+        let context_start = line_idx.saturating_sub(context_lines);
+        // Include context_lines after the matched line (exclusive of matched line)
+        let context_end = (line_idx + 1 + context_lines).min(total_lines);
 
         let context: Vec<String> = (context_start..context_end)
-            .filter(|&i| i != line_num)
+            .filter(|&i| i != line_idx)
             .map(|i| all_lines.get(i).unwrap_or(&"").to_string())
             .collect();
 
