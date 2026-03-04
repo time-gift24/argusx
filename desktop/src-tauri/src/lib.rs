@@ -885,8 +885,8 @@ mod tests {
     #[test]
     fn fingerprint_message_is_actionable() {
         let message = fingerprint_mismatch_user_message();
-        assert!(message.contains("fingerprint"));
-        assert!(message.contains("Clear stored credentials"));
+        assert!(message.contains("指纹"));
+        assert!(message.contains("清除存储的凭据"));
     }
 
     #[test]
@@ -927,7 +927,8 @@ mod tests {
     #[test]
     fn fingerprint_unavailable_message_is_actionable() {
         let message = fingerprint_unavailable_user_message();
-        assert!(message.contains("fingerprint"));
+        assert!(message.contains("主机指纹"));
+        assert!(message.contains("无法获取"));
     }
 
     #[test]
