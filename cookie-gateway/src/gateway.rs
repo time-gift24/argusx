@@ -73,6 +73,8 @@ pub struct GetCookiesResponse {
 pub fn app(state: GatewayState) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/", get(ws_client))
+        .route("/ws", get(ws_client))
         .route("/ws/client", get(ws_client))
         .route("/api/cookies", post(upload_cookies))
         .route("/api/cookies", get(get_cookies))
