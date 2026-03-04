@@ -6,9 +6,15 @@ Agent-Center provides multi-agent orchestration with robust lifecycle management
 
 ## Key Features
 
-- **Lifecycle Management**: Thread state machine with transitions: Pending → Running → Succeeded/Failed/Cancelled/Closed
+- **Lifecycle Management**: Thread state machine with transitions:
+  - Normal: Pending → Running → Succeeded/Failed/Cancelled
+  - Close: Running → Closing → Closed
+  - Force Close: Running → Closed (bypasses Closing state)
+  - All terminal states are idempotent
 - **Concurrency Control**: RAII-based slot reservation with configurable max concurrent threads and depth limits
 - **Idempotent Operations**: All operations (spawn, wait, close) are idempotent
+  - Spawn with duplicate (parent, key) returns existing thread ID without consuming quota
+  - Close on terminal thread returns success with actual status
 - **Crash Recovery**: Reconciliation on startup to repair orphaned threads
 - **Atomic Deduplication**: Race-condition-free spawn using transactions
 
@@ -18,14 +24,15 @@ Agent-Center provides multi-agent orchestration with robust lifecycle management
 Spawns a child agent with idempotent deduplication.
 
 **Parameters:**
-- `parent_thread_id`: ID of parent thread
+- `parent_thread_id`: ID of parent thread (use "root" for top-level threads)
 - `key`: Unique key for deduplication within parent scope
 - `agent_name`: Type of agent to spawn
 - `initial_input`: Initial input for the agent
 
 **Behavior:**
 - First call with (parent, key) creates new thread
-- Subsequent calls with same (parent, key) return existing thread ID
+- Subsequent calls with same (parent, key) return existing thread ID (idempotent)
+- Idempotent retries succeed even at concurrency limit (quota not consumed for duplicates)
 - Respects concurrency limits (configurable, default: 10)
 - Respects depth limits (configurable, default: 3)
 
@@ -48,10 +55,11 @@ Gracefully closes a thread with idempotency.
 
 **Parameters:**
 - `thread_id`: ID of thread to close
-- `force`: Force close (not yet implemented)
+- `force`: If true, skip Closing state and go directly to Closed (default: false)
 
 **Behavior:**
-- Transitions: Running → Closing → Closed
+- Normal close: Running → Closing → Closed
+- Force close: Running → Closed (bypasses Closing state)
 - Idempotent: Calling close on terminal thread returns success
 - Releases concurrency slot on close
 - Persists final state to database
@@ -80,7 +88,8 @@ println!("Repaired {} orphaned threads", report.repaired_count);
 **Safety:**
 - Idempotent: Can run multiple times safely
 - No side effects on terminal threads
-- Safe to run during normal operation
+- ⚠️ **WARNING**: Only run during startup when no agent runtimes are active
+- Running during normal operation will incorrectly mark active threads as Failed
 
 ### Common Crash Scenarios
 
@@ -193,9 +202,9 @@ let center = AgentCenter::builder()
 
 | Option | Default | Valid Range |
 |--------|---------|-------------|
-| `max_concurrent` | 10 | 1 - 1000 |
-| `max_depth` | 3 | 1 - 100 |
-| `timeout_ms` | Clamped | [1000, 300000] |
+| `max_concurrent` | 10 | 1 - 10,000 |
+| `max_depth` | 3 | 1 - 1,000 |
+| `timeout_ms` (wait) | Clamped | [1,000, 300,000] |
 
 ## Database Schema
 
@@ -206,9 +215,20 @@ CREATE TABLE threads (
     parent_thread_id TEXT,
     status TEXT NOT NULL,
     agent_name TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    depth INTEGER NOT NULL DEFAULT 0,
+    initial_input TEXT
 );
 ```
+
+**Columns:**
+- `id`: Unique thread identifier
+- `parent_thread_id`: Parent thread ID (NULL for root threads)
+- `status`: Thread lifecycle status (Pending/Running/Succeeded/Failed/Cancelled/Closing/Closed)
+- `agent_name`: Type of agent
+- `created_at`: ISO 8601 timestamp
+- `depth`: Nesting depth (0 for root threads)
+- `initial_input`: Initial input provided at spawn time
 
 ### spawn_dedup table
 ```sql
@@ -219,6 +239,11 @@ CREATE TABLE spawn_dedup (
     PRIMARY KEY (parent_thread_id, key)
 );
 ```
+
+**Columns:**
+- `parent_thread_id`: Parent thread ID
+- `key`: Deduplication key within parent scope
+- `thread_id`: The spawned thread ID
 
 ## Performance Considerations
 
