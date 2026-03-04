@@ -4,10 +4,7 @@ use agent_core::tools::{
 use agent_core::{ToolCall, ToolResult as CoreToolResult};
 use async_trait::async_trait;
 
-use crate::{
-    DomainCookiesTool, ReadFileTool, ShellTool, ToolContext, ToolError, ToolRegistry,
-    UpdatePlanTool,
-};
+use crate::{GlobTool, GrepTool, ReadTool, ToolContext, ToolError, ToolRegistry};
 
 pub struct AgentToolRuntime {
     registry: ToolRegistry,
@@ -20,10 +17,13 @@ impl AgentToolRuntime {
 
     pub async fn default_with_builtins() -> Self {
         let registry = ToolRegistry::new();
-        registry.register(ReadFileTool).await;
-        registry.register(ShellTool).await;
-        registry.register(DomainCookiesTool::from_env()).await;
-        registry.register(UpdatePlanTool).await;
+        // Register read-only filesystem tools with default allowed root (current directory)
+        let read_tool = ReadTool::default().expect("Failed to create default ReadTool");
+        let glob_tool = GlobTool::default().expect("Failed to create default GlobTool");
+        let grep_tool = GrepTool::default().expect("Failed to create default GrepTool");
+        registry.register(read_tool).await;
+        registry.register(glob_tool).await;
+        registry.register(grep_tool).await;
         Self { registry }
     }
 }
@@ -85,14 +85,30 @@ fn map_spec(spec: crate::ToolSpec) -> agent_core::tools::ToolSpec {
 }
 
 fn map_error(err: ToolError) -> ToolExecutionError {
-    let kind = match err {
-        ToolError::NotFound(_) | ToolError::InvalidArgs(_) => ToolExecutionErrorKind::User,
-        ToolError::ExecutionFailed(_) | ToolError::Io(_) => ToolExecutionErrorKind::Runtime,
+    // Classify errors based on their nature:
+    // - User errors: invalid arguments, not found, policy denials (access denied)
+    // - Runtime errors: actual IO failures, system errors
+    let (kind, message) = match err {
+        ToolError::NotFound(msg) => (ToolExecutionErrorKind::User, msg),
+        ToolError::InvalidArgs(msg) => (ToolExecutionErrorKind::User, msg),
+        ToolError::ExecutionFailed(msg) => {
+            // Check if it's a policy denial (access denied, not found, etc.)
+            let is_policy = msg.starts_with("Access denied:")
+                || msg.starts_with("Not found:")
+                || msg.starts_with("Invalid root:")
+                || msg.starts_with("Invalid path:");
+            if is_policy {
+                (ToolExecutionErrorKind::User, msg)
+            } else {
+                (ToolExecutionErrorKind::Runtime, msg)
+            }
+        }
+        ToolError::Io(msg) => (ToolExecutionErrorKind::Runtime, msg.to_string()),
     };
 
     ToolExecutionError {
         kind,
-        message: err.to_string(),
+        message,
         retry_after_ms: None,
     }
 }

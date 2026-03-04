@@ -1,8 +1,20 @@
 # Internal Filesystem (Read/Glob/Grep) Design
 
-**Date:** 2026-03-04  
-**Status:** Approved  
+**Date:** 2026-03-04
+**Status:** ✅ Implemented (2026-03-04)
 **Scope:** `agent-tool` only (do not modify `agent-core` protocol)
+
+## Implementation Checklist
+
+- [x] Default runtime only exposes read/glob/grep
+- [x] shell removed from default runtime
+- [x] read_file removed from default runtime
+- [x] write operations unavailable
+- [x] FsGuard path security implemented
+- [x] symlink escape prevention
+- [x] dotdot traversal prevention
+- [x] Error mapping: access denied -> User error
+- [x] All tests pass
 
 ## 1. Background and Goal
 
