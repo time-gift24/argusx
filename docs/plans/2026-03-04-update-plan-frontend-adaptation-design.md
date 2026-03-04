@@ -6,58 +6,50 @@
 
 ## 1. 背景与问题
 
-当前 `update_plan` 工具输出结构较简化（`title/description/tasks/is_streaming`），前端虽可渲染计划，但主要是“标题 + 任务列表”模式，无法稳定承载更丰富的“要做的事情展示”（如 overview、分节、CTA）。
+当前 `update_plan` 已可承载基础计划（`title/description/tasks/is_streaming`），但前端主要停留在“标题 + 任务列表”展示，存在两类语义混杂：
 
-现状问题：
-1. 前端需要额外拼装逻辑，展示语义不足。
-2. 状态表达较粗，无法区分 `blocked/failed` 等执行状态。
-3. 未来扩展会继续依赖非结构化文本回退，稳定性不足。
+1. **规划语义**：AI 打算做什么（目标、关键步骤、阶段策略）。
+2. **执行语义**：当前具体在做哪一步，哪些被阻塞/失败。
 
-## 2. 目标与非目标
+现状中“规划结果”和“执行步骤”没有明确分层，导致：
 
-### 2.1 目标
-1. 在保持向后兼容前提下扩展 `update_plan` 协议。
-2. 支持前端完整展示“计划概览 + 关键步骤 + 任务状态 + 可选动作”。
-3. 明确任务级与计划级状态模型，提升过程可视化。
-4. 前端具备强回退能力：新字段缺失时不影响旧渲染路径。
+1. 执行态不够直观，用户难以快速判断当前进展。
+2. `blocked/failed` 等状态表达不足。
+3. 后续扩展容易继续依赖文本推断，稳定性有限。
 
-### 2.2 非目标
-1. 不在本次引入复杂富文本/Markdown 解析协议。
-2. 不在本次引入独立 plan 事件流（沿用现有 `tool_call_completed` 解析路径）。
-3. 不在本次做交互工作流重构（CTA 先支持基础动作）。
+## 2. 本次确认结论（用户已确认）
 
-## 3. 方案比较
+1. **向后兼容必需**：旧 `plan` 结构必须继续可用。
+2. **混合模式**：任务字段必传，展示字段可选，前端有回退。
+3. **任务状态集合**：`pending | in_progress | blocked | completed | failed`。
+4. **双层语义**：`Plan` 展示规划结果，`Queue` 展示执行步骤。
+5. **Queue 首版范围**：仅展示 TODO，不展示消息队列。
+6. **Queue 呈现方式**：单列表（每行一个状态标签），不按状态分组。
 
-### 方案 A（采用）: 在 `plan` 内扩展可选 `view`
-- 保留旧字段，新增可选 `view`、`lifecycle_status`、`progress`。
-- 前端优先渲染新结构，缺失时回退旧结构。
+## 3. 目标与非目标
 
-优点：
-1. 兼容性最佳，迁移风险最低。
-2. 改动集中在已有数据通道，便于落地。
-3. 可渐进发布，支持灰度。
+### 3.1 目标
 
-代价：
-1. `update_plan` 输出体增大。
-2. 需要前后端同步补充校验与降级逻辑。
+1. 扩展 `update_plan` 协议并保持兼容。
+2. 让前端同时清晰展示“规划结果（Plan）+ 执行步骤（Queue）”。
+3. 落实五态任务状态并形成稳定渲染约束。
+4. 保证新字段缺失时可安全回退。
 
-### 方案 B: 新增独立 `plan_view_*` 事件流
-优点：语义清晰、可流式增量。  
-代价：协议与 reducer 改动面过大，本次不采用。
+### 3.2 非目标
 
-### 方案 C: 将展示信息塞入 `description` 文本再前端解析
-优点：后端改动少。  
-代价：脆弱、不可预测、长期维护差，本次不采用。
+1. 本次不引入独立 `plan_view_*` 事件流。
+2. 本次不引入 Queue 分组、拖拽重排等高级交互。
+3. 本次不做工具调用队列（tool queue）协议重构。
 
 ## 4. 最终数据契约（兼容增强）
 
-### 4.1 输出结构
+### 4.1 输出结构（建议）
 
 ```json
 {
   "plan": {
     "title": "Execution Plan",
-    "description": "Migrate plan panel rendering",
+    "description": "Migrate plan + queue rendering",
     "tasks": [
       { "id": "task-1", "title": "Define contract", "status": "completed" },
       { "id": "task-2", "title": "Implement parser", "status": "in_progress" },
@@ -72,19 +64,32 @@
         { "id": "key-steps", "title": "Key Steps", "kind": "bullets", "items": ["..."] }
       ],
       "cta": { "label": "Build", "shortcut": "⌘↩", "action": "submit" }
+    },
+    "queue": {
+      "todos": [
+        {
+          "id": "todo-1",
+          "title": "Implement parser",
+          "description": "Normalize lifecycle/progress",
+          "status": "in_progress"
+        }
+      ]
     }
   }
 }
 ```
 
 ### 4.2 兼容约束
+
 1. 旧字段 `title/description/tasks/is_streaming` 继续保留。
-2. `view`、`lifecycle_status`、`progress` 全部可选。
-3. 前端必须允许缺失字段并回退旧渲染。
+2. `view`、`lifecycle_status`、`progress`、`queue` 全部可选。
+3. 若缺失 `queue.todos`，前端从 `tasks` 派生 TODO 队列。
+4. 未知字段允许透传或忽略，不影响基础渲染。
 
 ### 4.3 状态模型
 
 #### 任务级状态（本次确认）
+
 - `pending`
 - `in_progress`
 - `blocked`
@@ -92,6 +97,7 @@
 - `failed`
 
 #### 计划级状态
+
 - `planning`
 - `in_progress`
 - `paused`
@@ -99,106 +105,129 @@
 - `failed`
 - `cancelled`
 
-## 5. 前端设计
+## 5. 前端架构设计
 
-### 5.1 渲染优先级
-1. 若 `plan.view` 存在：渲染 `overview + sections + tasks + cta`。
-2. 若 `plan.view` 缺失：维持当前 `title + progress + tasks`。
+### 5.1 ViewModel 分层
 
-### 5.2 Header 设计
-1. 保留 `PlanTitle/PlanDescription`。
-2. 新增计划状态徽标（来自 `lifecycle_status`）。
-3. 进度展示优先 `progress`，否则由 `tasks` 推导。
+建议在 `AgentTurnVM` 明确两类队列：
 
-### 5.3 Task 展示
-1. 任务行支持 5 态样式。
-2. 每行显示状态标记 + 标题。
-3. `task.description` 存在时显示次级描述。
+1. `plan`：规划结果（结构化展示）。
+2. `todoQueue`：执行步骤队列（业务 TODO，五态）。
 
-### 5.4 Sections 展示
-1. `kind=bullets` 渲染列表。
-2. `kind=text` 渲染段落。
-3. 未知 `kind` 忽略（容错）。
+保留现有 `turn.queue.items` 作为工具调用队列（tool queue），不与 TODO queue 混用。
 
-### 5.5 CTA 展示
-1. `view.cta` 存在时显示 `PlanFooter + Button`。
-2. `action=submit` 触发既有提交流程；`action=none` 仅展示。
-3. 未知 action 降级为 no-op。
+### 5.2 渲染顺序
 
-### 5.6 UI/UX 约束（基于 ui-ux-pro-max）
-1. 可点击元素确保可见 hover/focus 状态。
-2. 交互反馈时间 150-300ms。
-3. 图标统一使用 Lucide/SVG；不使用 emoji。
-4. 保持键盘可达性与最小触控尺寸。
+`reasoning -> plan -> queue -> tools -> terminal`
+
+语义如下：
+
+1. `plan`：解释“准备怎么做”。
+2. `queue`：显示“正在/待做什么”（主执行视图）。
+3. `tools`：底层执行细节（技术视图）。
+
+### 5.3 Plan 展示
+
+1. `view` 存在：展示 `overview + sections + tasks + cta`。
+2. `view` 缺失：回退到当前 `title + progress + tasks`。
+3. `progress` 优先使用结构化字段，否则任务聚合推导。
+
+### 5.4 Queue（TODO）展示
+
+1. 使用 `ai-elements/queue` 组件体系。
+2. 单列表展示，不做分组。
+3. 每行展示：状态指示 + 标题 + 可选描述 + 状态标签。
+4. 未知状态降级到 `pending`。
+
+### 5.5 UI/UX 约束（ui-ux-pro-max）
+
+1. 所有可交互元素有可见 hover/focus 状态。
+2. 动效时长控制在 150-300ms。
+3. 图标统一使用 Lucide/SVG。
+4. 保持键盘可达性与紧凑信息密度。
 
 ## 6. 后端设计（`update_plan`）
 
 ### 6.1 入参扩展
-在现有入参基础上新增可选字段：
+
+在现有 `plan` 数组与 `explanation` 基础上新增可选字段：
+
 1. `lifecycle_status`
 2. `progress`
 3. `view.overview`
 4. `view.sections[]`
 5. `view.cta`
+6. `queue.todos[]`
 
 ### 6.2 校验规则
+
 1. `tasks` 至少 1 条。
-2. `step/title` 不能为空。
-3. `task.status` 必须在允许集合内。
+2. `step/title` 非空。
+3. `task.status` 必须在五态集合中。
 4. `in_progress` 最多 1 条。
-5. `progress` 必须满足：
+5. `progress` 约束：
    - `total >= 0`
    - `completed >= 0`
    - `completed <= total`
    - `percent` 在 `[0, 100]`
+6. `queue.todos[].status` 同样使用五态集合。
 
 ### 6.3 默认推导
+
 当调用方未提供时：
+
 1. `lifecycle_status` 自动推导：
    - 有 `in_progress` => `in_progress`
    - 全部 `completed` => `completed`
    - 有 `failed` => `failed`
    - 其他 => `planning`
-2. `progress` 由任务聚合推导并回填。
+2. `progress` 按任务聚合计算。
+3. `queue.todos` 缺失时可由 `tasks` 映射构造（可选后端推导，前端必须具备兜底推导）。
 
-## 7. 数据流
+## 7. 事件与更新规则
 
-1. 模型调用 `update_plan`（带新/旧字段）。
-2. `agent-tool` 校验并输出兼容增强的 `output.plan`。
-3. 前端 `chat-store` 在 `tool_call_completed` 中解析 `output.plan`。
-4. `turn-process-sections` 渲染结构化计划；若字段缺失则回退旧模式。
+1. `tool_call_completed(update_plan)`：刷新 `plan` 主体并同步 `todoQueue` 快照。
+2. `task_*` 事件：优先更新 `todoQueue` 的对应 `todo.id` 状态。
+3. 冲突处理：按最新事件时序更新（前端以 `seq/ts` 为准）。
+4. 工具队列与 TODO 队列完全解耦：
+   - `turn.queue.items` = tool queue
+   - `turn.todoQueue.todos` = business todo queue
 
 ## 8. 错误处理与降级
 
-1. 后端参数错误返回 `InvalidArgs`，前端按工具失败路径展示错误信息。
-2. 前端遇到未知状态/未知 section kind/action 不抛错，安全降级。
-3. 任何新字段缺失都不影响旧计划展示。
+1. 后端参数错误返回 `InvalidArgs`，前端按 tool error 展示。
+2. 前端遇到未知 status/kind/action 均安全降级，不抛运行时错误。
+3. 新字段缺失时，`Plan` 与 `Queue` 至少能展示任务级基础信息。
 
 ## 9. 测试策略
 
 ### 9.1 后端（Rust）
-1. 状态集合校验（含 `blocked/failed`）。
+
+1. 五态状态校验（含 `blocked/failed`）。
 2. `in_progress` 多条拒绝。
 3. `progress` 边界校验。
-4. `view` 可选字段 roundtrip 输出。
-5. 兼容老 payload（无新字段）仍通过。
+4. `view` 与 `queue.todos` 的可选字段输出。
+5. 兼容旧 payload（无新字段）通过。
 
 ### 9.2 前端（Vitest/TS）
-1. 解析新协议：`view/lifecycle_status/progress`。
-2. 缺失 `view` 时回退旧渲染。
-3. 未知状态/未知 kind 的降级行为。
-4. Plan 区域渲染快照与交互测试（展开/收起、CTA 行为）。
+
+1. Store 解析：`view/lifecycle/progress/queue.todos`。
+2. 缺失 `queue.todos` 时从 `tasks` 派生。
+3. `task_*` 事件更新 TODO queue 行状态。
+4. `turn-process-sections` 渲染 Plan + Queue 双层结构。
+5. Queue 单列表五态渲染与未知状态降级。
 
 ## 10. 发布与迁移
 
-1. 第一阶段：后端先支持扩展字段并保持兼容。
-2. 第二阶段：前端启用新渲染并保留回退逻辑。
-3. 第三阶段：观察稳定性后再评估是否收敛回退分支。
+1. 第一阶段：后端支持扩展字段并保持兼容。
+2. 第二阶段：前端启用 `Plan + Queue` 双层渲染与回退逻辑。
+3. 第三阶段：观测稳定性后再评估是否精简旧分支。
 
 ## 11. 验收标准
 
-1. 前端能展示“计划概览 + 分节 + 五态任务 + 可选 CTA”。
-2. 旧 `update_plan` 输出在新前端仍正常显示。
-3. 新协议在无 `view` 情况下仍可回退显示任务列表。
-4. 无白屏/解析崩溃，未知字段可安全忽略。
+1. 前端可同时展示规划结果（Plan）与执行步骤（Queue）。
+2. Queue 为 TODO 单列表，支持五态显示。
+3. `turn.queue.items`（工具队列）与 TODO queue 均正常工作且互不混淆。
+4. 旧 `update_plan` 输出在新前端仍可正常显示。
+5. 无白屏/崩溃，未知字段可安全忽略。
 
