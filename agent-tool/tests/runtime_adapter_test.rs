@@ -101,7 +101,7 @@ async fn default_builtins_expose_only_read_glob_grep() {
         .map(|t| t.name)
         .collect::<Vec<_>>();
     names.sort();
-    assert_eq!(names, vec!["glob", "grep", "read"]);
+    assert_eq!(names, vec!["glob", "grep", "read", "update_plan"]);
 }
 
 #[tokio::test]
