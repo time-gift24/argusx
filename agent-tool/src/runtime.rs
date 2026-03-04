@@ -4,7 +4,7 @@ use agent_core::tools::{
 use agent_core::{ToolCall, ToolResult as CoreToolResult};
 use async_trait::async_trait;
 
-use crate::{ReadFileTool, ShellTool, ToolContext, ToolError, ToolRegistry};
+use crate::{DomainCookiesTool, ReadFileTool, ShellTool, ToolContext, ToolError, ToolRegistry};
 
 pub struct AgentToolRuntime {
     registry: ToolRegistry,
@@ -19,6 +19,7 @@ impl AgentToolRuntime {
         let registry = ToolRegistry::new();
         registry.register(ReadFileTool).await;
         registry.register(ShellTool).await;
+        registry.register(DomainCookiesTool::from_env()).await;
         Self { registry }
     }
 }
