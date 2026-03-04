@@ -30,7 +30,13 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai/tool";
-import { Queue } from "@/components/ai-elements/queue";
+import {
+  Queue,
+  QueueItem,
+  QueueItemIndicator,
+  QueueItemContent,
+  QueueList,
+} from "@/components/ai-elements/queue";
 import { SURFACE_ICON_GHOST_BUTTON_CLASS } from "@/components/ai-elements/class-names";
 import { STREAMDOWN_PLUGINS, StreamdownCode } from "@/components/ai";
 import { useChatStore } from "@/lib/stores/chat-store";
@@ -317,7 +323,27 @@ export function TurnProcessSections({
         detail={section.headerDetail}
         contentClassName="px-[var(--chat-runtime-code-padding-x)] py-[var(--chat-runtime-code-padding-y)]"
       >
-        <Queue todos={turn.todoQueue.todos} compact />
+        <Queue>
+          <QueueList>
+            {turn.todoQueue.todos.map((todo) => (
+              <QueueItem key={todo.id} compact>
+                <div className="flex items-start gap-2">
+                  <QueueItemIndicator status={todo.status} />
+                  <div className="flex-1 min-w-0">
+                    <QueueItemContent completed={todo.status === "completed"}>
+                      {todo.title}
+                    </QueueItemContent>
+                    {todo.description && (
+                      <QueueItemDescription completed={todo.status === "completed"}>
+                        {todo.description}
+                      </QueueItemDescription>
+                    )}
+                  </div>
+                </div>
+              </QueueItem>
+            ))}
+          </QueueList>
+        </Queue>
       </RuntimeProcessSection>
     );
   };

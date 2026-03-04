@@ -127,6 +127,8 @@ export interface TodoQueueVM {
   updatedAt: number;
 }
 
+const VALID_TODO_STATUSES = ["pending", "in_progress", "blocked", "completed", "failed"] as const;
+
 export type AgentTurnStatus =
   | "started"
   | "streaming"
@@ -445,7 +447,7 @@ const deriveTodoQueueFromTasks = (tasks: TaskVM[]): TodoQueueVM | undefined => {
 };
 
 const isTodoStatus = (status: unknown): status is TodoQueueItemVM["status"] => {
-  return VALIDTodoStatuses.includes(status as TodoQueueItemVM["status"]);
+  return VALID_TODO_STATUSES.includes(status as TodoQueueItemVM["status"]);
 };
 
 const patchPlanWithTask = (
@@ -597,7 +599,7 @@ const parsePlanFromUpdatePlanToolResult = (
   // Set todoQueue if parsed, or derive from plan.tasks as fallback
   if (todoQueue) {
     turn.todoQueue = todoQueue;
-  } else if (plan.tasks.length > 0) {
+  } else if (plan && plan.tasks.length > 0) {
     turn.todoQueue = deriveTodoQueueFromTasks(plan.tasks);
   }
 
