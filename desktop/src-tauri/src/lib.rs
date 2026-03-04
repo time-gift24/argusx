@@ -131,7 +131,6 @@ struct AppState {
     runtime_config_bootstrap_error: Arc<RwLock<Option<String>>>,
     frontend_to_backend_session: Arc<RwLock<HashMap<String, String>>>,
     cookie_gateway: Arc<CookieGateway>,
-    agent_center: Arc<AgentCenter>,
 }
 
 const SQLITE_DB_PATH_ENV: &str = "ARGUSX_DESKTOP_DB_PATH";
@@ -722,7 +721,6 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
         runtime_config_bootstrap_error: Arc::new(RwLock::new(runtime_config_bootstrap_error)),
         frontend_to_backend_session: Arc::new(RwLock::new(HashMap::new())),
         cookie_gateway,
-        agent_center,
     })
 }
 
