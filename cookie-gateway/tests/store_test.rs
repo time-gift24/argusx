@@ -23,7 +23,9 @@ async fn test_store_and_retrieve_cookies() {
     }];
 
     // Store cookies
-    store.store_cookies("api.company.com", cookies.clone()).await;
+    store
+        .store_cookies("api.company.com", cookies.clone())
+        .await;
 
     // Retrieve cookies
     let retrieved = store.get_cookies("api.company.com").await;
