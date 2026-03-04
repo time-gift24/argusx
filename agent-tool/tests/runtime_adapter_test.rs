@@ -18,6 +18,32 @@ async fn default_builtins_expose_update_plan_tool_spec() {
 }
 
 #[tokio::test]
+async fn runtime_adapter_executes_update_plan_tool() {
+    use agent_core::tools::{ToolExecutionContext, ToolExecutor};
+    let rt = AgentToolRuntime::default_with_builtins().await;
+    let out = rt
+        .execute_tool(
+            agent_core::ToolCall::new(
+                "update_plan",
+                serde_json::json!({
+                    "plan": [{ "step": "Write tests", "status": "in_progress" }]
+                }),
+            ),
+            ToolExecutionContext {
+                session_id: "s1".into(),
+                turn_id: "t1".into(),
+                epoch: 0,
+                cwd: None,
+            },
+        )
+        .await
+        .expect("update_plan should execute");
+
+    assert!(!out.is_error);
+    assert_eq!(out.output["plan"]["tasks"][0]["title"], "Write tests");
+}
+
+#[tokio::test]
 async fn runtime_adapter_executes_registered_tool() {
     let rt = AgentToolRuntime::default_with_builtins().await;
     let out = rt

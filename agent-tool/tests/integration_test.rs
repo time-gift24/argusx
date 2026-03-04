@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use agent_tool::{ReadFileTool, ShellTool, Tool, ToolContext, ToolRegistry};
+use agent_tool::{ReadFileTool, ShellTool, Tool, ToolContext, ToolRegistry, UpdatePlanTool};
 use serde_json::json;
 
 fn test_context() -> ToolContext {
@@ -26,11 +26,13 @@ async fn test_registry_register_and_list() {
     let registry = ToolRegistry::new();
     registry.register(ReadFileTool).await;
     registry.register(ShellTool).await;
+    registry.register(UpdatePlanTool).await;
 
     let tools = registry.list().await;
-    assert_eq!(tools.len(), 2);
+    assert_eq!(tools.len(), 3);
     assert!(tools.iter().any(|t| t.name == "read_file"));
     assert!(tools.iter().any(|t| t.name == "shell"));
+    assert!(tools.iter().any(|t| t.name == "update_plan"));
 }
 
 #[tokio::test]
