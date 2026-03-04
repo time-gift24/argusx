@@ -1,4 +1,4 @@
-use agent_core::tools::{ToolExecutionContext, ToolExecutionErrorKind, ToolExecutor};
+use agent_core::tools::{ToolExecutionContext, ToolExecutionErrorKind, ToolExecutor, ToolCatalog};
 use agent_tool::AgentToolRuntime;
 
 #[tokio::test]
@@ -87,4 +87,17 @@ async fn unknown_tool_maps_to_user_error_kind() {
         .expect_err("unknown tool should fail");
 
     assert!(matches!(err.kind, ToolExecutionErrorKind::User));
+}
+
+#[tokio::test]
+async fn default_builtins_expose_only_read_glob_grep() {
+    let rt = AgentToolRuntime::default_with_builtins().await;
+    let mut names = rt
+        .list_tools()
+        .await
+        .into_iter()
+        .map(|t| t.name)
+        .collect::<Vec<_>>();
+    names.sort();
+    assert_eq!(names, vec!["glob", "grep", "read"]);
 }
