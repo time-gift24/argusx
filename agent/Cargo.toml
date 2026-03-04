@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+agent-center = { path = "../agent-center" }
 agent-core = { path = "../agent-core" }
 agent-session = { path = "../agent-session" }
 agent-tool = { path = "../agent-tool" }

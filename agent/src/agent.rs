@@ -26,6 +26,11 @@ where
         Self { runtime }
     }
 
+    /// Get a reference to the underlying runtime
+    pub fn runtime(&self) -> &Arc<agent_session::SessionRuntime<L, agent_tool::AgentToolRuntime>> {
+        &self.runtime
+    }
+
     pub async fn create_session(
         &self,
         user_id: Option<String>,

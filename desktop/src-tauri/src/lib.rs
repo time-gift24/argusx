@@ -12,6 +12,7 @@ use agent_session::{SessionConfig, SessionFilter, SessionRuntime, SqliteSessionS
 use agent_tool::AgentToolRuntime;
 use agent_turn::adapters::bigmodel::BigModelAdapterConfig;
 use agent_turn::BigModelModelAdapter;
+use agent_center::AgentCenter;
 use cookie_gateway::{CookieGateway, CookieStore};
 use futures::StreamExt;
 use llm_client::{LlmChunkStream, LlmClient, LlmError, LlmRequest, LlmResponse, ProviderAdapter};
@@ -130,6 +131,7 @@ struct AppState {
     runtime_config_bootstrap_error: Arc<RwLock<Option<String>>>,
     frontend_to_backend_session: Arc<RwLock<HashMap<String, String>>>,
     cookie_gateway: Arc<CookieGateway>,
+    agent_center: Arc<AgentCenter>,
 }
 
 const SQLITE_DB_PATH_ENV: &str = "ARGUSX_DESKTOP_DB_PATH";
@@ -673,6 +675,21 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
     ));
 
     let tools = tauri::async_runtime::block_on(AgentToolRuntime::default_with_builtins());
+
+    // Create AgentCenter for multi-agent orchestration
+    let agent_center_db_path = base_path.join("agent-center.db");
+    let agent_center = Arc::new(
+        AgentCenter::builder()
+            .db_path(agent_center_db_path)
+            .build()
+            .map_err(|err| format!("failed to initialize agent center: {err}"))?,
+    );
+
+    // Register agent-center tools with the runtime
+    tauri::async_runtime::block_on(async {
+        agent_center::tools::register_tools(agent_center.clone(), &tools).await;
+    });
+
     let model_adapter =
         Arc::new(BigModelModelAdapter::new(Arc::new(llm_client)).with_config(model_config));
     let sqlite_store = Arc::new(
@@ -701,6 +718,7 @@ fn build_runtime_state(base_path: PathBuf) -> Result<AppState, String> {
         runtime_config_bootstrap_error: Arc::new(RwLock::new(runtime_config_bootstrap_error)),
         frontend_to_backend_session: Arc::new(RwLock::new(HashMap::new())),
         cookie_gateway,
+        agent_center,
     })
 }
 

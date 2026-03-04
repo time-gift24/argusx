@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::{agent::Agent, config::AgentConfig, error::AgentFacadeError};
 use agent_session::{SessionConfig, SessionRuntime};
+use agent_center::AgentCenter;
 
 pub struct AgentBuilder<L>
 where
@@ -11,6 +12,7 @@ where
     tools: Option<Arc<agent_tool::AgentToolRuntime>>,
     store_dir: Option<std::path::PathBuf>,
     max_parallel_tools: usize,
+    agent_center: Option<Arc<AgentCenter>>,
 }
 
 impl<L> AgentBuilder<L>
@@ -23,6 +25,7 @@ where
             tools: None,
             store_dir: None,
             max_parallel_tools: 4,
+            agent_center: None,
         }
     }
 
@@ -46,6 +49,11 @@ where
         self
     }
 
+    pub fn agent_center(mut self, center: Arc<AgentCenter>) -> Self {
+        self.agent_center = Some(center);
+        self
+    }
+
     pub async fn build(self) -> Result<Agent<L>, AgentFacadeError> {
         let model = self.model.ok_or_else(|| AgentFacadeError::InvalidInput {
             message: "model is required".to_string(),
@@ -55,6 +63,11 @@ where
             Some(tools) => tools,
             None => Arc::new(agent_tool::AgentToolRuntime::default_with_builtins().await),
         };
+
+        // Register agent-center tools if provided
+        if let Some(center) = self.agent_center {
+            agent_center::tools::register_tools(center, &tools).await;
+        }
 
         let default_config = AgentConfig::default();
         let store_dir = self.store_dir.unwrap_or(default_config.store_dir);
