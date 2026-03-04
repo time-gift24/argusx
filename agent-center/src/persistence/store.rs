@@ -18,6 +18,11 @@ pub trait ThreadStore {
     fn get_by_dedup(&self, parent_thread_id: &str, key: &str) -> Result<Option<String>>;
     fn insert_dedup(&self, parent_thread_id: &str, key: &str, thread_id: &str) -> Result<()>;
     fn claim_spawn(&self, parent: &str, key: &str, candidate_id: &str) -> Result<ClaimResult>;
+
+    /// Atomically claim a spawn slot and insert the thread row.
+    /// Returns ClaimResult::New if this caller won the race (thread inserted),
+    /// or ClaimResult::Existing(existing_id) if another caller already claimed it.
+    fn atomic_spawn_thread(&self, parent: &str, key: &str, thread: &ThreadRow) -> Result<ClaimResult>;
 }
 
 pub struct SqliteThreadStore {
@@ -34,11 +39,11 @@ impl SqliteThreadStore {
 
 impl ThreadStore for SqliteThreadStore {
     fn upsert_thread(&self, thread: &ThreadRow) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         conn.execute(
             r#"
-            INSERT INTO threads (id, parent_thread_id, status, agent_name, created_at)
-            VALUES (?1, ?2, ?3, ?4, ?5)
+            INSERT INTO threads (id, parent_thread_id, status, agent_name, created_at, depth)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
             ON CONFLICT(id) DO UPDATE SET
                 status = excluded.status,
                 agent_name = excluded.agent_name
@@ -49,15 +54,16 @@ impl ThreadStore for SqliteThreadStore {
                 thread.status,
                 thread.agent_name,
                 thread.created_at.to_rfc3339(),
+                thread.depth,
             ],
         )?;
         Ok(())
     }
 
     fn get_thread(&self, id: &str) -> Result<Option<ThreadRow>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         let result = conn.query_row(
-            "SELECT id, parent_thread_id, status, agent_name, created_at FROM threads WHERE id = ?1",
+            "SELECT id, parent_thread_id, status, agent_name, created_at, depth FROM threads WHERE id = ?1",
             rusqlite::params![id],
             |row| {
                 Ok(ThreadRow {
@@ -68,6 +74,7 @@ impl ThreadStore for SqliteThreadStore {
                     created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
                         .map(|dt| dt.with_timezone(&chrono::Utc))
                         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?,
+                    depth: row.get(5)?,
                 })
             },
         );
@@ -80,9 +87,9 @@ impl ThreadStore for SqliteThreadStore {
     }
 
     fn get_all_threads(&self) -> Result<Vec<ThreadRow>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         let mut stmt = conn.prepare(
-            "SELECT id, parent_thread_id, status, agent_name, created_at FROM threads"
+            "SELECT id, parent_thread_id, status, agent_name, created_at, depth FROM threads"
         )?;
 
         let threads = stmt.query_map([], |row| {
@@ -94,6 +101,7 @@ impl ThreadStore for SqliteThreadStore {
                 created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
                     .map(|dt| dt.with_timezone(&chrono::Utc))
                     .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?,
+                depth: row.get(5)?,
             })
         })?.collect::<Result<Vec<_>, _>>()?;
 
@@ -101,7 +109,7 @@ impl ThreadStore for SqliteThreadStore {
     }
 
     fn get_by_dedup(&self, parent_thread_id: &str, key: &str) -> Result<Option<String>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         let result = conn.query_row(
             "SELECT thread_id FROM spawn_dedup WHERE parent_thread_id = ?1 AND key = ?2",
             rusqlite::params![parent_thread_id, key],
@@ -116,7 +124,7 @@ impl ThreadStore for SqliteThreadStore {
     }
 
     fn insert_dedup(&self, parent_thread_id: &str, key: &str, thread_id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         conn.execute(
             "INSERT OR IGNORE INTO spawn_dedup (parent_thread_id, key, thread_id) VALUES (?1, ?2, ?3)",
             rusqlite::params![parent_thread_id, key, thread_id],
@@ -146,6 +154,49 @@ impl ThreadStore for SqliteThreadStore {
         if winner == candidate_id {
             Ok(ClaimResult::New)
         } else {
+            Ok(ClaimResult::Existing(winner))
+        }
+    }
+
+    fn atomic_spawn_thread(&self, parent: &str, key: &str, thread: &ThreadRow) -> Result<ClaimResult> {
+        let mut conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
+        let tx = conn.transaction()?;
+
+        // Try to insert new dedup entry
+        tx.execute(
+            "INSERT OR IGNORE INTO spawn_dedup (parent_thread_id, key, thread_id) VALUES (?1, ?2, ?3)",
+            rusqlite::params![parent, key, thread.id],
+        )?;
+
+        // Get the winner (either our candidate or existing)
+        let winner: String = tx.query_row(
+            "SELECT thread_id FROM spawn_dedup WHERE parent_thread_id=?1 AND key=?2",
+            rusqlite::params![parent, key],
+            |r| r.get(0),
+        )?;
+
+        if winner == thread.id {
+            // We won the race - insert the thread row
+            tx.execute(
+                r#"
+                INSERT INTO threads (id, parent_thread_id, status, agent_name, created_at, depth)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "#,
+                rusqlite::params![
+                    thread.id,
+                    thread.parent_thread_id,
+                    thread.status,
+                    thread.agent_name,
+                    thread.created_at.to_rfc3339(),
+                    thread.depth,
+                ],
+            )?;
+
+            tx.commit()?;
+            Ok(ClaimResult::New)
+        } else {
+            // Someone else won - don't insert thread, just return existing ID
+            tx.commit()?;
             Ok(ClaimResult::Existing(winner))
         }
     }

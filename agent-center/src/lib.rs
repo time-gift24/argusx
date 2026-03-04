@@ -41,15 +41,42 @@ impl AgentCenter {
     }
 
     pub async fn spawn(&self, req: api::center::SpawnRequest) -> anyhow::Result<api::center::SpawnResponse> {
+        // Validate inputs
+        if req.parent_thread_id.is_empty() || req.key.is_empty() || req.agent_name.is_empty() {
+            return Err(anyhow::anyhow!("parent_thread_id, key, and agent_name must not be empty"));
+        }
+        if req.key.len() > 256 || req.agent_name.len() > 256 {
+            return Err(anyhow::anyhow!("key and agent_name must be <= 256 characters"));
+        }
+
+        // Look up parent depth
+        let parent_depth = if let Some(parent) = self.store.get_thread(&req.parent_thread_id)? {
+            parent.depth
+        } else {
+            0 // Root level if parent doesn't exist
+        };
+
         // Reserve slot first (fail fast if at limit)
-        let parent_depth = 0; // TODO: Look up parent depth from store
         let reservation = self.guards.reserve(parent_depth)?;
+
+        // Calculate child depth
+        let child_depth = parent_depth + 1;
 
         // Generate candidate thread ID
         let candidate_id = format!("thread-{}", uuid::Uuid::new_v4());
 
-        // Atomically claim the (parent, key) slot
-        match self.store.claim_spawn(&req.parent_thread_id, &req.key, &candidate_id)? {
+        // Create thread row
+        let thread = persistence::models::ThreadRow {
+            id: candidate_id.clone(),
+            parent_thread_id: Some(req.parent_thread_id.clone()),
+            status: "Running".to_string(),
+            agent_name: req.agent_name.clone(),
+            created_at: chrono::Utc::now(),
+            depth: child_depth,
+        };
+
+        // Atomically claim dedup slot and insert thread
+        match self.store.atomic_spawn_thread(&req.parent_thread_id, &req.key, &thread)? {
             ClaimResult::Existing(existing_thread_id) => {
                 // Drop reservation - idempotent case doesn't need new slot
                 drop(reservation);
@@ -58,17 +85,7 @@ impl AgentCenter {
                 })
             }
             ClaimResult::New => {
-                // We won the race - create thread
-                let thread = persistence::models::ThreadRow {
-                    id: candidate_id.clone(),
-                    parent_thread_id: Some(req.parent_thread_id.clone()),
-                    status: "Running".to_string(),
-                    agent_name: req.agent_name.clone(),
-                    created_at: chrono::Utc::now(),
-                };
-
-                self.store.upsert_thread(&thread)?;
-
+                // We won the race - thread already inserted atomically
                 // Store reservation mapped to thread_id
                 self.reservations.lock().await.insert(candidate_id.clone(), reservation);
 
@@ -138,12 +155,17 @@ impl AgentCenter {
     }
 
     pub async fn close(&self, req: api::center::CloseRequest) -> anyhow::Result<api::center::CloseResponse> {
+        // Validate inputs
+        if req.thread_id.is_empty() {
+            return Err(anyhow::anyhow!("thread_id must not be empty"));
+        }
+
         // Get current thread state
         let thread = self.store.get_thread(&req.thread_id)?
             .ok_or_else(|| anyhow::anyhow!("Thread not found: {}", req.thread_id))?;
 
         // Parse current status
-        let current_status = self.parse_status(&thread.status);
+        let current_status = self.parse_status(&thread.status)?;
 
         // If already terminal (Closed, Succeeded, Failed, Cancelled), return idempotently
         if matches!(
@@ -158,8 +180,9 @@ impl AgentCenter {
                 // Reservation dropped - slot released
             }
 
+            // Return actual persisted terminal status, not "Closed"
             return Ok(api::center::CloseResponse {
-                final_status: "Closed".to_string(),
+                final_status: thread.status.clone(),
             });
         }
 
@@ -193,26 +216,31 @@ impl AgentCenter {
         })
     }
 
-    fn parse_status(&self, status: &str) -> core::lifecycle::ThreadStatus {
+    fn parse_status(&self, status: &str) -> anyhow::Result<core::lifecycle::ThreadStatus> {
         match status {
-            "Pending" => core::lifecycle::ThreadStatus::Pending,
-            "Running" => core::lifecycle::ThreadStatus::Running,
-            "Succeeded" => core::lifecycle::ThreadStatus::Succeeded,
-            "Failed" => core::lifecycle::ThreadStatus::Failed,
-            "Cancelled" => core::lifecycle::ThreadStatus::Cancelled,
-            "Closing" => core::lifecycle::ThreadStatus::Closing,
-            "Closed" => core::lifecycle::ThreadStatus::Closed,
-            _ => core::lifecycle::ThreadStatus::Failed, // Default to Failed for unknown states
+            "Pending" => Ok(core::lifecycle::ThreadStatus::Pending),
+            "Running" => Ok(core::lifecycle::ThreadStatus::Running),
+            "Succeeded" => Ok(core::lifecycle::ThreadStatus::Succeeded),
+            "Failed" => Ok(core::lifecycle::ThreadStatus::Failed),
+            "Cancelled" => Ok(core::lifecycle::ThreadStatus::Cancelled),
+            "Closing" => Ok(core::lifecycle::ThreadStatus::Closing),
+            "Closed" => Ok(core::lifecycle::ThreadStatus::Closed),
+            _ => Err(anyhow::anyhow!("Unknown thread status: {}", status)),
         }
     }
 
     pub async fn reconcile(&self) -> anyhow::Result<api::center::ReconcileReport> {
+        // WARNING: This method should only be called during startup, not during normal operation.
+        // It marks ALL non-terminal threads as Failed, which is only safe if no runtimes are active.
+        //
+        // TODO: In production, implement runtime liveness check (e.g., heartbeat) before marking threads failed.
+
         // Get all threads from persistence
         let threads = self.store.get_all_threads()?;
         let mut repaired_count = 0;
 
         for thread in threads {
-            let status = self.parse_status(&thread.status);
+            let status = self.parse_status(&thread.status)?;
 
             // Check if thread is in non-terminal state
             let is_non_terminal = matches!(
@@ -223,11 +251,11 @@ impl AgentCenter {
             );
 
             if is_non_terminal {
-                // In a real implementation, we would check if the runtime is still active
-                // For now, we mark all orphan non-terminal threads as Failed
+                // Mark orphan thread as Failed (no active runtime)
                 let thread_id = thread.id.clone();
                 let updated_thread = persistence::models::ThreadRow {
                     status: "Failed".to_string(),
+                    depth: thread.depth, // Preserve depth
                     ..thread
                 };
                 self.store.upsert_thread(&updated_thread)?;
@@ -271,6 +299,14 @@ impl AgentCenterBuilder {
     }
 
     pub fn build(self) -> anyhow::Result<AgentCenter> {
+        // Validate configuration
+        if self.max_concurrent == 0 || self.max_concurrent > 10000 {
+            return Err(anyhow::anyhow!("max_concurrent must be between 1 and 10000"));
+        }
+        if self.max_depth == 0 || self.max_depth > 1000 {
+            return Err(anyhow::anyhow!("max_depth must be between 1 and 1000"));
+        }
+
         let db_path = self.db_path.unwrap_or_else(|| {
             std::env::temp_dir().join(format!("agent-center-{}.db", uuid::Uuid::new_v4()))
         });

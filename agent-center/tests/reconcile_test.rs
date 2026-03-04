@@ -18,6 +18,7 @@ async fn reconcile_marks_orphan_running_threads_terminal() -> anyhow::Result<()>
         status: "Running".to_string(),
         agent_name: "test-agent".to_string(),
         created_at: Utc::now(),
+        depth: 0,
     };
     store.upsert_thread(&orphan_thread)?;
 

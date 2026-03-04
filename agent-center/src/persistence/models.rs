@@ -8,4 +8,5 @@ pub struct ThreadRow {
     pub status: String,
     pub agent_name: String,
     pub created_at: DateTime<Utc>,
+    pub depth: u32,
 }

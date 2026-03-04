@@ -15,6 +15,7 @@ fn dedup_returns_existing_thread_id() -> anyhow::Result<()> {
         status: "Running".to_string(),
         agent_name: "test-agent".to_string(),
         created_at: chrono::Utc::now(),
+        depth: 0,
     };
     store.upsert_thread(&thread1)?;
     store.insert_dedup("p1", "k1", "t1")?;
@@ -39,6 +40,7 @@ fn upsert_thread_creates_and_updates() -> anyhow::Result<()> {
         status: "Pending".to_string(),
         agent_name: "test-agent".to_string(),
         created_at: chrono::Utc::now(),
+        depth: 0,
     };
 
     // Create
