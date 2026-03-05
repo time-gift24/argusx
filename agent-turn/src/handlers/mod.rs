@@ -3,7 +3,10 @@ use crate::domain::DomainEvent;
 use crate::state::TurnState;
 
 pub mod input;
+pub mod lifecycle;
 pub mod model;
+pub mod subagent;
+pub mod tool;
 
 pub trait CommandHandler {
     fn handle(&self, cmd: &DomainCommand, state: &TurnState) -> Vec<DomainEvent>;
@@ -32,6 +35,9 @@ impl HandlerRegistry {
         Self::new(vec![
             Box::new(model::ModelHandler),
             Box::new(input::InputHandler),
+            Box::new(tool::ToolHandler),
+            Box::new(lifecycle::LifecycleHandler),
+            Box::new(subagent::SubagentHandler),
         ])
     }
 }

@@ -14,6 +14,20 @@ pub enum DomainCommand {
         id: String,
         input: InputEnvelope,
     },
+    ToolResultOk {
+        id: String,
+        epoch: u64,
+        result: agent_core::ToolResult,
+    },
+    ToolResultErr {
+        id: String,
+        epoch: u64,
+        result: agent_core::ToolResult,
+    },
+    RetryTimerFired {
+        id: String,
+        next_epoch: u64,
+    },
     RuntimeEvent(RuntimeEvent),
 }
 
@@ -23,6 +37,9 @@ impl DomainCommand {
             Self::Noop { id } => id,
             Self::ModelTextDelta { id, .. } => id,
             Self::InputInjected { id, .. } => id,
+            Self::ToolResultOk { id, .. } => id,
+            Self::ToolResultErr { id, .. } => id,
+            Self::RetryTimerFired { id, .. } => id,
             Self::RuntimeEvent(ev) => ev.id(),
         }
     }
@@ -41,6 +58,31 @@ impl DomainCommand {
             RuntimeEvent::InputInjected { event_id, input } => Self::InputInjected {
                 id: event_id,
                 input,
+            },
+            RuntimeEvent::ToolResultOk {
+                event_id,
+                epoch,
+                result,
+            } => Self::ToolResultOk {
+                id: event_id,
+                epoch,
+                result,
+            },
+            RuntimeEvent::ToolResultErr {
+                event_id,
+                epoch,
+                result,
+            } => Self::ToolResultErr {
+                id: event_id,
+                epoch,
+                result,
+            },
+            RuntimeEvent::RetryTimerFired {
+                event_id,
+                next_epoch,
+            } => Self::RetryTimerFired {
+                id: event_id,
+                next_epoch,
             },
             other => Self::RuntimeEvent(other),
         }

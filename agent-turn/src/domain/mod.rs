@@ -8,4 +8,12 @@ pub enum DomainEvent {
     InputQueued {
         input_id: String,
     },
+    ToolFinished {
+        epoch: u64,
+        call_id: String,
+        is_error: bool,
+    },
+    RetryFired {
+        next_epoch: u64,
+    },
 }
