@@ -9,10 +9,10 @@ use async_trait::async_trait;
 use tokio::sync::{mpsc, RwLock};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::effect::EffectExecutor;
-use crate::engine::TurnEngine;
 use crate::bus::{BusConfig, EventBus};
 use crate::command::normalizer::CommandNormalizer;
+use crate::effect::EffectExecutor;
+use crate::engine::TurnEngine;
 use crate::handlers::HandlerRegistry;
 use crate::journal::TranscriptJournal;
 use crate::state::{TurnEngineConfig, TurnState};
@@ -195,8 +195,9 @@ mod tests {
         ToolCatalog, ToolExecutionContext, ToolExecutionError, ToolExecutor, ToolSpec,
     };
     use agent_core::{
-        AgentError, CheckpointStore, InputEnvelope, LanguageModel, ModelEventStream, ModelOutputEvent,
-        RunStreamEvent, Runtime, RuntimeEvent, SessionMeta, TranscriptItem, TurnRequest,
+        AgentError, CheckpointStore, InputEnvelope, LanguageModel, ModelEventStream,
+        ModelOutputEvent, RunStreamEvent, Runtime, RuntimeEvent, SessionMeta, TranscriptItem,
+        TurnRequest,
     };
     use async_trait::async_trait;
     use futures::{stream, StreamExt};
@@ -374,7 +375,8 @@ mod tests {
                 agent_core::UiThreadEvent::MessageDelta { delta, .. } => {
                     message_deltas.push(delta);
                 }
-                agent_core::UiThreadEvent::Done { .. } | agent_core::UiThreadEvent::Error { .. } => {
+                agent_core::UiThreadEvent::Done { .. }
+                | agent_core::UiThreadEvent::Error { .. } => {
                     break;
                 }
                 _ => {}

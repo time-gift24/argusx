@@ -91,4 +91,3 @@ async fn golden_trace_core_flows_match_expected_contract() {
     assert_eq!(run_tags, vec!["turn_start", "model_completed", "turn_done"]);
     assert_eq!(ui_text, "ab");
 }
-

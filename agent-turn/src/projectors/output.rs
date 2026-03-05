@@ -41,8 +41,9 @@ mod tests {
         );
         assert!(matches!(
             out.as_slice(),
-            [OutputEvent::Ui(agent_core::UiThreadEvent::MessageDelta { .. })]
+            [OutputEvent::Ui(
+                agent_core::UiThreadEvent::MessageDelta { .. }
+            )]
         ));
     }
 }
-

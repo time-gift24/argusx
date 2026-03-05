@@ -32,4 +32,3 @@ mod tests {
         assert_eq!(s.output_buffer, "hello");
     }
 }
-

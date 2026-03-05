@@ -38,4 +38,3 @@ mod tests {
         assert!(n.normalize(second).is_none());
     }
 }
-

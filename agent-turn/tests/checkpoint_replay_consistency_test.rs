@@ -109,4 +109,3 @@ async fn checkpoint_replay_reconstructs_state_consistently() {
         "incremental checkpoint replay should match final snapshot transcript"
     );
 }
-

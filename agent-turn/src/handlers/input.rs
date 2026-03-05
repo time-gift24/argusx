@@ -38,4 +38,3 @@ mod tests {
         assert!(matches!(out.as_slice(), [DomainEvent::InputQueued { .. }]));
     }
 }
-

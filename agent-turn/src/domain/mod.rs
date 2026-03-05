@@ -2,7 +2,9 @@ use agent_core::RuntimeEvent;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DomainEvent {
-    Noop { id: String },
+    Noop {
+        id: String,
+    },
     ModelChunkArrived {
         epoch: u64,
         delta: String,

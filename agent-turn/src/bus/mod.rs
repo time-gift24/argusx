@@ -72,4 +72,3 @@ mod tests {
         assert_eq!(drained[1].id(), "c2");
     }
 }
-

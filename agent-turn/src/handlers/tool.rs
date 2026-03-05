@@ -66,9 +66,12 @@ mod tests {
             result: ToolResult::ok("call-1", serde_json::json!({"ok": true})),
         };
         let out = reg.handle(cmd, &state_with_inflight("call-1"));
-        assert!(out
-            .iter()
-            .any(|e| matches!(e, DomainEvent::ToolFinished { is_error: false, .. })));
+        assert!(out.iter().any(|e| matches!(
+            e,
+            DomainEvent::ToolFinished {
+                is_error: false,
+                ..
+            }
+        )));
     }
 }
-

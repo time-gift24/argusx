@@ -4,7 +4,9 @@ pub mod normalizer;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DomainCommand {
-    Noop { id: String },
+    Noop {
+        id: String,
+    },
     ModelTextDelta {
         id: String,
         epoch: u64,
