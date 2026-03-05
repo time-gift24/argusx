@@ -93,7 +93,7 @@ impl LlmError {
                 message: body,
                 retry_after,
             },
-            400..=499 => Self::InvalidRequest {
+            status if (400..=499).contains(&status) => Self::InvalidRequest {
                 message: format!("HTTP {}: {}", status, body),
             },
             500..=599 => Self::ServerError {
