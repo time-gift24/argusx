@@ -10,9 +10,7 @@ async fn spawn_atomic_on_partial_failure() -> anyhow::Result<()> {
     let temp = tempdir()?;
     let db_path = temp.path().join("test.db");
 
-    let center = AgentCenter::builder()
-        .db_path(db_path)
-        .build()?;
+    let center = AgentCenter::builder().db_path(db_path).build()?;
 
     // First spawn should succeed
     let spawn_req = SpawnRequest {
@@ -26,10 +24,13 @@ async fn spawn_atomic_on_partial_failure() -> anyhow::Result<()> {
 
     // Second spawn with same (parent, key) should return same thread ID (idempotent)
     let resp2 = center.spawn(spawn_req).await?;
-    assert_eq!(resp2.thread_id, thread_id, "idempotent spawn should return same thread ID");
+    assert_eq!(
+        resp2.thread_id, thread_id,
+        "idempotent spawn should return same thread ID"
+    );
 
     // Verify thread exists via wait (should return valid status, not NotFound)
-    use agent_center::api::center::{WaitRequest, WaitMode};
+    use agent_center::api::center::{WaitMode, WaitRequest};
 
     let wait_req = WaitRequest {
         thread_ids: vec![thread_id.clone()],

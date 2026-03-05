@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
-use agent_tool::{Tool, ToolContext, ToolError, ToolSpec, ToolResult};
+use agent_tool::{Tool, ToolContext, ToolError, ToolResult, ToolSpec};
 
-use crate::api::center::{WaitRequest, WaitMode};
+use crate::api::center::{WaitMode, WaitRequest};
 
 /// Tool for waiting on agent threads
 pub struct WaitTool {
@@ -73,7 +73,11 @@ impl Tool for WaitTool {
         let mode = match input.mode.to_lowercase().as_str() {
             "any" => WaitMode::Any,
             "all" => WaitMode::All,
-            _ => return Err(ToolError::InvalidArgs("mode must be 'any' or 'all'".to_string())),
+            _ => {
+                return Err(ToolError::InvalidArgs(
+                    "mode must be 'any' or 'all'".to_string(),
+                ))
+            }
         };
 
         let request = WaitRequest {
@@ -82,7 +86,10 @@ impl Tool for WaitTool {
             timeout_ms: input.timeout_ms,
         };
 
-        let response = self.center.wait(request).await
+        let response = self
+            .center
+            .wait(request)
+            .await
             .map_err(|e| ToolError::ExecutionFailed(format!("Wait failed: {}", e)))?;
 
         Ok(ToolResult::ok(json!(response)))

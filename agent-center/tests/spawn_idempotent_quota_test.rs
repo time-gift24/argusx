@@ -22,12 +22,18 @@ async fn spawn_idempotent_under_concurrency_limit() -> anyhow::Result<()> {
     };
     let resp1 = center.spawn(spawn_req.clone()).await?;
     let thread_id = resp1.thread_id;
-    assert!(!thread_id.is_empty(), "first spawn should return valid thread ID");
+    assert!(
+        !thread_id.is_empty(),
+        "first spawn should return valid thread ID"
+    );
 
     // Second spawn with same (parent, key) should return same thread ID (idempotent)
     // even though we're at concurrency limit (max_concurrent=1)
     let resp2 = center.spawn(spawn_req).await?;
-    assert_eq!(resp2.thread_id, thread_id, "idempotent spawn should return same thread ID");
+    assert_eq!(
+        resp2.thread_id, thread_id,
+        "idempotent spawn should return same thread ID"
+    );
 
     Ok(())
 }
@@ -61,7 +67,10 @@ async fn spawn_different_keys_respect_concurrency_limit() -> anyhow::Result<()> 
         initial_input: "Hello".to_string(),
     };
     let result = center.spawn(spawn_req2).await;
-    assert!(result.is_err(), "spawn with different key should fail at concurrency limit");
+    assert!(
+        result.is_err(),
+        "spawn with different key should fail at concurrency limit"
+    );
 
     Ok(())
 }

@@ -47,9 +47,7 @@ async fn close_transitions_through_closing_state() -> anyhow::Result<()> {
     let temp = tempdir()?;
     let db_path = temp.path().join("test.db");
 
-    let center = AgentCenter::builder()
-        .db_path(db_path)
-        .build()?;
+    let center = AgentCenter::builder().db_path(db_path).build()?;
 
     // Spawn a thread
     let spawn_req = agent_center::api::center::SpawnRequest {

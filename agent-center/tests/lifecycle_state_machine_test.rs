@@ -1,11 +1,17 @@
 #[test]
 fn rejects_terminal_state_regression() {
-    use agent_center::core::lifecycle::{ThreadStateMachine, ThreadStatus, LifecycleError};
+    use agent_center::core::lifecycle::{LifecycleError, ThreadStateMachine, ThreadStatus};
 
     let mut sm = ThreadStateMachine::new(ThreadStatus::Running);
     sm.transition_to(ThreadStatus::Succeeded).unwrap();
     let err = sm.transition_to(ThreadStatus::Running).unwrap_err();
-    assert!(matches!(err, LifecycleError::IllegalTransition { from: ThreadStatus::Succeeded, to: ThreadStatus::Running }));
+    assert!(matches!(
+        err,
+        LifecycleError::IllegalTransition {
+            from: ThreadStatus::Succeeded,
+            to: ThreadStatus::Running
+        }
+    ));
 }
 
 #[test]

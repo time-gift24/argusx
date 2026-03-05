@@ -22,7 +22,12 @@ pub trait ThreadStore {
     /// Atomically claim a spawn slot and insert the thread row.
     /// Returns ClaimResult::New if this caller won the race (thread inserted),
     /// or ClaimResult::Existing(existing_id) if another caller already claimed it.
-    fn atomic_spawn_thread(&self, parent: &str, key: &str, thread: &ThreadRow) -> Result<ClaimResult>;
+    fn atomic_spawn_thread(
+        &self,
+        parent: &str,
+        key: &str,
+        thread: &ThreadRow,
+    ) -> Result<ClaimResult>;
 }
 
 pub struct SqliteThreadStore {
@@ -33,13 +38,18 @@ impl SqliteThreadStore {
     pub fn new(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
         migrations::run_migrations(&conn)?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 }
 
 impl ThreadStore for SqliteThreadStore {
     fn upsert_thread(&self, thread: &ThreadRow) -> Result<()> {
-        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         conn.execute(
             r#"
             INSERT INTO threads (id, parent_thread_id, status, agent_name, created_at, depth, initial_input)
@@ -62,7 +72,10 @@ impl ThreadStore for SqliteThreadStore {
     }
 
     fn get_thread(&self, id: &str) -> Result<Option<ThreadRow>> {
-        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         let result = conn.query_row(
             "SELECT id, parent_thread_id, status, agent_name, created_at, depth, initial_input FROM threads WHERE id = ?1",
             rusqlite::params![id],
@@ -89,30 +102,38 @@ impl ThreadStore for SqliteThreadStore {
     }
 
     fn get_all_threads(&self) -> Result<Vec<ThreadRow>> {
-        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         let mut stmt = conn.prepare(
             "SELECT id, parent_thread_id, status, agent_name, created_at, depth, initial_input FROM threads"
         )?;
 
-        let threads = stmt.query_map([], |row| {
-            Ok(ThreadRow {
-                id: row.get(0)?,
-                parent_thread_id: row.get(1)?,
-                status: row.get(2)?,
-                agent_name: row.get(3)?,
-                created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                    .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?,
-                depth: row.get(5)?,
-                initial_input: row.get(6)?,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+        let threads = stmt
+            .query_map([], |row| {
+                Ok(ThreadRow {
+                    id: row.get(0)?,
+                    parent_thread_id: row.get(1)?,
+                    status: row.get(2)?,
+                    agent_name: row.get(3)?,
+                    created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?,
+                    depth: row.get(5)?,
+                    initial_input: row.get(6)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(threads)
     }
 
     fn get_by_dedup(&self, parent_thread_id: &str, key: &str) -> Result<Option<String>> {
-        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         let result = conn.query_row(
             "SELECT thread_id FROM spawn_dedup WHERE parent_thread_id = ?1 AND key = ?2",
             rusqlite::params![parent_thread_id, key],
@@ -127,7 +148,10 @@ impl ThreadStore for SqliteThreadStore {
     }
 
     fn insert_dedup(&self, parent_thread_id: &str, key: &str, thread_id: &str) -> Result<()> {
-        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         conn.execute(
             "INSERT OR IGNORE INTO spawn_dedup (parent_thread_id, key, thread_id) VALUES (?1, ?2, ?3)",
             rusqlite::params![parent_thread_id, key, thread_id],
@@ -136,7 +160,10 @@ impl ThreadStore for SqliteThreadStore {
     }
 
     fn claim_spawn(&self, parent: &str, key: &str, candidate_id: &str) -> Result<ClaimResult> {
-        let mut conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         let tx = conn.transaction()?;
 
         // Try to insert new dedup entry
@@ -161,8 +188,16 @@ impl ThreadStore for SqliteThreadStore {
         }
     }
 
-    fn atomic_spawn_thread(&self, parent: &str, key: &str, thread: &ThreadRow) -> Result<ClaimResult> {
-        let mut conn = self.conn.lock().map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
+    fn atomic_spawn_thread(
+        &self,
+        parent: &str,
+        key: &str,
+        thread: &ThreadRow,
+    ) -> Result<ClaimResult> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("store mutex poisoned"))?;
         let tx = conn.transaction()?;
 
         // Try to insert new dedup entry

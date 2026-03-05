@@ -1,3 +1,3 @@
 pub mod lifecycle;
 
-pub use lifecycle::{ThreadStatus, LifecycleError};
+pub use lifecycle::{LifecycleError, ThreadStatus};

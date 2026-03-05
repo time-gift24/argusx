@@ -1,4 +1,4 @@
-use agent_core::tools::{ToolExecutionContext, ToolExecutionErrorKind, ToolExecutor, ToolCatalog};
+use agent_core::tools::{ToolCatalog, ToolExecutionContext, ToolExecutionErrorKind, ToolExecutor};
 use agent_tool::AgentToolRuntime;
 
 #[tokio::test]
@@ -59,7 +59,10 @@ async fn runtime_adapter_executes_registered_tool() {
     // Read a file from current working directory (which is the default allowed root)
     let out = rt
         .execute_tool(
-            agent_core::ToolCall::new("read", serde_json::json!({"path": "Cargo.toml", "mode": "text"})),
+            agent_core::ToolCall::new(
+                "read",
+                serde_json::json!({"path": "Cargo.toml", "mode": "text"}),
+            ),
             ToolExecutionContext {
                 session_id: "s1".into(),
                 turn_id: "t1".into(),
@@ -147,7 +150,10 @@ async fn access_denied_maps_to_user_error_kind() {
     let rt = AgentToolRuntime::default_with_builtins().await;
     let err = rt
         .execute_tool(
-            agent_core::ToolCall::new("read", serde_json::json!({"path": "/etc/passwd", "mode": "text"})),
+            agent_core::ToolCall::new(
+                "read",
+                serde_json::json!({"path": "/etc/passwd", "mode": "text"}),
+            ),
             ToolExecutionContext {
                 session_id: "s1".into(),
                 turn_id: "t1".into(),

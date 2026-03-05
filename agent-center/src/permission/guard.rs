@@ -1,4 +1,7 @@
-use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -7,10 +10,7 @@ pub enum GuardError {
     MaxConcurrentExceeded,
 
     #[error("Maximum depth exceeded: parent_depth={parent_depth}, max_depth={max_depth}")]
-    MaxDepthExceeded {
-        parent_depth: u32,
-        max_depth: u32,
-    },
+    MaxDepthExceeded { parent_depth: u32, max_depth: u32 },
 }
 
 pub struct SpawnGuards {

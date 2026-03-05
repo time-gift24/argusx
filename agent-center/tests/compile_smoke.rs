@@ -21,6 +21,8 @@ fn builder_creates_agent_center_with_custom_limits() {
 fn builder_uses_defaults() {
     use agent_center::AgentCenter;
 
-    let center = AgentCenter::builder().build().expect("builder should succeed");
+    let center = AgentCenter::builder()
+        .build()
+        .expect("builder should succeed");
     let _ = center;
 }

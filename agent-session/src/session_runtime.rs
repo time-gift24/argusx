@@ -165,7 +165,11 @@ where
         self.store.get(session_id).await
     }
 
-    pub async fn rename_session(&self, session_id: &SessionId, title: String) -> Result<SessionInfo> {
+    pub async fn rename_session(
+        &self,
+        session_id: &SessionId,
+        title: String,
+    ) -> Result<SessionInfo> {
         self.ensure_session_loaded(session_id).await?;
         let normalized_title = title.trim();
         if normalized_title.is_empty() {
@@ -227,7 +231,14 @@ where
         self.ensure_session_loaded(session_id).await?;
 
         let restore_lock_turn_id = format!("__restore__{}", new_id());
-        let (target_turn_id, updated_info, previous_info, kept_turns, previous_turns, removed_turn_ids) = {
+        let (
+            target_turn_id,
+            updated_info,
+            previous_info,
+            kept_turns,
+            previous_turns,
+            removed_turn_ids,
+        ) = {
             let mut sessions = self.sessions.write().await;
             let state = sessions
                 .get_mut(session_id)
@@ -654,12 +665,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::SessionStore;
     use agent_core::{InputPart, ModelOutputEvent, ModelRequest, Runtime, SessionMeta};
     use async_trait::async_trait;
     use futures::{stream, StreamExt};
     use tempfile::TempDir;
     use tokio::sync::Mutex;
-    use crate::storage::SessionStore;
 
     // Dummy implementations for testing
     struct MockModel;
@@ -796,7 +807,9 @@ mod tests {
             turn_id: &str,
             items: &[TranscriptItem],
         ) -> Result<()> {
-            self.inner.save_turn_transcript(session_id, turn_id, items).await
+            self.inner
+                .save_turn_transcript(session_id, turn_id, items)
+                .await
         }
 
         async fn load_turn_transcript(

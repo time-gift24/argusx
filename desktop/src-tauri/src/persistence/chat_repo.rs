@@ -89,7 +89,9 @@ WHERE ti.session_id = ?
 
         if matches!(query.range, ChatMessageRange::Last24Hours) {
             let since = chrono::Utc::now().timestamp_millis() - DAY_MS;
-            sql.push_str(" AND COALESCE(t.ended_at_ms, t.started_at_ms, tc.started_at_ms, 0) >= ? ");
+            sql.push_str(
+                " AND COALESCE(t.ended_at_ms, t.started_at_ms, tc.started_at_ms, 0) >= ? ",
+            );
             binds.push(Box::new(since));
         }
 

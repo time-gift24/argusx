@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::builtin::fs::guard::FsGuard;
 use crate::builtin::fs::error::FsError;
+use crate::builtin::fs::guard::FsGuard;
 use crate::context::{ToolContext, ToolResult};
 use crate::error::ToolError;
 use crate::spec::ToolSpec;
@@ -21,7 +21,9 @@ impl ReadTool {
 
     /// Get default read tool with current directory as allowed root
     pub fn default() -> Result<Self, FsError> {
-        Self::new(vec![std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))])
+        Self::new(vec![
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+        ])
     }
 }
 
@@ -98,11 +100,14 @@ impl Tool for ReadTool {
         _ctx: ToolContext,
         args: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
-        let args: ReadArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+        let args: ReadArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
 
         // Authorize the path using FsGuard
-        let authorized_path = self.guard.authorize_existing(&args.path).await
+        let authorized_path = self
+            .guard
+            .authorize_existing(&args.path)
+            .await
             .map_err(|e| map_fs_error(e))?;
 
         let result = match args.mode {
@@ -121,15 +126,23 @@ impl Tool for ReadTool {
 
 async fn read_text(path: &std::path::Path) -> Result<ToolResult, std::io::Error> {
     let content = tokio::fs::read_to_string(path).await?;
-    Ok(ToolResult::ok(json!({ "content": content, "path": path.to_string_lossy() })))
+    Ok(ToolResult::ok(
+        json!({ "content": content, "path": path.to_string_lossy() }),
+    ))
 }
 
-async fn read_lines(path: &std::path::Path, offset: Option<usize>, limit: Option<usize>) -> Result<ToolResult, std::io::Error> {
+async fn read_lines(
+    path: &std::path::Path,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<ToolResult, std::io::Error> {
     let content = tokio::fs::read_to_string(path).await?;
     let lines: Vec<&str> = content.lines().collect();
 
     let start = offset.unwrap_or(0).min(lines.len());
-    let end = limit.map(|l| (start + l).min(lines.len())).unwrap_or(lines.len());
+    let end = limit
+        .map(|l| (start + l).min(lines.len()))
+        .unwrap_or(lines.len());
 
     let selected: Vec<String> = lines[start..end].iter().map(|s| s.to_string()).collect();
     Ok(ToolResult::ok(json!({
@@ -170,7 +183,10 @@ async fn read_stat(path: &std::path::Path) -> Result<ToolResult, std::io::Error>
 
 async fn read_list(path: &std::path::Path) -> Result<ToolResult, std::io::Error> {
     if !path.is_dir() {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "path is not a directory"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "path is not a directory",
+        ));
     }
     let mut entries = Vec::new();
     let mut dir = tokio::fs::read_dir(path).await?;

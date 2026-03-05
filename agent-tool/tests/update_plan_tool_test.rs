@@ -20,7 +20,10 @@ async fn update_plan_accepts_valid_plan_and_emits_structured_output() {
         .expect("valid plan should pass");
 
     assert!(!result.is_error);
-    assert_eq!(result.output["plan"]["tasks"][0]["title"], "Write failing test");
+    assert_eq!(
+        result.output["plan"]["tasks"][0]["title"],
+        "Write failing test"
+    );
     assert_eq!(result.output["plan"]["tasks"][0]["status"], "in_progress");
     assert_eq!(result.output["plan"]["is_streaming"], true);
 }

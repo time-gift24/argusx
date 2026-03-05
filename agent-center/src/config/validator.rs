@@ -1,5 +1,5 @@
-use anyhow::{Result, bail};
 use super::models::AgentDefinition;
+use anyhow::{bail, Result};
 
 pub fn validate(def: &AgentDefinition) -> Result<()> {
     if def.name.trim().is_empty() {

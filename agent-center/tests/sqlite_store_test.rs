@@ -1,5 +1,5 @@
-use agent_center::persistence::store::ThreadStore;
 use agent_center::persistence::models::ThreadRow;
+use agent_center::persistence::store::ThreadStore;
 use tempfile::tempdir;
 
 #[test]

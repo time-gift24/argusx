@@ -12,7 +12,10 @@ pub enum ThreadStatus {
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum LifecycleError {
     #[error("illegal transition: {from:?} -> {to:?}")]
-    IllegalTransition { from: ThreadStatus, to: ThreadStatus },
+    IllegalTransition {
+        from: ThreadStatus,
+        to: ThreadStatus,
+    },
 }
 
 pub struct ThreadStateMachine {

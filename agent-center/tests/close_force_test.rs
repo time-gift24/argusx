@@ -1,4 +1,4 @@
-use agent_center::api::center::{SpawnRequest, CloseRequest};
+use agent_center::api::center::{CloseRequest, SpawnRequest};
 use agent_center::AgentCenter;
 use tempfile::tempdir;
 
@@ -7,9 +7,7 @@ async fn close_force_skips_closing_state() -> anyhow::Result<()> {
     let temp = tempdir()?;
     let db_path = temp.path().join("test.db");
 
-    let center = AgentCenter::builder()
-        .db_path(db_path)
-        .build()?;
+    let center = AgentCenter::builder().db_path(db_path).build()?;
 
     // Spawn a thread
     let spawn_req = SpawnRequest {
@@ -27,7 +25,10 @@ async fn close_force_skips_closing_state() -> anyhow::Result<()> {
         force: true,
     };
     let close_resp = center.close(close_req).await?;
-    assert_eq!(close_resp.final_status, "Closed", "force close should return Closed status");
+    assert_eq!(
+        close_resp.final_status, "Closed",
+        "force close should return Closed status"
+    );
 
     // Verify idempotent: second force close should also succeed
     let close_req2 = CloseRequest {
@@ -35,7 +36,10 @@ async fn close_force_skips_closing_state() -> anyhow::Result<()> {
         force: true,
     };
     let close_resp2 = center.close(close_req2).await?;
-    assert_eq!(close_resp2.final_status, "Closed", "force close should be idempotent");
+    assert_eq!(
+        close_resp2.final_status, "Closed",
+        "force close should be idempotent"
+    );
 
     Ok(())
 }
@@ -45,9 +49,7 @@ async fn close_normal_transitions_through_closing_state() -> anyhow::Result<()> 
     let temp = tempdir()?;
     let db_path = temp.path().join("test.db");
 
-    let center = AgentCenter::builder()
-        .db_path(db_path)
-        .build()?;
+    let center = AgentCenter::builder().db_path(db_path).build()?;
 
     // Spawn a thread
     let spawn_req = SpawnRequest {
@@ -65,7 +67,10 @@ async fn close_normal_transitions_through_closing_state() -> anyhow::Result<()> 
         force: false,
     };
     let close_resp = center.close(close_req).await?;
-    assert_eq!(close_resp.final_status, "Closed", "normal close should return Closed status");
+    assert_eq!(
+        close_resp.final_status, "Closed",
+        "normal close should return Closed status"
+    );
 
     Ok(())
 }

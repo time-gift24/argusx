@@ -5,8 +5,8 @@ use serde_json::json;
 use std::path::PathBuf;
 use walkdir::WalkDir;
 
-use crate::builtin::fs::guard::FsGuard;
 use crate::builtin::fs::error::FsError;
+use crate::builtin::fs::guard::FsGuard;
 use crate::context::{ToolContext, ToolResult};
 use crate::error::ToolError;
 use crate::spec::ToolSpec;
@@ -24,7 +24,9 @@ impl GlobTool {
 
     /// Get default glob tool with current directory as allowed root
     pub fn default() -> Result<Self, FsError> {
-        Self::new(vec![std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))])
+        Self::new(vec![
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        ])
     }
 }
 
@@ -120,15 +122,20 @@ impl Tool for GlobTool {
         _ctx: ToolContext,
         args: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
-        let args: GlobArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+        let args: GlobArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
 
         // Authorize the base path
-        let authorized_path = self.guard.authorize_existing(&args.path).await
+        let authorized_path = self
+            .guard
+            .authorize_existing(&args.path)
+            .await
             .map_err(|e| map_fs_error(e))?;
 
         if !authorized_path.is_dir() {
-            return Err(ToolError::ExecutionFailed("path is not a directory".to_string()));
+            return Err(ToolError::ExecutionFailed(
+                "path is not a directory".to_string(),
+            ));
         }
 
         // Compile glob patterns
@@ -161,31 +168,40 @@ impl Tool for GlobTool {
             }
 
             // Get relative path from base directory for proper pattern matching
-            let relative_path = path.strip_prefix(&authorized_path)
+            let relative_path = path
+                .strip_prefix(&authorized_path)
                 .map(|p| p.to_string_lossy().to_string())
                 // Fallback to just filename if strip fails
-                .unwrap_or_else(|_| path.file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default());
+                .unwrap_or_else(|_| {
+                    path.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default()
+                });
 
             // Check glob pattern against relative path
             if let Some(ref g) = glob {
                 // Try matching relative path first, then filename as fallback
-                if !g.is_match(&relative_path) && !g.is_match(path.file_name().unwrap_or_default().to_str().unwrap_or("")) {
+                if !g.is_match(&relative_path)
+                    && !g.is_match(path.file_name().unwrap_or_default().to_str().unwrap_or(""))
+                {
                     continue;
                 }
             }
 
             // Check include pattern against relative path
             if let Some(ref inc) = include_glob {
-                if !inc.is_match(&relative_path) && !inc.is_match(path.file_name().unwrap_or_default().to_str().unwrap_or("")) {
+                if !inc.is_match(&relative_path)
+                    && !inc.is_match(path.file_name().unwrap_or_default().to_str().unwrap_or(""))
+                {
                     continue;
                 }
             }
 
             // Check exclude pattern against relative path
             if let Some(ref exc) = exclude_glob {
-                if exc.is_match(&relative_path) || exc.is_match(path.file_name().unwrap_or_default().to_str().unwrap_or("")) {
+                if exc.is_match(&relative_path)
+                    || exc.is_match(path.file_name().unwrap_or_default().to_str().unwrap_or(""))
+                {
                     continue;
                 }
             }

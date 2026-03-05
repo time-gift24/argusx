@@ -66,7 +66,9 @@ impl Tool for UpdatePlanTool {
             .map_err(|err| ToolError::InvalidArgs(format!("invalid update_plan args: {err}")))?;
 
         if payload.plan.is_empty() {
-            return Err(ToolError::InvalidArgs("plan must contain at least one step".to_string()));
+            return Err(ToolError::InvalidArgs(
+                "plan must contain at least one step".to_string(),
+            ));
         }
 
         let mut in_progress_count = 0usize;
@@ -78,7 +80,10 @@ impl Tool for UpdatePlanTool {
             }
             let status = item.status.as_str();
             if !matches!(status, "pending" | "in_progress" | "completed") {
-                return Err(ToolError::InvalidArgs(format!("invalid status: {}", item.status)));
+                return Err(ToolError::InvalidArgs(format!(
+                    "invalid status: {}",
+                    item.status
+                )));
             }
             if status == "in_progress" {
                 in_progress_count += 1;

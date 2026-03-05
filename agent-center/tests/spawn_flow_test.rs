@@ -66,7 +66,10 @@ async fn spawn_respects_concurrency_limit() -> anyhow::Result<()> {
     };
 
     let result = center.spawn(req2).await;
-    assert!(result.is_err(), "should fail when concurrency limit reached");
+    assert!(
+        result.is_err(),
+        "should fail when concurrency limit reached"
+    );
 
     Ok(())
 }

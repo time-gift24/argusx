@@ -1,7 +1,7 @@
-use std::io::Write;
-use tempfile::tempdir;
 use agent_center::config::loader::load_agents;
 use agent_center::config::validator::validate;
+use std::io::Write;
+use tempfile::tempdir;
 
 #[test]
 fn rejects_invalid_agent_config() -> anyhow::Result<()> {
@@ -12,10 +12,12 @@ fn rejects_invalid_agent_config() -> anyhow::Result<()> {
     // Write malformed TOML (missing required field)
     let bad_config = config_dir.join("bad.toml");
     let mut file = std::fs::File::create(&bad_config)?;
-    file.write_all(br#"
+    file.write_all(
+        br#"
 name = "test-agent"
 # missing version field
-"#)?;
+"#,
+    )?;
 
     let result = load_agents(&config_dir);
     assert!(result.is_err(), "should reject config with missing fields");
@@ -31,11 +33,13 @@ fn loads_valid_agent_config() -> anyhow::Result<()> {
 
     let good_config = config_dir.join("test.toml");
     let mut file = std::fs::File::create(&good_config)?;
-    file.write_all(br#"
+    file.write_all(
+        br#"
 name = "test-agent"
 version = "1.0.0"
 prompt = "You are a test agent"
-"#)?;
+"#,
+    )?;
 
     let agents = load_agents(&config_dir)?;
     assert_eq!(agents.len(), 1);

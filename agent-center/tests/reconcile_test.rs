@@ -1,8 +1,8 @@
-use agent_center::AgentCenter;
 use agent_center::persistence::models::ThreadRow;
 use agent_center::persistence::store::ThreadStore;
-use tempfile::tempdir;
+use agent_center::AgentCenter;
 use chrono::Utc;
+use tempfile::tempdir;
 
 #[tokio::test]
 async fn reconcile_marks_orphan_running_threads_terminal() -> anyhow::Result<()> {
@@ -24,9 +24,7 @@ async fn reconcile_marks_orphan_running_threads_terminal() -> anyhow::Result<()>
     store.upsert_thread(&orphan_thread)?;
 
     // Create AgentCenter and run reconcile
-    let center = AgentCenter::builder()
-        .db_path(db_path)
-        .build()?;
+    let center = AgentCenter::builder().db_path(db_path).build()?;
 
     let report = center.reconcile().await?;
 
@@ -49,9 +47,7 @@ async fn reconcile_is_idempotent() -> anyhow::Result<()> {
     let temp = tempdir()?;
     let db_path = temp.path().join("test.db");
 
-    let center = AgentCenter::builder()
-        .db_path(db_path)
-        .build()?;
+    let center = AgentCenter::builder().db_path(db_path).build()?;
 
     // Run reconcile twice on clean state
     let report1 = center.reconcile().await?;

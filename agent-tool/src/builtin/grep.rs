@@ -11,8 +11,8 @@ use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::builtin::fs::guard::FsGuard;
 use crate::builtin::fs::error::FsError;
+use crate::builtin::fs::guard::FsGuard;
 use crate::context::{ToolContext, ToolResult};
 use crate::error::ToolError;
 use crate::spec::ToolSpec;
@@ -30,7 +30,9 @@ impl GrepTool {
 
     /// Get default grep tool with current directory as allowed root
     pub fn default() -> Result<Self, FsError> {
-        Self::new(vec![std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))])
+        Self::new(vec![
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        ])
     }
 }
 
@@ -119,11 +121,14 @@ impl Tool for GrepTool {
         _ctx: ToolContext,
         args: serde_json::Value,
     ) -> Result<ToolResult, ToolError> {
-        let args: GrepArgs = serde_json::from_value(args)
-            .map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
+        let args: GrepArgs =
+            serde_json::from_value(args).map_err(|e| ToolError::InvalidArgs(e.to_string()))?;
 
         // Authorize the base path
-        let authorized_path = self.guard.authorize_existing(&args.path).await
+        let authorized_path = self
+            .guard
+            .authorize_existing(&args.path)
+            .await
             .map_err(|e| map_fs_error(e))?;
 
         // Build regex pattern
@@ -242,7 +247,11 @@ fn search_file(
     impl Sink for RipgrepSink<'_> {
         type Error = std::io::Error;
 
-        fn matched(&mut self, _searcher: &Searcher, match_info: &SinkMatch) -> std::io::Result<bool> {
+        fn matched(
+            &mut self,
+            _searcher: &Searcher,
+            match_info: &SinkMatch,
+        ) -> std::io::Result<bool> {
             *self.match_count += 1;
 
             // Get line number from the match

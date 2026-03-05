@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
-use agent_tool::{Tool, ToolContext, ToolError, ToolSpec, ToolResult};
+use agent_tool::{Tool, ToolContext, ToolError, ToolResult, ToolSpec};
 
 use crate::api::center::SpawnRequest;
 
@@ -80,7 +80,10 @@ impl Tool for SpawnAgentTool {
             initial_input: input.initial_input,
         };
 
-        let response = self.center.spawn(request).await
+        let response = self
+            .center
+            .spawn(request)
+            .await
             .map_err(|e| ToolError::ExecutionFailed(format!("Spawn failed: {}", e)))?;
 
         Ok(ToolResult::ok(json!(response)))

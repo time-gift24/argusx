@@ -10,7 +10,10 @@ async fn guard_denies_path_outside_allowed_roots() {
     // Create a file outside allowed roots
     let outside_path = "/etc/passwd";
     let result = guard.authorize_existing(outside_path).await;
-    assert!(result.is_err(), "Expected denial for path outside allowed roots");
+    assert!(
+        result.is_err(),
+        "Expected denial for path outside allowed roots"
+    );
 }
 
 #[tokio::test]
@@ -25,8 +28,13 @@ async fn guard_denies_dotdot_traversal_escape() {
 
     // Attempt to escape via ../
     let escape_path = subdir.join("..").join("..").join("..");
-    let result = guard.authorize_existing(escape_path.to_str().unwrap()).await;
-    assert!(result.is_err(), "Expected denial for dotdot traversal escape");
+    let result = guard
+        .authorize_existing(escape_path.to_str().unwrap())
+        .await;
+    assert!(
+        result.is_err(),
+        "Expected denial for dotdot traversal escape"
+    );
 }
 
 #[cfg(unix)]
@@ -62,8 +70,13 @@ async fn guard_allows_path_within_allowed_roots() {
     std::fs::write(&inside_path, "test content").unwrap();
 
     // Access should be allowed
-    let result = guard.authorize_existing(inside_path.to_str().unwrap()).await;
-    assert!(result.is_ok(), "Expected allowed for path within allowed roots");
+    let result = guard
+        .authorize_existing(inside_path.to_str().unwrap())
+        .await;
+    assert!(
+        result.is_ok(),
+        "Expected allowed for path within allowed roots"
+    );
 }
 
 #[tokio::test]
@@ -76,8 +89,13 @@ async fn guard_authorize_maybe_new_for_new_file() {
     let new_file_path = temp_dir.path().join("new_file.txt");
 
     // Should allow creating in allowed directory
-    let result = guard.authorize_maybe_new(new_file_path.to_str().unwrap()).await;
-    assert!(result.is_ok(), "Expected allowed for new file in allowed directory");
+    let result = guard
+        .authorize_maybe_new(new_file_path.to_str().unwrap())
+        .await;
+    assert!(
+        result.is_ok(),
+        "Expected allowed for new file in allowed directory"
+    );
 }
 
 #[tokio::test]
@@ -91,7 +109,10 @@ async fn guard_authorize_maybe_new_denies_parent_outside() {
 
     // Should deny because parent is outside allowed roots
     let result = guard.authorize_maybe_new(outside_path).await;
-    assert!(result.is_err(), "Expected denial for parent outside allowed roots");
+    assert!(
+        result.is_err(),
+        "Expected denial for parent outside allowed roots"
+    );
 }
 
 #[tokio::test]
@@ -116,10 +137,15 @@ async fn guard_denies_nonexistent_path_in_existing() {
 
     // Path that doesn't exist should return NotFound
     let nonexistent = temp_dir.path().join("nonexistent.txt");
-    let result = guard.authorize_existing(nonexistent.to_str().unwrap()).await;
+    let result = guard
+        .authorize_existing(nonexistent.to_str().unwrap())
+        .await;
     assert!(result.is_err());
     // Check it's a NotFound error, not AccessDenied
     if let Err(e) = result {
-        assert!(matches!(e, agent_tool::builtin::fs::error::FsError::NotFound(_)));
+        assert!(matches!(
+            e,
+            agent_tool::builtin::fs::error::FsError::NotFound(_)
+        ));
     }
 }

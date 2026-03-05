@@ -27,7 +27,10 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     )?;
 
     // Migration: Add depth column to existing tables (ignore error if column exists)
-    let _ = conn.execute("ALTER TABLE threads ADD COLUMN depth INTEGER NOT NULL DEFAULT 0", ());
+    let _ = conn.execute(
+        "ALTER TABLE threads ADD COLUMN depth INTEGER NOT NULL DEFAULT 0",
+        (),
+    );
 
     // Migration: Add initial_input column (ignore error if column exists)
     let _ = conn.execute("ALTER TABLE threads ADD COLUMN initial_input TEXT", ());

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
-use agent_tool::{Tool, ToolContext, ToolError, ToolSpec, ToolResult};
+use agent_tool::{Tool, ToolContext, ToolError, ToolResult, ToolSpec};
 
 use crate::api::center::CloseRequest;
 
@@ -70,7 +70,10 @@ impl Tool for CloseAgentTool {
             force: input.force,
         };
 
-        let response = self.center.close(request).await
+        let response = self
+            .center
+            .close(request)
+            .await
             .map_err(|e| ToolError::ExecutionFailed(format!("Close failed: {}", e)))?;
 
         Ok(ToolResult::ok(json!(response)))

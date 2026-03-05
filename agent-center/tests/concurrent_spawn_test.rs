@@ -1,7 +1,7 @@
 use agent_center::api::center::SpawnRequest;
 use agent_center::AgentCenter;
-use tempfile::tempdir;
 use std::sync::Arc;
+use tempfile::tempdir;
 
 #[tokio::test]
 async fn spawn_enforces_depth_limit() -> anyhow::Result<()> {
@@ -56,7 +56,7 @@ async fn concurrent_spawn_with_same_key_is_idempotent() -> anyhow::Result<()> {
         AgentCenter::builder()
             .db_path(db_path)
             .max_concurrent(10)
-            .build()?
+            .build()?,
     );
 
     let parent_id = "root".to_string();
@@ -88,7 +88,11 @@ async fn concurrent_spawn_with_same_key_is_idempotent() -> anyhow::Result<()> {
     }
 
     // All concurrent spawns should return same thread ID (idempotent)
-    assert_eq!(thread_ids.len(), 1, "all concurrent spawns should return same thread ID");
+    assert_eq!(
+        thread_ids.len(),
+        1,
+        "all concurrent spawns should return same thread ID"
+    );
 
     Ok(())
 }
