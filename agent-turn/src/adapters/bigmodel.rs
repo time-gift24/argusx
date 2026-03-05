@@ -312,7 +312,6 @@ fn map_llm_error(err: LlmError) -> AgentError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_core::tools::ToolExecutionPolicy;
     use agent_core::{new_id, InputEnvelope, ToolResult};
     use llm_client::LlmUsage;
 
@@ -537,14 +536,5 @@ mod tests {
                 total_tokens: 46,
             }
         );
-    }
-
-    fn tool_spec_echo() -> agent_core::tools::ToolSpec {
-        agent_core::tools::ToolSpec {
-            name: "echo".to_string(),
-            description: "echo args".to_string(),
-            input_schema: serde_json::json!({"type": "object"}),
-            execution_policy: ToolExecutionPolicy::default(),
-        }
     }
 }

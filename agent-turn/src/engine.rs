@@ -1,4 +1,6 @@
-use agent_core::{RunStreamEvent, RuntimeEvent, UiThreadEvent};
+use std::sync::Arc;
+
+use agent_core::{CheckpointStore, RunStreamEvent, RuntimeEvent, UiThreadEvent};
 use tokio::sync::mpsc;
 
 use crate::effect::EffectExecutor;
@@ -19,6 +21,7 @@ where
     pub event_rx: mpsc::UnboundedReceiver<RuntimeEvent>,
     pub run_tx: mpsc::UnboundedSender<RunStreamEvent>,
     pub ui_tx: mpsc::UnboundedSender<UiThreadEvent>,
+    pub checkpoint_store: Option<Arc<dyn CheckpointStore>>,
 }
 
 impl<L, T> TurnEngine<L, T>
@@ -32,6 +35,24 @@ where
             self.state = transition.state;
 
             self.journal.append(&transition.new_items).await;
+            if let Some(store) = self.checkpoint_store.as_ref() {
+                if !transition.new_items.is_empty() {
+                    if let Err(err) = store
+                        .append_items(self.state.turn_id(), &transition.new_items)
+                        .await
+                    {
+                        let warning = format!("checkpoint append failed: {err}");
+                        let _ = self.run_tx.send(RunStreamEvent::ProtocolWarning {
+                            turn_id: self.state.meta.turn_id.clone(),
+                            message: warning.clone(),
+                        });
+                        let _ = self.ui_tx.send(UiThreadEvent::Warning {
+                            turn_id: self.state.meta.turn_id.clone(),
+                            message: warning,
+                        });
+                    }
+                }
+            }
             emit_run_events(&self.run_tx, transition.run_events);
             emit_ui_events(&self.ui_tx, transition.ui_events);
 

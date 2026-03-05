@@ -40,7 +40,7 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
             tr.add_run_event(RunStreamEvent::TurnStart {
                 turn_id: tr.state.meta.turn_id.clone(),
             });
-            start_model_from_pending(&mut tr, 0);
+            start_model_from_pending(&mut tr, 0, config);
         }
         RuntimeEvent::ModelTextDelta { epoch, delta, .. } => {
             if !is_active_epoch(&tr.state, epoch) {
@@ -241,10 +241,10 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
             }
         }
         RuntimeEvent::ToolResultOk { epoch, result, .. } => {
-            on_tool_result(&mut tr, epoch, result, false);
+            on_tool_result(&mut tr, epoch, result, false, config);
         }
         RuntimeEvent::ToolResultErr { epoch, result, .. } => {
-            on_tool_result(&mut tr, epoch, result, true);
+            on_tool_result(&mut tr, epoch, result, true, config);
         }
         RuntimeEvent::InputInjected { input, .. } => {
             tr.add_item(TranscriptItem::user_message(input.clone()));
@@ -255,7 +255,7 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
             tr.state.enqueue_input(input);
             if tr.state.model_state == ModelState::Completed && tr.state.inflight_tools.is_empty() {
                 let next_epoch = tr.state.epoch.saturating_add(1);
-                start_model_from_pending(&mut tr, next_epoch);
+                start_model_from_pending(&mut tr, next_epoch, config);
             }
         }
         RuntimeEvent::ModelCompleted { epoch, usage, .. } => {
@@ -275,7 +275,7 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
 
             if tr.state.inflight_tools.is_empty() && !tr.state.pending_inputs.is_empty() {
                 let next_epoch = tr.state.epoch.saturating_add(1);
-                start_model_from_pending(&mut tr, next_epoch);
+                start_model_from_pending(&mut tr, next_epoch, config);
             }
         }
         RuntimeEvent::RetryTimerFired { next_epoch, .. } => {
@@ -303,7 +303,7 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
                 epoch: next_epoch,
                 provider: tr.state.provider.clone(),
                 model: tr.state.model.clone(),
-                transcript: tr.state.transcript.clone(),
+                transcript: model_transcript_snapshot(&tr.state, config),
                 inputs,
             });
         }
@@ -369,7 +369,7 @@ fn is_active_epoch(state: &TurnState, epoch: u64) -> bool {
         && epoch == state.epoch
 }
 
-fn start_model_from_pending(tr: &mut Transition, next_epoch: u64) {
+fn start_model_from_pending(tr: &mut Transition, next_epoch: u64, config: &TurnEngineConfig) {
     let inputs = tr.state.drain_pending_inputs();
     if inputs.is_empty() {
         return;
@@ -383,12 +383,38 @@ fn start_model_from_pending(tr: &mut Transition, next_epoch: u64) {
         epoch: next_epoch,
         provider: tr.state.provider.clone(),
         model: tr.state.model.clone(),
-        transcript: tr.state.transcript.clone(),
+        transcript: model_transcript_snapshot(&tr.state, config),
         inputs,
     });
 }
 
-fn on_tool_result(tr: &mut Transition, epoch: u64, result: ToolResult, is_error: bool) {
+fn model_transcript_snapshot(state: &TurnState, config: &TurnEngineConfig) -> Vec<TranscriptItem> {
+    let max_items = config.max_model_transcript_items;
+    if max_items == 0 || state.transcript.len() <= max_items {
+        return state.transcript.clone();
+    }
+
+    let omitted = state.transcript.len().saturating_sub(max_items);
+    let mut clipped = Vec::with_capacity(max_items.saturating_add(1));
+    clipped.push(TranscriptItem::system_note(
+        agent_core::NoteLevel::Info,
+        format!("history truncated: omitted {omitted} earlier transcript items"),
+    ));
+    clipped.extend(
+        state.transcript[state.transcript.len() - max_items..]
+            .iter()
+            .cloned(),
+    );
+    clipped
+}
+
+fn on_tool_result(
+    tr: &mut Transition,
+    epoch: u64,
+    result: ToolResult,
+    is_error: bool,
+    config: &TurnEngineConfig,
+) {
     if epoch != tr.state.epoch {
         return;
     }
@@ -437,7 +463,7 @@ fn on_tool_result(tr: &mut Transition, epoch: u64, result: ToolResult, is_error:
 
     if tr.state.model_state == ModelState::Completed && tr.state.inflight_tools.is_empty() {
         let next_epoch = tr.state.epoch.saturating_add(1);
-        start_model_from_pending(tr, next_epoch);
+        start_model_from_pending(tr, next_epoch, config);
     }
 }
 
@@ -1008,6 +1034,45 @@ mod tests {
             .run_events
             .iter()
             .any(|e| matches!(e, RunStreamEvent::TurnDone { .. })));
+    }
+
+    #[test]
+    fn start_model_transcript_is_capped_when_history_is_large() {
+        let mut config = cfg();
+        config.max_model_transcript_items = 2;
+
+        let state = StateBuilder::new("s1", "t1")
+            .with_transcript(vec![
+                TranscriptItem::assistant_message("old-1"),
+                TranscriptItem::assistant_message("old-2"),
+                TranscriptItem::assistant_message("old-3"),
+            ])
+            .build();
+
+        let transition = reduce(
+            state,
+            EventBuilder::turn_started("t1", user_input("new-input")).build(),
+            &config,
+        );
+
+        let start_transcript = transition
+            .effects
+            .iter()
+            .find_map(|effect| match effect {
+                Effect::StartModel { transcript, .. } => Some(transcript),
+                _ => None,
+            })
+            .expect("expected start model effect");
+
+        assert_eq!(start_transcript.len(), 3);
+        assert!(matches!(
+            &start_transcript[0],
+            TranscriptItem::SystemNote { message, .. } if message.contains("truncated")
+        ));
+        assert!(matches!(
+            &start_transcript[2],
+            TranscriptItem::UserMessage { .. }
+        ));
     }
 }
 
