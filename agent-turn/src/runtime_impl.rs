@@ -353,7 +353,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_routes_model_text_delta_through_bus_pipeline_when_enabled() {
+    async fn runtime_routes_model_text_delta_through_bus_pipeline() {
         let runtime = TurnRuntime::new(
             Arc::new(TextThenDoneModel),
             Arc::new(NoopTools),

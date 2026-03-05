@@ -9,6 +9,7 @@ pub mod journal;
 pub mod output;
 pub mod projection;
 pub mod projectors;
+#[doc(hidden)]
 pub mod reducer;
 pub mod runtime_impl;
 pub mod state;

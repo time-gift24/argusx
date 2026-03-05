@@ -103,6 +103,12 @@ Each handler consumes relevant `DomainCommand` variants and emits zero or more `
 - Step 6: remove legacy reducer main path and redundant event variants.
 - Step 7: clean dead code and simplify tests.
 
+## Progress Snapshot (2026-03-05)
+- Runtime ingress is bus-first (`RuntimeEvent -> DomainCommand -> DomainEvent -> OutputEvent`).
+- Redundant tool queue/dequeue contracts were removed from `RuntimeEvent`, `RunStreamEvent`, and `UiThreadEvent`.
+- Tool lifecycle status now flows through `ToolCallRequested` + `ToolCallProgress` (`Planned`/`Running`/terminal).
+- Legacy reducer code remains as a compatibility bridge for unmigrated command paths; full removal is still pending.
+
 ## Test Strategy
 - Golden trace comparison for representative turn flows.
 - Unit tests per handler (`Command -> DomainEvent`).
