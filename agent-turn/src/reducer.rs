@@ -87,21 +87,11 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
                 call_id: call_id.clone(),
                 tool_name: call.tool_name.clone(),
             });
-            tr.add_run_event(RunStreamEvent::ToolQueued {
-                turn_id: tr.state.meta.turn_id.clone(),
-                call_id: call_id.clone(),
-                tool_name: call.tool_name.clone(),
-            });
             tr.add_ui_event(UiThreadEvent::ToolCallRequested {
                 turn_id: tr.state.meta.turn_id.clone(),
                 call_id: call_id.clone(),
                 tool_name: call.tool_name.clone(),
                 arguments: call.arguments.clone(),
-            });
-            tr.add_ui_event(UiThreadEvent::ToolQueued {
-                turn_id: tr.state.meta.turn_id.clone(),
-                call_id,
-                tool_name: call.tool_name.clone(),
             });
             tr.add_effect(Effect::ExecuteTool {
                 epoch,
@@ -1290,6 +1280,20 @@ mod single_event_tests {
             .run_events
             .iter()
             .any(|e| matches!(e, RunStreamEvent::ToolExecutionPlanned { .. })));
+        assert!(
+            !result
+                .run_events
+                .iter()
+                .any(|e| matches!(e, RunStreamEvent::ToolQueued { .. })),
+            "tool queue signal should come from RuntimeEvent::ToolQueued to avoid duplicates"
+        );
+        assert!(
+            !result
+                .ui_events
+                .iter()
+                .any(|e| matches!(e, UiThreadEvent::ToolQueued { .. })),
+            "tool queue signal should come from RuntimeEvent::ToolQueued to avoid duplicates"
+        );
 
         assert!(result
             .effects
