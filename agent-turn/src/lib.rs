@@ -4,6 +4,7 @@ pub mod command;
 pub mod domain;
 pub mod effect;
 pub mod engine;
+pub mod handlers;
 pub mod journal;
 pub mod output;
 pub mod projection;
