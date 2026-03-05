@@ -380,4 +380,40 @@ mod tests {
 
         assert_eq!(message_deltas, vec!["hello".to_string()]);
     }
+
+    #[tokio::test]
+    async fn legacy_reducer_equivalence_trace_matches_bus_trace_for_core_flow() {
+        async fn run_and_capture_final_message(
+            turn_id: &str,
+            use_bus: bool,
+        ) -> Option<String> {
+            let mut cfg = TurnEngineConfig::default();
+            cfg.use_event_bus_pipeline = use_bus;
+            let runtime = TurnRuntime::new(Arc::new(TextThenDoneModel), Arc::new(NoopTools), cfg);
+            let request = TurnRequest::new(
+                SessionMeta::new("s1", turn_id),
+                "provider",
+                "model",
+                InputEnvelope::user_text("hello"),
+            );
+            let streams = runtime.run_turn(request).await.expect("run turn");
+            let mut run = streams.run;
+            while let Some(event) = run.next().await {
+                match event {
+                    RunStreamEvent::TurnDone { final_message, .. } => return final_message,
+                    RunStreamEvent::TurnFailed { message, .. } => {
+                        panic!("turn failed unexpectedly: {message}");
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        let legacy = run_and_capture_final_message("t-legacy", false).await;
+        let bus = run_and_capture_final_message("t-bus", true).await;
+
+        assert_eq!(legacy, bus);
+        assert_eq!(bus, Some("hello".to_string()));
+    }
 }

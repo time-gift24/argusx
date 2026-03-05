@@ -3,6 +3,7 @@ use crate::domain::DomainEvent;
 use crate::state::TurnState;
 
 pub mod input;
+pub mod legacy;
 pub mod lifecycle;
 pub mod model;
 pub mod subagent;
@@ -38,6 +39,7 @@ impl HandlerRegistry {
             Box::new(tool::ToolHandler),
             Box::new(lifecycle::LifecycleHandler),
             Box::new(subagent::SubagentHandler),
+            Box::new(legacy::LegacyHandler),
         ])
     }
 }

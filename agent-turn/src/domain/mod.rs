@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, PartialEq, Eq)]
+use agent_core::RuntimeEvent;
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum DomainEvent {
     Noop { id: String },
     ModelChunkArrived {
@@ -15,5 +17,8 @@ pub enum DomainEvent {
     },
     RetryFired {
         next_epoch: u64,
+    },
+    LegacyRuntimeEvent {
+        event: RuntimeEvent,
     },
 }

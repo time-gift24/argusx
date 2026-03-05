@@ -55,35 +55,6 @@ impl DomainCommand {
                 epoch,
                 delta,
             },
-            RuntimeEvent::InputInjected { event_id, input } => Self::InputInjected {
-                id: event_id,
-                input,
-            },
-            RuntimeEvent::ToolResultOk {
-                event_id,
-                epoch,
-                result,
-            } => Self::ToolResultOk {
-                id: event_id,
-                epoch,
-                result,
-            },
-            RuntimeEvent::ToolResultErr {
-                event_id,
-                epoch,
-                result,
-            } => Self::ToolResultErr {
-                id: event_id,
-                epoch,
-                result,
-            },
-            RuntimeEvent::RetryTimerFired {
-                event_id,
-                next_epoch,
-            } => Self::RetryTimerFired {
-                id: event_id,
-                next_epoch,
-            },
             other => Self::RuntimeEvent(other),
         }
     }

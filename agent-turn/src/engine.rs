@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 
 use crate::bus::EventBus;
 use crate::command::{normalizer::CommandNormalizer, DomainCommand};
+use crate::domain::DomainEvent;
 use crate::effect::EffectExecutor;
 use crate::handlers::HandlerRegistry;
 use crate::journal::TranscriptJournal;
@@ -13,6 +14,7 @@ use crate::projection::{emit_run_events, emit_ui_events};
 use crate::projectors::{output::OutputProjector, state::StateProjector};
 use crate::reducer::reduce;
 use crate::state::{Lifecycle, TurnEngineConfig, TurnState};
+use crate::transition::Transition;
 
 pub struct TurnEngine<L, T>
 where
@@ -39,40 +41,11 @@ where
 {
     pub async fn run(mut self) -> TurnState {
         while let Some(event) = self.event_rx.recv().await {
-            if self.config.use_event_bus_pipeline && self.try_handle_with_bus(&event).await {
-                if matches!(self.state.lifecycle, Lifecycle::Done | Lifecycle::Failed) {
-                    break;
-                }
-                continue;
-            }
-
-            let transition = reduce(self.state, event, &self.config);
-            self.state = transition.state;
-
-            self.journal.append(&transition.new_items).await;
-            if let Some(store) = self.checkpoint_store.as_ref() {
-                if !transition.new_items.is_empty() {
-                    if let Err(err) = store
-                        .append_items(self.state.turn_id(), &transition.new_items)
-                        .await
-                    {
-                        let warning = format!("checkpoint append failed: {err}");
-                        let _ = self.run_tx.send(RunStreamEvent::ProtocolWarning {
-                            turn_id: self.state.meta.turn_id.clone(),
-                            message: warning.clone(),
-                        });
-                        let _ = self.ui_tx.send(UiThreadEvent::Warning {
-                            turn_id: self.state.meta.turn_id.clone(),
-                            message: warning,
-                        });
-                    }
-                }
-            }
-            emit_run_events(&self.run_tx, transition.run_events);
-            emit_ui_events(&self.ui_tx, transition.ui_events);
-
-            for effect in transition.effects {
-                self.effect_executor.execute(effect).await;
+            if self.config.use_event_bus_pipeline {
+                self.handle_runtime_event_with_bus(event).await;
+            } else {
+                let transition = reduce(self.state.clone(), event, &self.config);
+                self.apply_transition(transition).await;
             }
 
             if matches!(self.state.lifecycle, Lifecycle::Done | Lifecycle::Failed) {
@@ -83,38 +56,40 @@ where
         self.state
     }
 
-    async fn try_handle_with_bus(&mut self, event: &RuntimeEvent) -> bool {
+    async fn handle_runtime_event_with_bus(&mut self, event: RuntimeEvent) {
         let Some(cmd) = self
             .normalizer
             .normalize(DomainCommand::from_runtime(event.clone()))
         else {
-            return true;
+            return;
         };
-
-        if !matches!(cmd, DomainCommand::ModelTextDelta { .. }) {
-            return false;
-        }
 
         if self.bus.enqueue_command(cmd).is_err() {
             let _ = self.run_tx.send(RunStreamEvent::ProtocolWarning {
                 turn_id: self.state.meta.turn_id.clone(),
                 message: "event bus command queue is full".to_string(),
             });
-            return false;
+            self.apply_legacy_event(event).await;
+            return;
         }
 
         while let Some(next_cmd) = self.bus.dequeue_command() {
             let domain_events = self.handlers.handle(next_cmd, &self.state);
             for domain_event in domain_events {
-                StateProjector::apply(&mut self.state, &domain_event);
-                let outputs = OutputProjector::map(&self.state, &domain_event);
-                for output in outputs {
-                    self.dispatch_output(output).await;
+                match domain_event {
+                    DomainEvent::LegacyRuntimeEvent { event } => {
+                        self.apply_legacy_event(event).await;
+                    }
+                    other => {
+                        StateProjector::apply(&mut self.state, &other);
+                        let outputs = OutputProjector::map(&self.state, &other);
+                        for output in outputs {
+                            self.dispatch_output(output).await;
+                        }
+                    }
                 }
             }
         }
-
-        true
     }
 
     async fn dispatch_output(&self, output: OutputEvent) {
@@ -130,5 +105,38 @@ where
             }
             OutputEvent::Noop => {}
         }
+    }
+
+    async fn apply_transition(&mut self, transition: Transition) {
+        self.state = transition.state;
+        self.journal.append(&transition.new_items).await;
+        if let Some(store) = self.checkpoint_store.as_ref() {
+            if !transition.new_items.is_empty() {
+                if let Err(err) = store
+                    .append_items(self.state.turn_id(), &transition.new_items)
+                    .await
+                {
+                    let warning = format!("checkpoint append failed: {err}");
+                    let _ = self.run_tx.send(RunStreamEvent::ProtocolWarning {
+                        turn_id: self.state.meta.turn_id.clone(),
+                        message: warning.clone(),
+                    });
+                    let _ = self.ui_tx.send(UiThreadEvent::Warning {
+                        turn_id: self.state.meta.turn_id.clone(),
+                        message: warning,
+                    });
+                }
+            }
+        }
+        emit_run_events(&self.run_tx, transition.run_events);
+        emit_ui_events(&self.ui_tx, transition.ui_events);
+        for effect in transition.effects {
+            self.effect_executor.execute(effect).await;
+        }
+    }
+
+    async fn apply_legacy_event(&mut self, event: RuntimeEvent) {
+        let transition = reduce(self.state.clone(), event, &self.config);
+        self.apply_transition(transition).await;
     }
 }
