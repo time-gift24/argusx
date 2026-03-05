@@ -1,5 +1,7 @@
 use agent_core::RuntimeEvent;
 
+pub mod normalizer;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum DomainCommand {
     Noop { id: String },
