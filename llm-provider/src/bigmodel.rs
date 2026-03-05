@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 use std::pin::Pin;
 
-use bigmodel_api::{
-    ChatRequest, ChatResponse, ChatResponseChunk, FunctionDefinition, FunctionTool, Message, Role,
-    Tool as BigModelTool,
-};
 use futures::{Stream, StreamExt};
-use llm_client::sse::{parse_sse_stream_result, SseEvent};
+use llm_client::sse::{Event as SseEvent, EventSource};
 use llm_client::{
     run_with_retry, LlmChunk, LlmChunkStream, LlmError, LlmRequest, LlmResponse, LlmRole,
-    LlmToolCall, LlmUsage, ProviderAdapter, RetryPolicy, TimeoutConfig,
+    LlmToolCall, LlmUsage, ProviderAdapter, RetryClass, RetryPolicy, TimeoutConfig,
 };
 use tokio::time::timeout;
 
+use crate::bigmodel_api::{
+    ChatRequest, ChatResponse, ChatResponseChunk, Content, FunctionDefinition, FunctionTool,
+    Message, Role, Tool as BigModelTool,
+};
 use crate::openai_compat::{send_chat_completions_request, ChatCompletionsConfig};
 
 #[derive(Debug, Clone)]
@@ -137,26 +137,32 @@ impl BigModelHttpClient {
             })
             .await?;
 
-            let byte_stream = response
-                .bytes_stream()
-                .map(|item| item.map_err(LlmError::from));
-            let mut sse_events = std::pin::pin!(parse_sse_stream_result(byte_stream));
+            let mut sse_events = EventSource::from_response(response).map_err(LlmError::from)?;
 
             loop {
                 match timeout(idle_timeout, sse_events.next()).await {
-                    Ok(Some(Ok(SseEvent::Data(json)))) => {
-                        let chunk = parse_chunk(&json)?;
+                    Ok(Some(Ok(SseEvent::Open))) => continue,
+                    Ok(Some(Ok(SseEvent::Message(message)))) => {
+                        if message.data == "[DONE]" {
+                            return;
+                        }
+                        if message.event == "error" {
+                            Err(LlmError::StreamError {
+                                message: message.data.clone(),
+                            })?;
+                        }
+                        let chunk = parse_chunk(&message.data)?;
                         yield chunk;
                     }
-                    Ok(Some(Ok(SseEvent::Done))) => return,
-                    Ok(Some(Ok(SseEvent::Error(message)))) => {
-                        Err(LlmError::StreamError { message })?;
-                    }
                     Ok(Some(Err(err))) => {
-                        Err(err)?;
+                        Err(LlmError::from(err))?;
                     }
                     Ok(None) => break,
-                    Err(_) => Err(LlmError::StreamIdleTimeout)?,
+                    Err(_) => Err(LlmError::Retryable {
+                        class: RetryClass::Network,
+                        message: "stream idle timeout".to_string(),
+                        retry_after: None,
+                    })?,
                 }
             }
         })
@@ -271,7 +277,7 @@ pub fn to_llm_response(resp: &ChatResponse) -> LlmResponse {
     let first_choice = resp.choices.first();
     let output_text = first_choice
         .and_then(|c| match &c.message.content {
-            bigmodel_api::Content::Text(s) => Some(s.clone()),
+            Content::Text(s) => Some(s.clone()),
             _ => None,
         })
         .unwrap_or_default();

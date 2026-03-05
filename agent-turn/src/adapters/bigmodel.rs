@@ -6,8 +6,8 @@ use agent_core::{
 };
 use async_trait::async_trait;
 use futures::StreamExt;
-use llm_client::LlmError;
 use llm_client::{LlmChunk, LlmClient, LlmMessage, LlmRequest, LlmRole};
+use llm_client::{LlmError, RetryClass};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -276,36 +276,34 @@ fn format_input_parts(parts: Vec<InputPart>) -> String {
 
 fn map_llm_error(err: LlmError) -> AgentError {
     match err {
-        LlmError::RateLimit {
+        LlmError::Retryable {
+            class: RetryClass::RateLimit,
             message,
             retry_after,
         } => AgentError::Transient(TransientError::RateLimit {
             message,
             retry_after_ms: retry_after.map(|d| d.as_millis() as u64),
         }),
-        LlmError::NetworkError { message } => AgentError::Transient(TransientError::Network {
+        LlmError::Retryable {
+            class: RetryClass::Network,
+            message,
+            ..
+        } => AgentError::Transient(TransientError::Network {
             message,
             retry_after_ms: None,
         }),
-        LlmError::ServerError { message, .. } => {
-            AgentError::Transient(TransientError::ServiceUnavailable {
-                message,
-                retry_after_ms: None,
-            })
-        }
-        LlmError::Timeout | LlmError::StreamIdleTimeout => {
-            AgentError::Transient(TransientError::Network {
-                message: "request timeout".to_string(),
-                retry_after_ms: None,
-            })
-        }
-        LlmError::AuthError { message } | LlmError::InvalidRequest { message } => {
-            AgentError::Model { message }
-        }
-        LlmError::ContextOverflow { message } => AgentError::Model { message },
-        LlmError::QuotaExceeded { message } => AgentError::Model { message },
-        LlmError::StreamError { message } => AgentError::Model { message },
-        LlmError::ParseError { message } => AgentError::Model { message },
+        LlmError::Retryable {
+            class: RetryClass::Server,
+            message,
+            ..
+        } => AgentError::Transient(TransientError::ServiceUnavailable {
+            message,
+            retry_after_ms: None,
+        }),
+        LlmError::InvalidRequest { message }
+        | LlmError::ProviderError { message }
+        | LlmError::StreamError { message }
+        | LlmError::ParseError { message } => AgentError::Model { message },
     }
 }
 
@@ -498,7 +496,8 @@ mod tests {
 
     #[test]
     fn map_errors_to_agent_error_classes() {
-        let retryable = map_llm_error(LlmError::RateLimit {
+        let retryable = map_llm_error(LlmError::Retryable {
+            class: RetryClass::RateLimit,
             message: "busy".to_string(),
             retry_after: None,
         });

@@ -1,3 +1,5 @@
+use llm_provider::bigmodel_api;
+
 #[test]
 fn test_chat_request_serialization() {
     let request =
@@ -5,7 +7,7 @@ fn test_chat_request_serialization() {
             .temperature(0.7)
             .max_tokens(1000);
 
-    let json = serde_json::to_string(&request).unwrap();
+    let json = serde_json::to_string(&request).expect("serialize request");
     assert!(json.contains("glm-4"));
     assert!(json.contains("Hello"));
 }

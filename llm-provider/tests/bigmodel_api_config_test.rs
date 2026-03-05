@@ -1,3 +1,5 @@
+use llm_provider::bigmodel_api;
+
 #[test]
 fn test_config_new() {
     let config = bigmodel_api::Config::new("test-key", "https://provider.test/v1");

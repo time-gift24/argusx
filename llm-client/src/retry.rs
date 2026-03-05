@@ -1,5 +1,5 @@
 use crate::config::RetryPolicy;
-use crate::error::LlmError;
+use crate::error::{LlmError, RetryClass};
 use futures::future::BoxFuture;
 use rand::Rng;
 use std::time::Duration;
@@ -39,16 +39,11 @@ fn should_retry(err: &LlmError, policy: &RetryPolicy, attempt: u64) -> bool {
         return false;
     }
 
-    // Check specific retry conditions
-    match err {
-        LlmError::RateLimit { .. } => policy.retry_on.retry_429,
-        LlmError::ServerError { status, .. } => {
-            policy.retry_on.retry_5xx && *status >= 500 && *status < 600
-        }
-        LlmError::NetworkError { .. } | LlmError::Timeout | LlmError::StreamIdleTimeout => {
-            policy.retry_on.retry_network
-        }
-        _ => false,
+    match err.retry_class() {
+        Some(RetryClass::RateLimit) => policy.retry_on.retry_429,
+        Some(RetryClass::Server) => policy.retry_on.retry_5xx,
+        Some(RetryClass::Network) => policy.retry_on.retry_network,
+        None => false,
     }
 }
 
@@ -80,9 +75,10 @@ mod tests {
     fn backoff_increases_exponentially() {
         let base = Duration::from_secs(1);
         let max = Duration::from_secs(60);
-        let err = LlmError::ServerError {
-            status: 500,
+        let err = LlmError::Retryable {
+            class: RetryClass::Server,
             message: "test".to_string(),
+            retry_after: None,
         };
 
         // Attempt 1: 1 * 1 * jitter ≈ 1s
@@ -105,7 +101,8 @@ mod tests {
     fn backoff_respects_retry_after() {
         let base = Duration::from_secs(1);
         let max = Duration::from_secs(60);
-        let err = LlmError::RateLimit {
+        let err = LlmError::Retryable {
+            class: RetryClass::RateLimit,
             message: "test".to_string(),
             retry_after: Some(Duration::from_secs(10)),
         };
@@ -118,9 +115,10 @@ mod tests {
     fn backoff_respects_max_delay() {
         let base = Duration::from_secs(10);
         let max = Duration::from_secs(30);
-        let err = LlmError::ServerError {
-            status: 500,
+        let err = LlmError::Retryable {
+            class: RetryClass::Server,
             message: "test".to_string(),
+            retry_after: None,
         };
 
         // 10 * 4 = 40, but capped at 30
@@ -138,9 +136,10 @@ mod tests {
             Box::pin(async move {
                 let n = attempts.fetch_add(1, Ordering::SeqCst);
                 if n < 2 {
-                    Err(LlmError::ServerError {
-                        status: 500,
+                    Err(LlmError::Retryable {
+                        class: RetryClass::Server,
                         message: "temporary".to_string(),
+                        retry_after: None,
                     })
                 } else {
                     Ok("success")
@@ -163,9 +162,10 @@ mod tests {
             let attempts = attempts_clone.clone();
             Box::pin(async move {
                 attempts.fetch_add(1, Ordering::SeqCst);
-                Err(LlmError::ServerError {
-                    status: 500,
+                Err(LlmError::Retryable {
+                    class: RetryClass::Server,
                     message: "always fails".to_string(),
+                    retry_after: None,
                 })
             })
         })
@@ -184,7 +184,7 @@ mod tests {
             let attempts = attempts_clone.clone();
             Box::pin(async move {
                 attempts.fetch_add(1, Ordering::SeqCst);
-                Err(LlmError::AuthError {
+                Err(LlmError::ProviderError {
                     message: "invalid key".to_string(),
                 })
             })

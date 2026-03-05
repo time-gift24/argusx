@@ -1,5 +1,5 @@
 [workspace]
-members = ["llm-client", "llm-provider", "agent-cli", "agent", "agent-core", "agent-turn", "agent-session", "agent-tool", "agent-center", "desktop/src-tauri", "common", "bigmodel-api", "llm-gateway", "tests/agent-session-cli", "tests/agent-turn-cli", "cookie-gateway"]
+members = ["llm-client", "llm-provider", "agent-cli", "agent", "agent-core", "agent-turn", "agent-session", "agent-tool", "agent-center", "desktop/src-tauri", "common", "tests/agent-session-cli", "tests/agent-turn-cli", "cookie-gateway"]
 resolver = "2"
 
 [workspace.dependencies]

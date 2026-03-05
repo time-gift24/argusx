@@ -43,7 +43,7 @@ When adding new Tauri commands:
 ../                          # Rust workspace root
 ├── agent-core/              # Core agent logic
 ├── common/                  # Shared config and utilities
-├── bigmodel-api/            # API integrations
+├── llm-provider/            # Provider adapters (includes BigModel API models)
 ├── llm-sdk/                 # LLM SDK
 ├── llm-cli/                 # LLM CLI tool
 └── desktop/                 # This project (Tauri + Next.js)

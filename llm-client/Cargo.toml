@@ -12,16 +12,14 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 futures.workspace = true
-async-stream.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
 
 # For retry jitter
 rand = "0.8"
 httpdate = "1.0"
-
-# For SSE parsing and stream utilities
-tokio-stream = "0.1"
+nom = "7"
+pin-project-lite = "0.2"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }

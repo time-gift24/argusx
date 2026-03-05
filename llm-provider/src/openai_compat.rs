@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures::StreamExt;
 use llm_client::error::LlmError;
-use llm_client::sse::{parse_sse_stream_result, SseEvent};
+use llm_client::sse::{Event as SseEvent, EventSource};
 use llm_client::{
     LlmChunk, LlmChunkStream, LlmRequest, LlmResponse, LlmRole, LlmTool, LlmToolCall, LlmUsage,
     ProviderAdapter,
@@ -364,12 +364,28 @@ impl ProviderAdapter for OpenAiCompatAdapter {
                 }
             };
 
-            let byte_stream = response.bytes_stream().map(|item| item.map_err(LlmError::from));
-            let mut sse_events = std::pin::pin!(parse_sse_stream_result(byte_stream));
+            let mut sse_events = match EventSource::from_response(response) {
+                Ok(es) => es,
+                Err(err) => {
+                    yield Err(LlmError::from(err));
+                    return;
+                }
+            };
 
             while let Some(item) = sse_events.next().await {
                 match item {
-                    Ok(SseEvent::Data(json)) => {
+                    Ok(SseEvent::Open) => continue,
+                    Ok(SseEvent::Message(message)) => {
+                        if message.data == "[DONE]" {
+                            break;
+                        }
+                        if message.event == "error" {
+                            yield Err(LlmError::StreamError {
+                                message: message.data,
+                            });
+                            return;
+                        }
+                        let json = message.data;
                         if let Ok(value) = serde_json::from_str::<Value>(&json) {
                             if let Some(err_msg) = value
                                 .get("error")
@@ -397,13 +413,8 @@ impl ProviderAdapter for OpenAiCompatAdapter {
                             }
                         }
                     }
-                    Ok(SseEvent::Done) => break,
-                    Ok(SseEvent::Error(message)) => {
-                        yield Err(LlmError::StreamError { message });
-                        return;
-                    }
                     Err(err) => {
-                        yield Err(err);
+                        yield Err(LlmError::from(err));
                         return;
                     }
                 }

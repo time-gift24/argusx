@@ -1,4 +1,4 @@
-// BigModel API client crate
+// BigModel API models and helpers embedded in llm-provider.
 
 pub mod config;
 pub mod error;

@@ -95,7 +95,7 @@ async fn unknown_tool_maps_to_user_error_kind() {
 }
 
 #[tokio::test]
-async fn default_builtins_expose_only_read_glob_grep() {
+async fn default_builtins_expose_read_glob_grep_and_update_plan() {
     let rt = AgentToolRuntime::default_with_builtins().await;
     let mut names = rt
         .list_tools()
@@ -104,7 +104,7 @@ async fn default_builtins_expose_only_read_glob_grep() {
         .map(|t| t.name)
         .collect::<Vec<_>>();
     names.sort();
-    assert_eq!(names, vec!["glob", "grep", "read"]);
+    assert_eq!(names, vec!["glob", "grep", "read", "update_plan"]);
 }
 
 #[tokio::test]

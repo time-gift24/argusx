@@ -3,7 +3,7 @@
 //! This crate provides:
 //! - Exponential backoff retry with jitter
 //! - Detailed error types (retryable vs non-retryable)
-//! - SSE streaming with idle timeout detection
+//! - EventSource-based SSE streaming primitives
 //! - Configurable timeouts
 //!
 //! # Example
@@ -36,7 +36,7 @@ pub use adapter::{AdapterId, ProviderAdapter};
 pub use client::{LlmClient, LlmClientBuilder};
 
 pub use config::{RetryOn, RetryPolicy, TimeoutConfig};
-pub use error::LlmError;
+pub use error::{LlmError, RetryClass};
 pub use retry::run_with_retry;
 
 pub use types::{

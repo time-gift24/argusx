@@ -1,42 +1,30 @@
 use std::time::{Duration, SystemTime};
 use thiserror::Error;
 
+/// Retry category used by the generic retry loop.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum RetryClass {
+    RateLimit,
+    Server,
+    Network,
+}
+
 /// Errors that can occur during LLM API calls.
 #[derive(Debug, Error)]
 pub enum LlmError {
-    // Retryable errors
-    #[error("rate limit exceeded: {message}")]
-    RateLimit {
+    #[error("retryable error ({class:?}): {message}")]
+    Retryable {
+        class: RetryClass,
         message: String,
         retry_after: Option<Duration>,
     },
 
-    #[error("server error ({status}): {message}")]
-    ServerError { status: u16, message: String },
-
-    #[error("network error: {message}")]
-    NetworkError { message: String },
-
-    #[error("request timeout")]
-    Timeout,
-
-    #[error("stream idle timeout")]
-    StreamIdleTimeout,
-
-    // Non-retryable errors
-    #[error("authentication error: {message}")]
-    AuthError { message: String },
-
     #[error("invalid request: {message}")]
     InvalidRequest { message: String },
 
-    #[error("context window exceeded: {message}")]
-    ContextOverflow { message: String },
+    #[error("provider error: {message}")]
+    ProviderError { message: String },
 
-    #[error("quota exceeded: {message}")]
-    QuotaExceeded { message: String },
-
-    // Stream errors
     #[error("stream error: {message}")]
     StreamError { message: String },
 
@@ -47,20 +35,21 @@ pub enum LlmError {
 impl LlmError {
     /// Returns true if the error is retryable.
     pub fn is_retryable(&self) -> bool {
-        matches!(
-            self,
-            Self::RateLimit { .. }
-                | Self::ServerError { .. }
-                | Self::NetworkError { .. }
-                | Self::Timeout
-                | Self::StreamIdleTimeout
-        )
+        matches!(self, Self::Retryable { .. })
     }
 
     /// Returns the retry-after duration if available.
     pub fn retry_after(&self) -> Option<Duration> {
         match self {
-            Self::RateLimit { retry_after, .. } => *retry_after,
+            Self::Retryable { retry_after, .. } => *retry_after,
+            _ => None,
+        }
+    }
+
+    /// Returns retry classification when the error is retryable.
+    pub fn retry_class(&self) -> Option<RetryClass> {
+        match self {
+            Self::Retryable { class, .. } => Some(*class),
             _ => None,
         }
     }
@@ -78,31 +67,27 @@ impl LlmError {
             .and_then(parse_retry_after);
 
         match status {
-            400 => {
-                // Check for specific error patterns
-                if body.contains("context") || body.contains("token") || body.contains("length") {
-                    Self::ContextOverflow { message: body }
-                } else {
-                    Self::InvalidRequest { message: body }
-                }
-            }
-            401 | 403 => Self::AuthError { message: body },
-            402 => Self::QuotaExceeded { message: body },
-            408 => Self::Timeout,
-            429 => Self::RateLimit {
+            400 => Self::InvalidRequest { message: body },
+            408 => Self::Retryable {
+                class: RetryClass::Network,
+                message: format!("HTTP {}: {}", status, body),
+                retry_after: None,
+            },
+            429 => Self::Retryable {
+                class: RetryClass::RateLimit,
                 message: body,
                 retry_after,
             },
-            status if (400..=499).contains(&status) => Self::InvalidRequest {
+            500..=599 => Self::Retryable {
+                class: RetryClass::Server,
+                message: format!("HTTP {}: {}", status, body),
+                retry_after: None,
+            },
+            status if (400..=499).contains(&status) => Self::ProviderError {
                 message: format!("HTTP {}: {}", status, body),
             },
-            500..=599 => Self::ServerError {
-                status,
-                message: body,
-            },
-            _ => Self::ServerError {
-                status,
-                message: format!("Unknown HTTP error: {}", body),
+            _ => Self::ProviderError {
+                message: format!("HTTP {}: {}", status, body),
             },
         }
     }
@@ -123,12 +108,46 @@ fn parse_retry_after(value: &str) -> Option<Duration> {
 
 impl From<reqwest::Error> for LlmError {
     fn from(err: reqwest::Error) -> Self {
-        if err.is_timeout() {
-            Self::Timeout
-        } else {
-            Self::NetworkError {
-                message: err.to_string(),
+        Self::Retryable {
+            class: RetryClass::Network,
+            message: err.to_string(),
+            retry_after: None,
+        }
+    }
+}
+
+impl From<crate::sse::Error> for LlmError {
+    fn from(err: crate::sse::Error) -> Self {
+        match err {
+            crate::sse::Error::Utf8(inner) => Self::ParseError {
+                message: format!("invalid UTF-8 in SSE stream: {}", inner),
+            },
+            crate::sse::Error::Parser(message) => Self::ParseError {
+                message: format!("invalid SSE frame: {}", message),
+            },
+            crate::sse::Error::Transport(inner) => Self::from(inner),
+            crate::sse::Error::InvalidContentType(content_type) => Self::StreamError {
+                message: format!("invalid content-type for SSE: {:?}", content_type),
+            },
+            crate::sse::Error::InvalidStatusCode(status) if status.is_server_error() => {
+                Self::Retryable {
+                    class: RetryClass::Server,
+                    message: format!("invalid status code for SSE: {}", status),
+                    retry_after: None,
+                }
             }
+            crate::sse::Error::InvalidStatusCode(status) => Self::ProviderError {
+                message: format!("invalid status code for SSE: {}", status),
+            },
+            crate::sse::Error::InvalidLastEventId(last_event_id) => Self::InvalidRequest {
+                message: format!("invalid Last-Event-ID: {}", last_event_id),
+            },
+            crate::sse::Error::StreamEnded => Self::StreamError {
+                message: "stream ended".to_string(),
+            },
+            crate::sse::Error::CannotCloneRequest(_) => Self::InvalidRequest {
+                message: "expected a cloneable request".to_string(),
+            },
         }
     }
 }
@@ -141,17 +160,19 @@ mod tests {
 
     #[test]
     fn rate_limit_is_retryable() {
-        let err = LlmError::RateLimit {
+        let err = LlmError::Retryable {
+            class: RetryClass::RateLimit,
             message: "too many requests".to_string(),
             retry_after: Some(Duration::from_secs(5)),
         };
         assert!(err.is_retryable());
         assert_eq!(err.retry_after(), Some(Duration::from_secs(5)));
+        assert_eq!(err.retry_class(), Some(RetryClass::RateLimit));
     }
 
     #[test]
-    fn auth_error_is_not_retryable() {
-        let err = LlmError::AuthError {
+    fn provider_error_is_not_retryable() {
+        let err = LlmError::ProviderError {
             message: "invalid key".to_string(),
         };
         assert!(!err.is_retryable());
@@ -160,26 +181,19 @@ mod tests {
 
     #[test]
     fn server_error_is_retryable() {
-        let err = LlmError::ServerError {
-            status: 503,
+        let err = LlmError::Retryable {
+            class: RetryClass::Server,
             message: "unavailable".to_string(),
+            retry_after: None,
         };
         assert!(err.is_retryable());
-    }
-
-    #[test]
-    fn context_overflow_is_not_retryable() {
-        let err = LlmError::ContextOverflow {
-            message: "prompt too long".to_string(),
-        };
-        assert!(!err.is_retryable());
     }
 
     #[test]
     fn from_http_status_maps_unknown_4xx_to_invalid_request() {
         let headers = HeaderMap::new();
         let err = LlmError::from_http_status(404, "not found".to_string(), &headers);
-        assert!(matches!(err, LlmError::InvalidRequest { .. }));
+        assert!(matches!(err, LlmError::ProviderError { .. }));
     }
 
     #[test]
