@@ -11,6 +11,9 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::effect::EffectExecutor;
 use crate::engine::TurnEngine;
+use crate::bus::{BusConfig, EventBus};
+use crate::command::normalizer::CommandNormalizer;
+use crate::handlers::HandlerRegistry;
 use crate::journal::TranscriptJournal;
 use crate::state::{TurnEngineConfig, TurnState};
 
@@ -99,6 +102,9 @@ where
             run_tx,
             ui_tx,
             checkpoint_store: self.checkpoint_store.clone(),
+            bus: EventBus::new(BusConfig::default()),
+            normalizer: CommandNormalizer::default(),
+            handlers: HandlerRegistry::default(),
         };
 
         {
@@ -200,6 +206,7 @@ mod tests {
     use crate::state::TurnEngineConfig;
 
     struct InstantDoneModel;
+    struct TextThenDoneModel;
 
     #[async_trait]
     impl LanguageModel for InstantDoneModel {
@@ -214,6 +221,25 @@ mod tests {
             Ok(Box::pin(stream::once(async {
                 Ok(ModelOutputEvent::Completed { usage: None })
             })))
+        }
+    }
+
+    #[async_trait]
+    impl LanguageModel for TextThenDoneModel {
+        fn model_name(&self) -> &str {
+            "text-then-done"
+        }
+
+        async fn stream(
+            &self,
+            _request: agent_core::ModelRequest,
+        ) -> Result<ModelEventStream, AgentError> {
+            Ok(Box::pin(stream::iter(vec![
+                Ok(ModelOutputEvent::TextDelta {
+                    delta: "hello".to_string(),
+                }),
+                Ok(ModelOutputEvent::Completed { usage: None }),
+            ])))
         }
     }
 
@@ -322,5 +348,36 @@ mod tests {
             ),
             "expected first appended transcript item to be user message"
         );
+    }
+
+    #[tokio::test]
+    async fn runtime_routes_model_text_delta_through_bus_pipeline_when_enabled() {
+        let mut cfg = TurnEngineConfig::default();
+        cfg.use_event_bus_pipeline = true;
+        let runtime = TurnRuntime::new(Arc::new(TextThenDoneModel), Arc::new(NoopTools), cfg);
+
+        let request = TurnRequest::new(
+            SessionMeta::new("s1", "t1"),
+            "provider",
+            "model",
+            InputEnvelope::user_text("hello"),
+        );
+
+        let streams = runtime.run_turn(request).await.expect("run turn");
+        let mut ui = streams.ui;
+        let mut message_deltas = Vec::new();
+        while let Some(event) = ui.next().await {
+            match event {
+                agent_core::UiThreadEvent::MessageDelta { delta, .. } => {
+                    message_deltas.push(delta);
+                }
+                agent_core::UiThreadEvent::Done { .. } | agent_core::UiThreadEvent::Error { .. } => {
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        assert_eq!(message_deltas, vec!["hello".to_string()]);
     }
 }

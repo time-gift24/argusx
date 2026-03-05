@@ -38,6 +38,7 @@ pub struct TurnEngineConfig {
     pub max_parallel_tools: usize,
     pub retry_policy: RetryPolicy,
     pub max_model_transcript_items: usize,
+    pub use_event_bus_pipeline: bool,
 }
 
 impl Default for TurnEngineConfig {
@@ -47,6 +48,7 @@ impl Default for TurnEngineConfig {
             retry_policy: RetryPolicy::default(),
             // Keep a bounded history per model request to avoid unbounded context growth.
             max_model_transcript_items: 256,
+            use_event_bus_pipeline: false,
         }
     }
 }
