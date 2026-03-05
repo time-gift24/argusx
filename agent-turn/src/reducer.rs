@@ -93,56 +93,17 @@ pub fn reduce(state: TurnState, event: RuntimeEvent, config: &TurnEngineConfig) 
                 tool_name: call.tool_name.clone(),
                 arguments: call.arguments.clone(),
             });
+            tr.add_ui_event(UiThreadEvent::ToolCallProgress {
+                turn_id: tr.state.meta.turn_id.clone(),
+                call_id: call_id.clone(),
+                status: ToolCallStatus::Planned,
+            });
             tr.add_effect(Effect::ExecuteTool {
                 epoch,
                 session_id: tr.state.meta.session_id.clone(),
                 turn_id: tr.state.meta.turn_id.clone(),
                 call,
             });
-        }
-        RuntimeEvent::ToolQueued {
-            epoch,
-            call_id,
-            tool_name,
-            ..
-        } => {
-            if !is_active_epoch(&tr.state, epoch) {
-                return tr;
-            }
-            if tr.state.inflight_tools.contains_key(&call_id) {
-                tr.add_run_event(RunStreamEvent::ToolQueued {
-                    turn_id: tr.state.meta.turn_id.clone(),
-                    call_id: call_id.clone(),
-                    tool_name: tool_name.clone(),
-                });
-                tr.add_ui_event(UiThreadEvent::ToolQueued {
-                    turn_id: tr.state.meta.turn_id.clone(),
-                    call_id,
-                    tool_name,
-                });
-            }
-        }
-        RuntimeEvent::ToolDequeued {
-            epoch,
-            call_id,
-            tool_name,
-            ..
-        } => {
-            if !is_active_epoch(&tr.state, epoch) {
-                return tr;
-            }
-            if tr.state.inflight_tools.contains_key(&call_id) {
-                tr.add_run_event(RunStreamEvent::ToolDequeued {
-                    turn_id: tr.state.meta.turn_id.clone(),
-                    call_id: call_id.clone(),
-                    tool_name: tool_name.clone(),
-                });
-                tr.add_ui_event(UiThreadEvent::ToolDequeued {
-                    turn_id: tr.state.meta.turn_id.clone(),
-                    call_id,
-                    tool_name,
-                });
-            }
         }
         RuntimeEvent::ToolDispatched { epoch, call_id, .. } => {
             if !is_active_epoch(&tr.state, epoch) {
@@ -1280,20 +1241,13 @@ mod single_event_tests {
             .run_events
             .iter()
             .any(|e| matches!(e, RunStreamEvent::ToolExecutionPlanned { .. })));
-        assert!(
-            !result
-                .run_events
-                .iter()
-                .any(|e| matches!(e, RunStreamEvent::ToolQueued { .. })),
-            "tool queue signal should come from RuntimeEvent::ToolQueued to avoid duplicates"
-        );
-        assert!(
-            !result
-                .ui_events
-                .iter()
-                .any(|e| matches!(e, UiThreadEvent::ToolQueued { .. })),
-            "tool queue signal should come from RuntimeEvent::ToolQueued to avoid duplicates"
-        );
+        assert!(result.ui_events.iter().any(|e| matches!(
+            e,
+            UiThreadEvent::ToolCallProgress {
+                status: ToolCallStatus::Planned,
+                ..
+            }
+        )));
 
         assert!(result
             .effects

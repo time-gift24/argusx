@@ -225,12 +225,6 @@ impl ThreadDispatcher for DesktopThreadDispatcher {
                             Some(UiThreadEvent::ToolCallRequested { call_id, tool_name, .. }) => {
                                 self.center.report_thread_tool_status(&thread_id, call_id, tool_name, "waiting").await?;
                             }
-                            Some(UiThreadEvent::ToolQueued { call_id, tool_name, .. }) => {
-                                self.center.report_thread_tool_status(&thread_id, call_id, tool_name, "waiting").await?;
-                            }
-                            Some(UiThreadEvent::ToolDequeued { call_id, tool_name, .. }) => {
-                                self.center.report_thread_tool_status(&thread_id, call_id, tool_name, "running").await?;
-                            }
                             Some(UiThreadEvent::ToolCallProgress { call_id, status, .. }) => {
                                 let mapped = match status {
                                     ToolCallStatus::Planned => "waiting",

@@ -185,13 +185,6 @@ where
         let exclusive_tool_locks = Arc::clone(&self.exclusive_tool_locks);
 
         tokio::spawn(async move {
-            let _ = tx.send(RuntimeEvent::ToolQueued {
-                event_id: new_id(),
-                epoch,
-                call_id: call.call_id.clone(),
-                tool_name: call.tool_name.clone(),
-            });
-
             let Ok(permit) = semaphore.acquire_owned().await else {
                 let _ = tx.send(RuntimeEvent::FatalError {
                     event_id: new_id(),
@@ -200,12 +193,6 @@ where
                 return;
             };
 
-            let _ = tx.send(RuntimeEvent::ToolDequeued {
-                event_id: new_id(),
-                epoch,
-                call_id: call.call_id.clone(),
-                tool_name: call.tool_name.clone(),
-            });
             let _ = tx.send(RuntimeEvent::ToolDispatched {
                 event_id: new_id(),
                 epoch,

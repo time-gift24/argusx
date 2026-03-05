@@ -48,16 +48,6 @@ pub enum RunStreamEvent {
         call_id: Id,
         tool_name: String,
     },
-    ToolQueued {
-        turn_id: Id,
-        call_id: Id,
-        tool_name: String,
-    },
-    ToolDequeued {
-        turn_id: Id,
-        call_id: Id,
-        tool_name: String,
-    },
     ToolExecutionStart {
         turn_id: Id,
         call_id: Id,
@@ -155,16 +145,6 @@ pub enum UiThreadEvent {
         turn_id: Id,
         truncated: bool,
         char_count: u32,
-    },
-    ToolQueued {
-        turn_id: Id,
-        call_id: Id,
-        tool_name: String,
-    },
-    ToolDequeued {
-        turn_id: Id,
-        call_id: Id,
-        tool_name: String,
     },
     ToolCallProgress {
         turn_id: Id,

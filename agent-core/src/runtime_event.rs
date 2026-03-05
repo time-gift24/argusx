@@ -35,18 +35,6 @@ pub enum RuntimeEvent {
         epoch: u64,
         call_id: Id,
     },
-    ToolQueued {
-        event_id: Id,
-        epoch: u64,
-        call_id: Id,
-        tool_name: String,
-    },
-    ToolDequeued {
-        event_id: Id,
-        epoch: u64,
-        call_id: Id,
-        tool_name: String,
-    },
     ToolStdoutDelta {
         event_id: Id,
         epoch: u64,
@@ -109,8 +97,6 @@ impl RuntimeEvent {
             | RuntimeEvent::ModelToolCall { event_id, .. }
             | RuntimeEvent::ModelCompleted { event_id, .. }
             | RuntimeEvent::ToolDispatched { event_id, .. }
-            | RuntimeEvent::ToolQueued { event_id, .. }
-            | RuntimeEvent::ToolDequeued { event_id, .. }
             | RuntimeEvent::ToolStdoutDelta { event_id, .. }
             | RuntimeEvent::ToolStderrDelta { event_id, .. }
             | RuntimeEvent::ToolExit { event_id, .. }
@@ -158,28 +144,6 @@ impl RuntimeEvent {
                 event_id: eid,
                 epoch,
                 call_id,
-            },
-            RuntimeEvent::ToolQueued {
-                epoch,
-                call_id,
-                tool_name,
-                ..
-            } => RuntimeEvent::ToolQueued {
-                event_id: eid,
-                epoch,
-                call_id,
-                tool_name,
-            },
-            RuntimeEvent::ToolDequeued {
-                epoch,
-                call_id,
-                tool_name,
-                ..
-            } => RuntimeEvent::ToolDequeued {
-                event_id: eid,
-                epoch,
-                call_id,
-                tool_name,
             },
             RuntimeEvent::ToolStdoutDelta {
                 epoch,
@@ -254,5 +218,39 @@ impl RuntimeEvent {
                 reason,
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::RuntimeEvent;
+
+    #[test]
+    fn runtime_event_contract_no_longer_contains_redundant_tool_queue_variants() {
+        let queued = json!({
+            "type": "tool_queued",
+            "event_id": "e1",
+            "epoch": 0,
+            "call_id": "c1",
+            "tool_name": "echo"
+        });
+        let dequeued = json!({
+            "type": "tool_dequeued",
+            "event_id": "e2",
+            "epoch": 0,
+            "call_id": "c1",
+            "tool_name": "echo"
+        });
+
+        assert!(
+            serde_json::from_value::<RuntimeEvent>(queued).is_err(),
+            "tool_queued runtime event should not deserialize anymore"
+        );
+        assert!(
+            serde_json::from_value::<RuntimeEvent>(dequeued).is_err(),
+            "tool_dequeued runtime event should not deserialize anymore"
+        );
     }
 }
