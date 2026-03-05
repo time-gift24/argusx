@@ -41,12 +41,7 @@ where
 {
     pub async fn run(mut self) -> TurnState {
         while let Some(event) = self.event_rx.recv().await {
-            if self.config.use_event_bus_pipeline {
-                self.handle_runtime_event_with_bus(event).await;
-            } else {
-                let transition = reduce(self.state.clone(), event, &self.config);
-                self.apply_transition(transition).await;
-            }
+            self.handle_runtime_event_with_bus(event).await;
 
             if matches!(self.state.lifecycle, Lifecycle::Done | Lifecycle::Failed) {
                 break;

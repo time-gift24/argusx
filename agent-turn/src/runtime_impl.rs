@@ -195,14 +195,15 @@ mod tests {
         ToolCatalog, ToolExecutionContext, ToolExecutionError, ToolExecutor, ToolSpec,
     };
     use agent_core::{
-        AgentError, CheckpointStore, InputEnvelope, LanguageModel, ModelEventStream,
-        ModelOutputEvent, RunStreamEvent, Runtime, SessionMeta, TranscriptItem, TurnRequest,
+        AgentError, CheckpointStore, InputEnvelope, LanguageModel, ModelEventStream, ModelOutputEvent,
+        RunStreamEvent, Runtime, RuntimeEvent, SessionMeta, TranscriptItem, TurnRequest,
     };
     use async_trait::async_trait;
     use futures::{stream, StreamExt};
     use tokio::sync::Mutex;
 
     use super::TurnRuntime;
+    use crate::reducer::reduce;
     use crate::state::TurnEngineConfig;
 
     struct InstantDoneModel;
@@ -352,9 +353,11 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_routes_model_text_delta_through_bus_pipeline_when_enabled() {
-        let mut cfg = TurnEngineConfig::default();
-        cfg.use_event_bus_pipeline = true;
-        let runtime = TurnRuntime::new(Arc::new(TextThenDoneModel), Arc::new(NoopTools), cfg);
+        let runtime = TurnRuntime::new(
+            Arc::new(TextThenDoneModel),
+            Arc::new(NoopTools),
+            TurnEngineConfig::default(),
+        );
 
         let request = TurnRequest::new(
             SessionMeta::new("s1", "t1"),
@@ -383,13 +386,12 @@ mod tests {
 
     #[tokio::test]
     async fn legacy_reducer_equivalence_trace_matches_bus_trace_for_core_flow() {
-        async fn run_and_capture_final_message(
-            turn_id: &str,
-            use_bus: bool,
-        ) -> Option<String> {
-            let mut cfg = TurnEngineConfig::default();
-            cfg.use_event_bus_pipeline = use_bus;
-            let runtime = TurnRuntime::new(Arc::new(TextThenDoneModel), Arc::new(NoopTools), cfg);
+        async fn run_bus_runtime_and_capture_final_message(turn_id: &str) -> Option<String> {
+            let runtime = TurnRuntime::new(
+                Arc::new(TextThenDoneModel),
+                Arc::new(NoopTools),
+                TurnEngineConfig::default(),
+            );
             let request = TurnRequest::new(
                 SessionMeta::new("s1", turn_id),
                 "provider",
@@ -410,8 +412,50 @@ mod tests {
             None
         }
 
-        let legacy = run_and_capture_final_message("t-legacy", false).await;
-        let bus = run_and_capture_final_message("t-bus", true).await;
+        fn run_legacy_reducer_trace_and_capture_final_message() -> Option<String> {
+            let mut state = crate::state::TurnState::new(
+                SessionMeta::new("s1", "t-legacy"),
+                "provider",
+                "model",
+            );
+            let cfg = TurnEngineConfig::default();
+            let events = vec![
+                RuntimeEvent::TurnStarted {
+                    event_id: "e1".into(),
+                    turn_id: "t-legacy".into(),
+                    input: InputEnvelope::user_text("hello"),
+                },
+                RuntimeEvent::ModelTextDelta {
+                    event_id: "e2".into(),
+                    epoch: 0,
+                    delta: "hello".into(),
+                },
+                RuntimeEvent::ModelCompleted {
+                    event_id: "e3".into(),
+                    epoch: 0,
+                    usage: None,
+                },
+            ];
+
+            let mut final_message = None;
+            for event in events {
+                let tr = reduce(state, event, &cfg);
+                for run_event in &tr.run_events {
+                    if let RunStreamEvent::TurnDone {
+                        final_message: message,
+                        ..
+                    } = run_event
+                    {
+                        final_message = message.clone();
+                    }
+                }
+                state = tr.state;
+            }
+            final_message
+        }
+
+        let legacy = run_legacy_reducer_trace_and_capture_final_message();
+        let bus = run_bus_runtime_and_capture_final_message("t-bus").await;
 
         assert_eq!(legacy, bus);
         assert_eq!(bus, Some("hello".to_string()));
