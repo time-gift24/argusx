@@ -1,4 +1,5 @@
 mod client;
+mod replay;
 pub const VERSION: &str = "0.1.0";
 
 pub mod dialect;
@@ -8,6 +9,7 @@ mod request;
 
 pub use client::ProviderClient;
 pub use error::{Error, ErrorKind, StreamError};
+pub use replay::ReplayReader;
 pub use request::Request;
 
 use argus_core::ResponseEvent;
