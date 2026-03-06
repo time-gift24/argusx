@@ -4,7 +4,6 @@ pub const VERSION: &str = "0.1.0";
 pub mod dialect;
 pub mod error;
 pub mod normalize;
-pub mod transport;
 mod request;
 
 pub use client::ProviderClient;

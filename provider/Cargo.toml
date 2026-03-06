@@ -10,6 +10,7 @@ thiserror = { workspace = true }
 reqwest = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
 eventsource_stream = { package = "eventsource-stream", path = "../vendor/eventsource_stream" }
 argus_core = { package = "core", path = "../core" }
 
