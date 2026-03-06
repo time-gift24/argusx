@@ -1,4 +1,10 @@
-use std::sync::Arc;
+use futures::Stream;
+use std::{
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
+use tokio::{sync::mpsc, task::AbortHandle};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Meta {
@@ -99,6 +105,36 @@ impl ResponseContract {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContractError {
     AfterTerminal,
+}
+
+pub struct ResponseStream {
+    rx_event: mpsc::Receiver<ResponseEvent>,
+    abort: Option<AbortHandle>,
+}
+
+impl ResponseStream {
+    pub fn from_parts(rx_event: mpsc::Receiver<ResponseEvent>, abort: AbortHandle) -> Self {
+        Self {
+            rx_event,
+            abort: Some(abort),
+        }
+    }
+}
+
+impl Stream for ResponseStream {
+    type Item = ResponseEvent;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.rx_event.poll_recv(cx)
+    }
+}
+
+impl Drop for ResponseStream {
+    fn drop(&mut self) {
+        if let Some(abort) = self.abort.take() {
+            abort.abort();
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
