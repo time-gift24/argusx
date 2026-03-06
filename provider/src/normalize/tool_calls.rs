@@ -1,4 +1,4 @@
-use argus_core::McpCallType;
+use argus_core::{Builtin, McpCallType};
 use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,8 +12,27 @@ pub struct ParsedZaiMcpPayload {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToolCallKind {
+    Mcp,
+    Builtin(Builtin),
+    Function,
+}
+
+pub fn classify_tool_call(call_type: Option<&str>, name: Option<&str>) -> ToolCallKind {
+    if matches!(call_type, Some("mcp")) || name.is_some_and(|n| n.starts_with("__mcp__")) {
+        return ToolCallKind::Mcp;
+    }
+
+    if let Some(builtin) = name.and_then(Builtin::from_name) {
+        return ToolCallKind::Builtin(builtin);
+    }
+
+    ToolCallKind::Function
+}
+
 pub fn is_mcp_call(call_type: Option<&str>, name: Option<&str>) -> bool {
-    matches!(call_type, Some("mcp")) || name.is_some_and(|n| n.starts_with("__mcp__"))
+    matches!(classify_tool_call(call_type, name), ToolCallKind::Mcp)
 }
 
 pub fn parse_zai_mcp_json(
