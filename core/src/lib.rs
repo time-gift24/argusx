@@ -22,7 +22,53 @@ pub enum ToolCall {
         name: String,
         arguments_json: String,
     },
+    Builtin(BuiltinToolCall),
     Mcp(McpCall),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuiltinToolCall {
+    pub sequence: u32,
+    pub call_id: String,
+    pub builtin: Builtin,
+    pub arguments_json: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Builtin {
+    Read,
+    Glob,
+    Grep,
+    UpdatePlan,
+    Shell,
+    DomainCookies,
+    Unknown(String),
+}
+
+impl Builtin {
+    pub fn canonical_name(&self) -> &str {
+        match self {
+            Self::Read => "read",
+            Self::Glob => "glob",
+            Self::Grep => "grep",
+            Self::UpdatePlan => "update_plan",
+            Self::Shell => "shell",
+            Self::DomainCookies => "domain_cookies",
+            Self::Unknown(name) => name.as_str(),
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "read" => Self::Read,
+            "glob" => Self::Glob,
+            "grep" => Self::Grep,
+            "update_plan" => Self::UpdatePlan,
+            "shell" => Self::Shell,
+            "domain_cookies" => Self::DomainCookies,
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

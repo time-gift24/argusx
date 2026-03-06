@@ -1,4 +1,4 @@
-use core::{McpCall, McpCallType, Meta, ResponseEvent, ToolCall, Usage};
+use core::{Builtin, BuiltinToolCall, McpCall, McpCallType, Meta, ResponseEvent, ToolCall, Usage};
 use std::sync::Arc;
 
 #[test]
@@ -18,8 +18,14 @@ fn response_event_shape_matches_design() {
         name: "get_weather".into(),
         arguments_json: "{\"city\":\"北京\"}".into(),
     });
-    let _ = ResponseEvent::ToolDone(ToolCall::Mcp(McpCall {
+    let _ = ResponseEvent::ToolDone(ToolCall::Builtin(BuiltinToolCall {
         sequence: 1,
+        call_id: "call_builtin".into(),
+        builtin: Builtin::Read,
+        arguments_json: "{\"path\":\"Cargo.toml\"}".into(),
+    }));
+    let _ = ResponseEvent::ToolDone(ToolCall::Mcp(McpCall {
+        sequence: 2,
         id: "call_2".into(),
         mcp_type: McpCallType::McpCall,
         server_label: Some("weather".into()),
