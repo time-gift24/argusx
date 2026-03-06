@@ -16,12 +16,13 @@ vi.mock("@/components/features/annotation/annotation-workspace", () => ({
 }));
 
 describe("AnnotationPage", () => {
-  it("renders breadcrumb hierarchy for the SOP route", () => {
+  it("renders only the local page title block and workspace", () => {
     render(<AnnotationPage />);
 
-    expect(screen.getByText("工作台")).toBeInTheDocument();
-    expect(screen.getByText("SOP")).toBeInTheDocument();
-    expect(screen.getByText("标注")).toBeInTheDocument();
+    expect(screen.queryByText("工作台")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^SOP$/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("打开 SOP 页面导航")).not.toBeInTheDocument();
+    expect(screen.getByText("SOP 标注工作台")).toBeInTheDocument();
     expect(screen.getByTestId("annotation-workspace")).toBeInTheDocument();
   });
 });
