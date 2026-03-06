@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 const INITIAL_TEXT_BUFFER_CAPACITY: usize = 256;
+const INITIAL_TOOL_ARGS_BUFFER_CAPACITY: usize = 128;
 const TYPICAL_EVENTS_PER_CHUNK: usize = 4;
 
 #[derive(Debug, Error)]
@@ -39,7 +40,7 @@ pub struct Mapper {
 }
 
 impl Mapper {
-    pub fn new(_provider: String) -> Self {
+    pub fn new() -> Self {
         Self {
             created: false,
             terminated: false,
@@ -160,7 +161,7 @@ impl Mapper {
                 call_type: None,
                 call_id: None,
                 name: None,
-                arguments_json: String::new(),
+                arguments_json: String::with_capacity(INITIAL_TOOL_ARGS_BUFFER_CAPACITY),
             });
 
         if let Some(call_type) = tc.type_

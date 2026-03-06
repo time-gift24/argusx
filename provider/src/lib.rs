@@ -26,9 +26,7 @@ pub struct Mapper {
 impl Mapper {
     pub fn new(dialect: Dialect) -> Self {
         let inner = match dialect {
-            Dialect::Openai => {
-                InnerMapper::Openai(dialect::openai::mapper::Mapper::new("openai".to_string()))
-            }
+            Dialect::Openai => InnerMapper::Openai(dialect::openai::mapper::Mapper::new()),
             Dialect::Zai => InnerMapper::Zai(dialect::zai::mapper::Mapper::new()),
         };
         Self { inner }

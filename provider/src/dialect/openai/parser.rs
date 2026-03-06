@@ -42,6 +42,12 @@ pub fn parse_payload(payload: &str) -> Result<ChatCompletionsStreamEvent, Error>
         )));
     }
 
+    let might_be_string_error = payload.starts_with('"');
+    let might_be_error_object = payload.contains("\"error\"");
+    if !might_be_string_error && !might_be_error_object {
+        return Err(Error::Parse(chunk_err));
+    }
+
     let parsed: Value = match serde_json::from_str(payload) {
         Ok(value) => value,
         Err(_) => return Err(Error::Parse(chunk_err)),
