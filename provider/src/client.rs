@@ -1,6 +1,6 @@
 use crate::{
     Dialect, Error, ErrorKind, Mapper, ProviderConfig, ProviderStreamMode, ReplayReader, Request,
-    StreamError,
+    SseRecorder, StreamError,
 };
 use argus_core::{Error as CoreError, ResponseContract, ResponseEvent, ResponseStream};
 use bytes::Bytes;
@@ -53,10 +53,23 @@ impl ProviderClient {
         let http = self.http.clone();
         let api_key = self.config.api_key.clone();
         let headers = self.config.headers.clone();
+        let record_target = self
+            .config
+            .dev
+            .as_ref()
+            .and_then(|dev| dev.record_live_sse.clone());
         let request = request.normalized_for_send();
         let (tx, rx) = mpsc::channel(32);
 
         let producer = tokio::spawn(async move {
+            let mut recorder = match record_target {
+                Some(target) => {
+                    SseRecorder::create(target.file_path, target.write_timing_sidecar)
+                        .await
+                        .ok()
+                }
+                None => None,
+            };
             let response = match http
                 .post(url)
                 .header(reqwest::header::AUTHORIZATION, format!("Bearer {api_key}"))
@@ -96,7 +109,7 @@ impl ProviderClient {
                 })
                 })
                 .boxed();
-            drive_payload_stream(&tx, dialect, &mut payloads).await;
+            drive_payload_stream(&tx, dialect, &mut payloads, &mut recorder).await;
         });
 
         Ok(ResponseStream::from_parts(rx, producer.abort_handle()))
@@ -116,7 +129,8 @@ impl ProviderClient {
             let mut payloads = replay
                 .map(|item| item.and_then(|frame| parse_replay_frame(&frame)))
                 .boxed();
-            drive_payload_stream(&tx, dialect, &mut payloads).await;
+            let mut recorder = None;
+            drive_payload_stream(&tx, dialect, &mut payloads, &mut recorder).await;
         });
 
         Ok(ResponseStream::from_parts(rx, producer.abort_handle()))
@@ -160,6 +174,7 @@ async fn drive_payload_stream<S>(
     tx: &mpsc::Sender<ResponseEvent>,
     dialect: Dialect,
     payloads: &mut S,
+    recorder: &mut Option<SseRecorder>,
 ) where
     S: Stream<Item = Result<String, StreamError>> + Unpin,
 {
@@ -169,10 +184,12 @@ async fn drive_payload_stream<S>(
     while let Some(item) = payloads.next().await {
         match item {
             Ok(payload) => {
+                write_payload_to_recorder(recorder, &payload).await;
                 if payload == "[DONE]" {
                     match mapper.on_done() {
                         Ok(events) => {
                             if emit_events(tx, &mut contract, events).await.is_err() {
+                                finish_recorder(recorder).await;
                                 return;
                             }
                         }
@@ -185,14 +202,17 @@ async fn drive_payload_stream<S>(
                                 },
                             )
                             .await;
+                            finish_recorder(recorder).await;
                         }
                     }
+                    finish_recorder(recorder).await;
                     return;
                 }
 
                 match mapper.feed(&payload) {
                     Ok(events) => {
                         if emit_events(tx, &mut contract, events).await.is_err() {
+                            finish_recorder(recorder).await;
                             return;
                         }
                     }
@@ -205,12 +225,14 @@ async fn drive_payload_stream<S>(
                             },
                         )
                         .await;
+                        finish_recorder(recorder).await;
                         return;
                     }
                 }
             }
             Err(err) => {
                 send_terminal_error(tx, err).await;
+                finish_recorder(recorder).await;
                 return;
             }
         }
@@ -224,6 +246,7 @@ async fn drive_payload_stream<S>(
         },
     )
     .await;
+    finish_recorder(recorder).await;
 }
 
 fn to_header_map(headers: &HashMap<String, String>) -> reqwest::header::HeaderMap {
@@ -331,4 +354,36 @@ fn parse_replay_frame(frame: &str) -> Result<String, StreamError> {
     }
 
     Ok(data_lines.join("\n"))
+}
+
+async fn write_payload_to_recorder(recorder: &mut Option<SseRecorder>, payload: &str) {
+    let failed = match recorder.as_mut() {
+        Some(active) => active
+            .write_frame(&format_payload_as_sse_frame(payload))
+            .await
+            .is_err(),
+        None => false,
+    };
+
+    if failed {
+        *recorder = None;
+    }
+}
+
+async fn finish_recorder(recorder: &mut Option<SseRecorder>) {
+    if let Some(active) = recorder.as_mut() {
+        let _ = active.finish().await;
+    }
+    *recorder = None;
+}
+
+fn format_payload_as_sse_frame(payload: &str) -> String {
+    let mut frame = String::new();
+    for line in payload.split('\n') {
+        frame.push_str("data: ");
+        frame.push_str(line);
+        frame.push('\n');
+    }
+    frame.push('\n');
+    frame
 }
