@@ -1,5 +1,6 @@
 use argus_core::{FinishReason, ResponseEvent, Usage};
 use tool::ToolResult;
+use turn::{AuthorizationDecision, PermissionRequest};
 
 mod fake_authorizer;
 mod fake_model;
@@ -38,4 +39,23 @@ pub fn delayed_tool_runner(
             .into_iter()
             .map(|(call_id, delay_ms, result)| (call_id.to_string(), delay_ms, result)),
     )
+}
+
+#[allow(dead_code)]
+pub fn permission_authorizer(
+    decisions: impl IntoIterator<Item = (&'static str, AuthorizationDecision)>,
+) -> FakeAuthorizer {
+    FakeAuthorizer::new(
+        decisions
+            .into_iter()
+            .map(|(call_id, decision)| (call_id.to_string(), decision)),
+    )
+}
+
+#[allow(dead_code)]
+pub fn ask_permission(call_id: &'static str, request_id: &'static str) -> AuthorizationDecision {
+    AuthorizationDecision::Ask(PermissionRequest {
+        request_id: request_id.to_string(),
+        tool_call_id: call_id.to_string(),
+    })
 }

@@ -16,7 +16,7 @@ async fn text_only_turn_streams_text_and_completes() {
         context,
         Arc::new(support::text_only_model(["hel", "lo"])),
         Arc::new(support::FakeToolRunner::default()),
-        Arc::new(support::FakeAuthorizer),
+        Arc::new(support::FakeAuthorizer::default()),
         Arc::new(support::FakeObserver),
     );
 

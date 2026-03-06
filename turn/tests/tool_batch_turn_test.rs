@@ -47,7 +47,7 @@ async fn tool_batch_emits_each_result_immediately_then_finishes_step_once() {
             ("call-1", 40, ToolResult::ok(json!({"source":"slow"}))),
             ("call-2", 5, ToolResult::ok(json!({"source":"fast"}))),
         ])),
-        Arc::new(support::FakeAuthorizer),
+        Arc::new(support::FakeAuthorizer::default()),
         Arc::new(support::FakeObserver),
     );
 

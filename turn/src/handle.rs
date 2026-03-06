@@ -31,4 +31,18 @@ impl TurnHandle {
             .await
             .map_err(|_| TurnError::Runtime("turn command receiver dropped".into()))
     }
+
+    pub async fn resolve_permission(
+        &self,
+        request_id: String,
+        decision: crate::PermissionDecision,
+    ) -> Result<(), TurnError> {
+        self.command_tx
+            .send(TurnCommand::ResolvePermission {
+                request_id,
+                decision,
+            })
+            .await
+            .map_err(|_| TurnError::Runtime("turn command receiver dropped".into()))
+    }
 }

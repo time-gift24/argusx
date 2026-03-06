@@ -10,20 +10,20 @@ use tokio_util::sync::CancellationToken;
 use tool::{ToolContext, ToolResult};
 
 use crate::{
-    LlmRequestSnapshot, ModelRunner, StepFinishReason, ToolAuthorizer, ToolOutcome, ToolRunner,
-    TurnContext, TurnError, TurnEvent, TurnFailure, TurnFinishReason, TurnHandle, TurnState,
-    TurnSummary,
-    state::{ActiveLlmStep, ToolBatch},
+    AuthorizationDecision, LlmRequestSnapshot, ModelRunner, PermissionDecision,
+    StepFinishReason, ToolAuthorizer, ToolOutcome, ToolRunner, TurnContext, TurnError, TurnEvent,
+    TurnFailure, TurnFinishReason, TurnHandle, TurnState, TurnSummary,
+    state::{ActiveLlmStep, PendingPermissionCall, PermissionPause, ToolBatch},
 };
 
 pub struct TurnDriver {
     context: TurnContext,
     model: Arc<dyn ModelRunner>,
-    _tool_runner: Arc<dyn ToolRunner>,
-    _authorizer: Arc<dyn ToolAuthorizer>,
+    tool_runner: Arc<dyn ToolRunner>,
+    authorizer: Arc<dyn ToolAuthorizer>,
     observer: Arc<dyn crate::TurnObserver>,
     state: TurnState,
-    _command_rx: mpsc::Receiver<crate::TurnCommand>,
+    command_rx: mpsc::Receiver<crate::TurnCommand>,
     event_tx: mpsc::Sender<TurnEvent>,
 }
 
@@ -43,10 +43,10 @@ impl TurnDriver {
             state: TurnState::Ready(context.clone()),
             context,
             model,
-            _tool_runner: tool_runner,
-            _authorizer: authorizer,
+            tool_runner,
+            authorizer,
             observer,
-            _command_rx: command_rx,
+            command_rx,
             event_tx,
         };
 
@@ -160,32 +160,88 @@ impl TurnDriver {
             .map_err(|_| TurnError::Runtime("turn event receiver dropped".into()))
     }
 
-    async fn execute_tool_batch(&self, batch: ToolBatch) -> Result<(), TurnError> {
+    async fn execute_tool_batch(&mut self, batch: ToolBatch) -> Result<(), TurnError> {
         let mut join_set = JoinSet::new();
+        let mut pending_permissions = Vec::new();
+
         for call in batch.calls.clone() {
-            let tool_runner = Arc::clone(&self._tool_runner);
-            let session_id = self.context.session_id.clone();
-            let turn_id = self.context.turn_id.clone();
-            join_set.spawn(async move {
-                let call_id = call_id(&call);
-                let result = tool_runner
-                    .execute(
-                        call,
-                        ToolContext::new(session_id, turn_id, CancellationToken::new()),
-                    )
-                    .await;
-                (call_id, result)
-            });
+            match self.authorizer.authorize(&call).await? {
+                AuthorizationDecision::Allow => self.spawn_tool_call(&mut join_set, call),
+                AuthorizationDecision::Deny => {
+                    self.emit(TurnEvent::ToolCallCompleted {
+                        call_id: call_id(&call),
+                        result: ToolOutcome::Denied,
+                    })
+                    .await?;
+                }
+                AuthorizationDecision::Ask(request) => {
+                    self.emit(TurnEvent::ToolCallPermissionRequested {
+                        request: request.clone(),
+                    })
+                    .await?;
+                    pending_permissions.push(PendingPermissionCall { request, call });
+                }
+            }
         }
 
-        while let Some(result) = join_set.join_next().await {
-            let (call_id, result) =
-                result.map_err(|err| TurnError::Runtime(format!("tool task join failed: {err}")))?;
-            self.emit(TurnEvent::ToolCallCompleted {
-                call_id,
-                result: map_tool_result(result),
+        self.state = if pending_permissions.is_empty() {
+            TurnState::WaitingTools(batch.clone())
+        } else {
+            TurnState::WaitingForPermission(PermissionPause {
+                batch: batch.clone(),
+                pending: pending_permissions.clone(),
             })
-            .await?;
+        };
+
+        while !join_set.is_empty() || !pending_permissions.is_empty() {
+            tokio::select! {
+                Some(result) = join_set.join_next(), if !join_set.is_empty() => {
+                    let (call_id, result) =
+                        result.map_err(|err| TurnError::Runtime(format!("tool task join failed: {err}")))?;
+                    self.emit(TurnEvent::ToolCallCompleted {
+                        call_id,
+                        result: map_tool_result(result),
+                    })
+                    .await?;
+                }
+                command = self.command_rx.recv(), if !pending_permissions.is_empty() => {
+                    let command = command.ok_or_else(|| {
+                        TurnError::Runtime("turn command channel closed while waiting for permission".into())
+                    })?;
+                    if let crate::TurnCommand::ResolvePermission { request_id, decision } = command
+                        && let Some(index) = pending_permissions
+                            .iter()
+                            .position(|pending| pending.request.request_id == request_id)
+                    {
+                        let pending = pending_permissions.swap_remove(index);
+                        self.emit(TurnEvent::ToolCallPermissionResolved {
+                            request_id: request_id.clone(),
+                            decision: decision.clone(),
+                        })
+                        .await?;
+
+                        match decision {
+                            PermissionDecision::Allow => self.spawn_tool_call(&mut join_set, pending.call),
+                            PermissionDecision::Deny => {
+                                self.emit(TurnEvent::ToolCallCompleted {
+                                    call_id: call_id(&pending.call),
+                                    result: ToolOutcome::Denied,
+                                })
+                                .await?;
+                            }
+                        }
+
+                        self.state = if pending_permissions.is_empty() {
+                            TurnState::WaitingTools(batch.clone())
+                        } else {
+                            TurnState::WaitingForPermission(PermissionPause {
+                                batch: batch.clone(),
+                                pending: pending_permissions.clone(),
+                            })
+                        };
+                    }
+                }
+            }
         }
 
         self.emit(TurnEvent::StepFinished {
@@ -194,6 +250,26 @@ impl TurnDriver {
         })
         .await?;
         Ok(())
+    }
+
+    fn spawn_tool_call(
+        &self,
+        join_set: &mut JoinSet<(String, Result<ToolResult, TurnError>)>,
+        call: argus_core::ToolCall,
+    ) {
+        let tool_runner = Arc::clone(&self.tool_runner);
+        let session_id = self.context.session_id.clone();
+        let turn_id = self.context.turn_id.clone();
+        join_set.spawn(async move {
+            let call_id = call_id(&call);
+            let result = tool_runner
+                .execute(
+                    call,
+                    ToolContext::new(session_id, turn_id, CancellationToken::new()),
+                )
+                .await;
+            (call_id, result)
+        });
     }
 }
 
