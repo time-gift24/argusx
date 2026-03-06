@@ -1,3 +1,4 @@
+pub mod config;
 pub mod builtin;
 pub mod context;
 pub mod error;

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+argus_core = { package = "core", path = "../core" }
 async-trait = { workspace = true }
 globset = "0.4"
 grep = "0.2"
