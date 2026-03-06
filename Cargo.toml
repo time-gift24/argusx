@@ -1,5 +1,5 @@
 [workspace]
-members = ["llm-client", "llm-provider", "agent-cli", "agent", "agent-core", "agent-turn", "agent-session", "agent-tool", "agent-center", "desktop/src-tauri", "common", "tests/agent-session-cli", "tests/agent-turn-cli", "cookie-gateway", "vendor/eventsource_stream", "core", "provider-openai"]
+members = ["llm-client", "llm-provider", "agent-cli", "agent", "agent-core", "agent-turn", "agent-session", "agent-tool", "agent-center", "desktop/src-tauri", "common", "tests/agent-session-cli", "tests/agent-turn-cli", "cookie-gateway", "vendor/eventsource_stream", "core", "provider-openai", "provider"]
 resolver = "2"
 
 [workspace.dependencies]
