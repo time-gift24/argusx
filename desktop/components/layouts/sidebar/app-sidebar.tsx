@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, MessageSquare, NotebookPen } from "lucide-react";
+import { MessageSquare, NotebookPen } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -16,12 +16,7 @@ import {
 
 const navMain = [
   {
-    title: "仪表板",
-    url: "/",
-    icon: Home,
-  },
-  {
-    title: "对话占位",
+    title: "对话",
     url: "/chat",
     icon: MessageSquare,
   },
@@ -34,16 +29,20 @@ const navMain = [
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname();
+  const isChatActive = pathname === "/" || pathname === "/chat" || pathname.startsWith("/chat/");
 
   return (
     <Sidebar {...props}>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>导航</SidebarGroupLabel>
+          <SidebarGroupLabel>工作区</SidebarGroupLabel>
           <SidebarMenu>
             {navMain.map((item) => (
               <SidebarMenuItem key={item.title}>
-                <SidebarMenuButton asChild isActive={pathname === item.url}>
+                <SidebarMenuButton
+                  asChild
+                  isActive={item.url === "/chat" ? isChatActive : pathname === item.url}
+                >
                   <Link href={item.url}>
                     <item.icon className="h-4 w-4" />
                     <span>{item.title}</span>

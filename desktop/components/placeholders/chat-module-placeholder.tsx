@@ -29,8 +29,8 @@ export function ChatModulePlaceholder({ variant }: ChatModulePlaceholderProps) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 items-center justify-center">
-      <Card className="w-full max-w-2xl border-dashed">
+    <div className="flex min-h-0 flex-1 items-start justify-start">
+      <Card className="w-full max-w-6xl border-dashed">
         <CardHeader className="gap-3">
           <Badge className="w-fit" variant="secondary">
             Placeholder

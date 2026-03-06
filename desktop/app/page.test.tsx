@@ -1,21 +1,24 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import DashboardPage from "./page";
+import HomePage from "./page";
 
-describe("DashboardPage", () => {
-  it("does not advertise live chat or LLM capability", () => {
-    render(<DashboardPage />);
+describe("HomePage", () => {
+  it("renders the chat workspace directly at the root route", () => {
+    render(<HomePage />);
 
-    expect(screen.queryByText(/LLM对话能力/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/开始新对话/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/配置您的模型/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/AI Agent交互体验|AI Agent 交互体验/)).not.toBeInTheDocument();
+    expect(screen.getByText("对话模块已移除")).toBeInTheDocument();
+    expect(
+      screen.getByText("等待新的桌面工作台设计")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("欢迎使用 ArgusX")
+    ).not.toBeInTheDocument();
   });
 
-  it("links the SOP module entry to /sop/annotation", () => {
-    const { container } = render(<DashboardPage />);
+  it("does not render the removed dashboard entry content", () => {
+    render(<HomePage />);
 
-    expect(container.querySelector('a[href="/sop/annotation"]')).toBeTruthy();
-    expect(container.querySelector('a[href="/annotation"]')).toBeFalsy();
+    expect(screen.queryByText("快速操作")).not.toBeInTheDocument();
+    expect(screen.queryByText("入门指南")).not.toBeInTheDocument();
   });
 });
