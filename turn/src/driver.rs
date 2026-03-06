@@ -19,7 +19,6 @@ use crate::{
 enum ToolTaskResult {
     Completed(Result<ToolResult, TurnError>),
     TimedOut,
-    Cancelled,
 }
 
 pub struct TurnDriver {
@@ -87,6 +86,11 @@ impl TurnDriver {
         let mut step_index = 0;
 
         loop {
+            if self.consume_cancel_request()? {
+                self.finish_cancelled().await?;
+                return Ok(());
+            }
+
             let request = LlmRequestSnapshot {
                 session_id: self.context.session_id.clone(),
                 turn_id: self.context.turn_id.clone(),
@@ -98,10 +102,33 @@ impl TurnDriver {
                 tool_calls: Vec::new(),
             };
             self.state = TurnState::StreamingLlm(active_step.clone());
-            let mut stream = self.model.start(request).await?;
+            let model = Arc::clone(&self.model);
+            let start = async move { model.start(request).await };
+            tokio::pin!(start);
+            let mut stream = loop {
+                tokio::select! {
+                    biased;
+                    command = self.command_rx.recv() => {
+                        if matches!(command, Some(crate::TurnCommand::Cancel)) {
+                            self.cancel_token.cancel();
+                            self.finish_cancelled().await?;
+                            return Ok(());
+                        }
+                    }
+                    result = &mut start => break result?,
+                }
+            };
 
             let terminal_reason = loop {
                 tokio::select! {
+                    biased;
+                    command = self.command_rx.recv() => {
+                        if matches!(command, Some(crate::TurnCommand::Cancel)) {
+                            self.cancel_token.cancel();
+                            self.finish_cancelled().await?;
+                            return Ok(());
+                        }
+                    }
                     event = stream.next() => {
                         let event = event.ok_or_else(|| {
                             TurnError::Runtime("model stream ended before a terminal event".into())
@@ -140,18 +167,15 @@ impl TurnDriver {
                             | ResponseEvent::ReasoningDone(_) => {}
                         }
                     }
-                    command = self.command_rx.recv() => {
-                        if matches!(command, Some(crate::TurnCommand::Cancel)) {
-                            self.cancel_token.cancel();
-                            self.finish_cancelled().await?;
-                            return Ok(());
-                        }
-                    }
                 }
             };
 
             match terminal_reason {
                 FinishReason::ToolCalls => {
+                    if self.consume_cancel_request()? {
+                        self.finish_cancelled().await?;
+                        return Ok(());
+                    }
                     let batch = ToolBatch {
                         step_index,
                         calls: active_step.tool_calls,
@@ -207,7 +231,17 @@ impl TurnDriver {
         let mut pending_permissions = Vec::new();
         let mut cancellation_requested = false;
 
+        if self.consume_cancel_request()? {
+            self.finish_cancelled().await?;
+            return Ok(());
+        }
+
         for call in batch.calls.clone() {
+            if self.consume_cancel_request()? {
+                self.finish_cancelled().await?;
+                return Ok(());
+            }
+
             match self.authorizer.authorize(&call).await? {
                 AuthorizationDecision::Allow => self.spawn_tool_call(&mut join_set, call),
                 AuthorizationDecision::Deny => {
@@ -238,15 +272,7 @@ impl TurnDriver {
 
         while !join_set.is_empty() || !pending_permissions.is_empty() {
             tokio::select! {
-                Some(result) = join_set.join_next(), if !join_set.is_empty() => {
-                    let (call_id, result) =
-                        result.map_err(|err| TurnError::Runtime(format!("tool task join failed: {err}")))?;
-                    self.emit(TurnEvent::ToolCallCompleted {
-                        call_id,
-                        result: map_tool_result(result),
-                    })
-                    .await?;
-                }
+                biased;
                 command = self.command_rx.recv() => {
                     let command = command.ok_or_else(|| {
                         TurnError::Runtime("turn command channel closed while waiting for tool results".into())
@@ -295,6 +321,15 @@ impl TurnDriver {
                         }
                     }
                 }
+                Some(result) = join_set.join_next(), if !join_set.is_empty() => {
+                    let (call_id, result) =
+                        result.map_err(|err| TurnError::Runtime(format!("tool task join failed: {err}")))?;
+                    self.emit(TurnEvent::ToolCallCompleted {
+                        call_id,
+                        result: map_tool_result(result),
+                    })
+                    .await?;
+                }
             }
         }
 
@@ -323,20 +358,17 @@ impl TurnDriver {
         let timeout = self.options.tool_timeout;
         join_set.spawn(async move {
             let call_id = call_id(&call);
-            let result = tokio::select! {
-                _ = cancel_token.cancelled() => ToolTaskResult::Cancelled,
-                result = tokio::time::timeout(
-                    timeout,
-                    tool_runner.execute(
-                        call,
-                        ToolContext::new(session_id, turn_id, cancel_token.clone()),
-                    ),
-                ) => {
-                    match result {
-                        Ok(result) => ToolTaskResult::Completed(result),
-                        Err(_) => ToolTaskResult::TimedOut,
-                    }
-                }
+            let result = match tokio::time::timeout(
+                timeout,
+                tool_runner.execute(
+                    call,
+                    ToolContext::new(session_id, turn_id, cancel_token),
+                ),
+            )
+            .await
+            {
+                Ok(result) => ToolTaskResult::Completed(result),
+                Err(_) => ToolTaskResult::TimedOut,
             };
             (call_id, result)
         });
@@ -350,6 +382,22 @@ impl TurnDriver {
             reason: TurnFinishReason::Cancelled,
         })
         .await
+    }
+
+    fn consume_cancel_request(&mut self) -> Result<bool, TurnError> {
+        loop {
+            match self.command_rx.try_recv() {
+                Ok(crate::TurnCommand::Cancel) => {
+                    self.cancel_token.cancel();
+                    return Ok(true);
+                }
+                Ok(crate::TurnCommand::ResolvePermission { .. }) => {}
+                Err(mpsc::error::TryRecvError::Empty) => return Ok(false),
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    return Err(TurnError::Runtime("turn command receiver dropped".into()));
+                }
+            }
+        }
     }
 }
 
@@ -373,6 +421,5 @@ fn map_tool_result(result: ToolTaskResult) -> ToolOutcome {
             retryable: false,
         },
         ToolTaskResult::TimedOut => ToolOutcome::TimedOut,
-        ToolTaskResult::Cancelled => ToolOutcome::Cancelled,
     }
 }
