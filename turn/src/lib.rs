@@ -1,5 +1,6 @@
 pub mod command;
 pub mod context;
+pub mod driver;
 pub mod error;
 pub mod event;
 pub mod handle;
@@ -12,6 +13,7 @@ pub mod tool_runner;
 
 pub use command::{PermissionDecision, TurnCommand};
 pub use context::TurnContext;
+pub use driver::TurnDriver;
 pub use error::TurnError;
 pub use event::{TurnEvent, TurnFinishReason};
 pub use handle::TurnHandle;

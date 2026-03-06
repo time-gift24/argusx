@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 argus_core = { package = "core", path = "../core" }
 async-trait = { workspace = true }
+futures = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt", "macros"] }
