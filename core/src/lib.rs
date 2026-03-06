@@ -45,6 +45,38 @@ impl From<String> for Error {
     }
 }
 
+impl From<&str> for Error {
+    fn from(message: &str) -> Self {
+        Error { message: message.to_string() }
+    }
+}
+
+#[derive(Debug)]
+pub struct ResponseContract {
+    terminated: bool,
+}
+
+impl ResponseContract {
+    pub fn new() -> Self {
+        Self { terminated: false }
+    }
+
+    pub fn accept(&mut self, event: ResponseEvent) -> Result<(), ContractError> {
+        if self.terminated {
+            return Err(ContractError::AfterTerminal);
+        }
+        if matches!(event, ResponseEvent::Done(_) | ResponseEvent::Error(_)) {
+            self.terminated = true;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub enum ContractError {
+    AfterTerminal,
+}
+
 pub enum ResponseEvent {
     Created(Meta),
     ContentDelta(Arc<str>),
