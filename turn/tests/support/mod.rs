@@ -1,4 +1,5 @@
 use argus_core::{FinishReason, ResponseEvent, Usage};
+use tool::ToolResult;
 
 mod fake_authorizer;
 mod fake_model;
@@ -20,5 +21,21 @@ pub fn text_only_model(chunks: impl IntoIterator<Item = &'static str>) -> FakeMo
         reason: FinishReason::Stop,
         usage: Some(Usage::zero()),
     });
-    FakeModelRunner::new(events)
+    FakeModelRunner::new(vec![events])
+}
+
+#[allow(dead_code)]
+pub fn multi_step_model(steps: Vec<Vec<ResponseEvent>>) -> FakeModelRunner {
+    FakeModelRunner::new(steps)
+}
+
+#[allow(dead_code)]
+pub fn delayed_tool_runner(
+    plans: impl IntoIterator<Item = (&'static str, u64, ToolResult)>,
+) -> FakeToolRunner {
+    FakeToolRunner::new(
+        plans
+            .into_iter()
+            .map(|(call_id, delay_ms, result)| (call_id.to_string(), delay_ms, result)),
+    )
 }

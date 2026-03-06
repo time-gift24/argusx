@@ -15,7 +15,7 @@ async fn text_only_turn_streams_text_and_completes() {
     let (handle, task) = TurnDriver::spawn(
         context,
         Arc::new(support::text_only_model(["hel", "lo"])),
-        Arc::new(support::FakeToolRunner),
+        Arc::new(support::FakeToolRunner::default()),
         Arc::new(support::FakeAuthorizer),
         Arc::new(support::FakeObserver),
     );

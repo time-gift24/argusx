@@ -4,13 +4,16 @@ use argus_core::{FinishReason, ResponseEvent};
 use futures::StreamExt;
 use tokio::{
     sync::mpsc,
-    task::{self, JoinHandle},
+    task::{self, JoinHandle, JoinSet},
 };
+use tokio_util::sync::CancellationToken;
+use tool::{ToolContext, ToolResult};
 
 use crate::{
-    LlmRequestSnapshot, ModelRunner, ToolAuthorizer, ToolRunner, TurnContext, TurnError,
-    TurnEvent, TurnFailure, TurnFinishReason, TurnHandle, TurnState, TurnSummary,
-    state::ActiveLlmStep,
+    LlmRequestSnapshot, ModelRunner, StepFinishReason, ToolAuthorizer, ToolOutcome, ToolRunner,
+    TurnContext, TurnError, TurnEvent, TurnFailure, TurnFinishReason, TurnHandle, TurnState,
+    TurnSummary,
+    state::{ActiveLlmStep, ToolBatch},
 };
 
 pub struct TurnDriver {
@@ -53,71 +56,100 @@ impl TurnDriver {
 
     async fn run(mut self) -> Result<(), TurnError> {
         self.emit(TurnEvent::TurnStarted).await?;
+        let mut step_index = 0;
 
-        self.state = TurnState::StreamingLlm(ActiveLlmStep { step_index: 0 });
-        let request = LlmRequestSnapshot {
-            session_id: self.context.session_id.clone(),
-            turn_id: self.context.turn_id.clone(),
-            input_text: self.context.user_message.clone(),
-        };
+        loop {
+            let request = LlmRequestSnapshot {
+                session_id: self.context.session_id.clone(),
+                turn_id: self.context.turn_id.clone(),
+                input_text: self.context.user_message.clone(),
+            };
 
-        let mut stream = self.model.start(request).await?;
-        while let Some(event) = stream.next().await {
-            match event {
-                ResponseEvent::ContentDelta(text) => {
-                    self.emit(TurnEvent::LlmTextDelta {
-                        text: text.to_string(),
-                    })
-                    .await?;
+            let mut active_step = ActiveLlmStep {
+                step_index,
+                tool_calls: Vec::new(),
+            };
+            self.state = TurnState::StreamingLlm(active_step.clone());
+            let mut stream = self.model.start(request).await?;
+
+            let terminal_reason = loop {
+                let event = stream.next().await.ok_or_else(|| {
+                    TurnError::Runtime("model stream ended before a terminal event".into())
+                })?;
+                match event {
+                    ResponseEvent::ContentDelta(text) => {
+                        self.emit(TurnEvent::LlmTextDelta {
+                            text: text.to_string(),
+                        })
+                        .await?;
+                    }
+                    ResponseEvent::ReasoningDelta(text) => {
+                        self.emit(TurnEvent::LlmReasoningDelta {
+                            text: text.to_string(),
+                        })
+                        .await?;
+                    }
+                    ResponseEvent::ToolDone(call) => {
+                        active_step.tool_calls.push(call.clone());
+                        self.emit(TurnEvent::ToolCallPrepared { call }).await?;
+                    }
+                    ResponseEvent::Done { reason, .. } => break reason,
+                    ResponseEvent::Error(err) => {
+                        self.state = TurnState::Failed(TurnFailure {
+                            message: err.message.clone(),
+                        });
+                        self.emit(TurnEvent::TurnFinished {
+                            reason: TurnFinishReason::Failed,
+                        })
+                        .await?;
+                        return Err(TurnError::Runtime(err.message));
+                    }
+                    ResponseEvent::Created(_)
+                    | ResponseEvent::ToolDelta(_)
+                    | ResponseEvent::ContentDone(_)
+                    | ResponseEvent::ReasoningDone(_) => {}
                 }
-                ResponseEvent::ReasoningDelta(text) => {
-                    self.emit(TurnEvent::LlmReasoningDelta {
-                        text: text.to_string(),
-                    })
-                    .await?;
+            };
+
+            match terminal_reason {
+                FinishReason::ToolCalls => {
+                    let batch = ToolBatch {
+                        step_index,
+                        calls: active_step.tool_calls,
+                    };
+                    if batch.calls.is_empty() {
+                        return Err(TurnError::Runtime(
+                            "finish_reason=tool_calls without any completed tool calls".into(),
+                        ));
+                    }
+                    self.state = TurnState::WaitingTools(batch.clone());
+                    self.execute_tool_batch(batch).await?;
+                    step_index += 1;
                 }
-                ResponseEvent::Done { reason, .. } => {
+                FinishReason::Cancelled => {
                     let summary = TurnSummary {
                         turn_id: self.context.turn_id.clone(),
                     };
-                    let finish_reason = match reason {
-                        FinishReason::Cancelled => TurnFinishReason::Cancelled,
-                        _ => TurnFinishReason::Completed,
-                    };
-                    self.state = match finish_reason {
-                        TurnFinishReason::Completed => TurnState::Completed(summary),
-                        TurnFinishReason::Cancelled => TurnState::Cancelled(summary),
-                        TurnFinishReason::Failed => TurnState::Failed(TurnFailure {
-                            message: "turn failed".into(),
-                        }),
-                    };
+                    self.state = TurnState::Cancelled(summary);
                     self.emit(TurnEvent::TurnFinished {
-                        reason: finish_reason,
+                        reason: TurnFinishReason::Cancelled,
                     })
                     .await?;
                     return Ok(());
                 }
-                ResponseEvent::Error(err) => {
-                    self.state = TurnState::Failed(TurnFailure {
-                        message: err.message.clone(),
-                    });
+                _ => {
+                    let summary = TurnSummary {
+                        turn_id: self.context.turn_id.clone(),
+                    };
+                    self.state = TurnState::Completed(summary);
                     self.emit(TurnEvent::TurnFinished {
-                        reason: TurnFinishReason::Failed,
+                        reason: TurnFinishReason::Completed,
                     })
                     .await?;
-                    return Err(TurnError::Runtime(err.message));
+                    return Ok(());
                 }
-                ResponseEvent::Created(_)
-                | ResponseEvent::ToolDelta(_)
-                | ResponseEvent::ContentDone(_)
-                | ResponseEvent::ReasoningDone(_)
-                | ResponseEvent::ToolDone(_) => {}
             }
         }
-
-        Err(TurnError::Runtime(
-            "model stream ended before a terminal event".into(),
-        ))
     }
 
     async fn emit(&self, event: TurnEvent) -> Result<(), TurnError> {
@@ -126,5 +158,63 @@ impl TurnDriver {
             .send(event)
             .await
             .map_err(|_| TurnError::Runtime("turn event receiver dropped".into()))
+    }
+
+    async fn execute_tool_batch(&self, batch: ToolBatch) -> Result<(), TurnError> {
+        let mut join_set = JoinSet::new();
+        for call in batch.calls.clone() {
+            let tool_runner = Arc::clone(&self._tool_runner);
+            let session_id = self.context.session_id.clone();
+            let turn_id = self.context.turn_id.clone();
+            join_set.spawn(async move {
+                let call_id = call_id(&call);
+                let result = tool_runner
+                    .execute(
+                        call,
+                        ToolContext::new(session_id, turn_id, CancellationToken::new()),
+                    )
+                    .await;
+                (call_id, result)
+            });
+        }
+
+        while let Some(result) = join_set.join_next().await {
+            let (call_id, result) =
+                result.map_err(|err| TurnError::Runtime(format!("tool task join failed: {err}")))?;
+            self.emit(TurnEvent::ToolCallCompleted {
+                call_id,
+                result: map_tool_result(result),
+            })
+            .await?;
+        }
+
+        self.emit(TurnEvent::StepFinished {
+            step_index: batch.step_index,
+            reason: StepFinishReason::ToolCalls,
+        })
+        .await?;
+        Ok(())
+    }
+}
+
+fn call_id(call: &argus_core::ToolCall) -> String {
+    match call {
+        argus_core::ToolCall::FunctionCall { call_id, .. } => call_id.clone(),
+        argus_core::ToolCall::Builtin(call) => call.call_id.clone(),
+        argus_core::ToolCall::Mcp(call) => call.id.clone(),
+    }
+}
+
+fn map_tool_result(result: Result<ToolResult, TurnError>) -> ToolOutcome {
+    match result {
+        Ok(result) if result.is_error => ToolOutcome::Failed {
+            message: result.output.to_string(),
+            retryable: false,
+        },
+        Ok(result) => ToolOutcome::Success(result.output),
+        Err(err) => ToolOutcome::Failed {
+            message: err.to_string(),
+            retryable: false,
+        },
     }
 }
