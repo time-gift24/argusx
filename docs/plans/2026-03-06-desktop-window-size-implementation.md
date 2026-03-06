@@ -20,8 +20,8 @@
 
 Add a test that reads `desktop/src-tauri/tauri.conf.json` and asserts:
 
-- `width` is `1728`
-- `height` is `1080`
+- `width` is `1600`
+- `height` is `1000`
 - `minWidth` is `1440`
 - `minHeight` is `900`
 - `center` is `true`

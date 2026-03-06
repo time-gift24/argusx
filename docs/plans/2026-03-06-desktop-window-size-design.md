@@ -16,7 +16,7 @@ Make the desktop app open at a sensible size for 27-inch and 31.5-inch displays:
 ## 2. Locked Decisions
 
 1. Window sizing policy
-- default size becomes `1728x1080`
+- default size becomes `1600x1000`
 - minimum size becomes `1440x900`
 - the window starts centered
 - do not enable maximized startup
@@ -47,7 +47,7 @@ Make the desktop app open at a sensible size for 27-inch and 31.5-inch displays:
 
 ## 5. Success Criteria
 
-- the default desktop window is `1728x1080`
+- the default desktop window is `1600x1000`
 - the minimum desktop window is `1440x900`
 - the window opens centered
 - no maximized startup behavior is introduced

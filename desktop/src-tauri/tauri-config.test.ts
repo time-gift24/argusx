@@ -27,8 +27,8 @@ describe("tauri.conf.json", () => {
 
     expect(config.app.windows).toHaveLength(1);
     expect(config.app.windows[0]).toMatchObject({
-      width: 1728,
-      height: 1080,
+      width: 1600,
+      height: 1000,
       minWidth: 1440,
       minHeight: 900,
       center: true,
