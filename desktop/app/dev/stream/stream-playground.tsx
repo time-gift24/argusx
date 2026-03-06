@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Reasoning, ToolCallItem } from "@/components/ai";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,13 @@ const INITIAL_REASONING =
 
 const MANUAL_COLLAPSE_HINT =
   "Collapse this item while it is running, then keep injecting tokens. It should stay closed until the next run starts.";
+
+const STREAM_TICK_MS = 700;
+const STREAMED_TOKENS = [
+  "streamed token arrived · runtime-open state comes from one shared shell",
+  "streamed token arrived · manual collapse survives follow-up tokens in the same run",
+  "streamed token arrived · next run resets collapse memory without reviving old user intent",
+];
 
 function SampleFrame({
   children,
@@ -46,12 +53,42 @@ export function StreamPlayground() {
   const [manualCollapseText, setManualCollapseText] = useState(
     MANUAL_COLLAPSE_HINT
   );
+  const [streamCursor, setStreamCursor] = useState(0);
+
+  useEffect(() => {
+    if (!isRunning || streamCursor >= STREAMED_TOKENS.length) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const token = `\n- ${STREAMED_TOKENS[streamCursor]}`;
+
+      setReasoningText((value) => `${value}${token}`);
+      setManualCollapseText((value) => `${value}${token}`);
+      setStreamCursor((value) => value + 1);
+    }, STREAM_TICK_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [isRunning, streamCursor]);
+
+  const resetStreamingSamples = () => {
+    setReasoningText(INITIAL_REASONING);
+    setManualCollapseText(MANUAL_COLLAPSE_HINT);
+    setStreamCursor(0);
+  };
 
   const handleNextRun = () => {
     setRunKey((value) => value + 1);
     setIsRunning(true);
-    setReasoningText(INITIAL_REASONING);
-    setManualCollapseText(MANUAL_COLLAPSE_HINT);
+    resetStreamingSamples();
+  };
+
+  const handleStartRun = () => {
+    if (!isRunning) {
+      resetStreamingSamples();
+    }
+
+    setIsRunning(true);
   };
 
   const handleInjectToken = () => {
@@ -80,7 +117,7 @@ export function StreamPlayground() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => setIsRunning(true)} size="sm">
+              <Button onClick={handleStartRun} size="sm">
                 Start Run
               </Button>
               <Button

@@ -66,7 +66,7 @@ export function StreamItem({
 
   const currentRunKeyRef = useRef<RunKey>(runKey);
   const userCollapsedRunKeyRef = useRef<RunKey>(undefined);
-  const autoOpenedRunKeyRef = useRef<RunKey>(undefined);
+  const runtimeOpenRunKeyRef = useRef<RunKey>(undefined);
   const autoCloseTimerRef = useRef<number | null>(null);
   const currentRunKey = runKey;
 
@@ -77,25 +77,31 @@ export function StreamItem({
 
     currentRunKeyRef.current = currentRunKey;
     userCollapsedRunKeyRef.current = undefined;
-    autoOpenedRunKeyRef.current = undefined;
+    runtimeOpenRunKeyRef.current =
+      isOpen && isRunning && runtimeOpenRunKeyRef.current !== undefined
+        ? currentRunKey
+        : undefined;
 
     if (autoCloseTimerRef.current !== null) {
       window.clearTimeout(autoCloseTimerRef.current);
       autoCloseTimerRef.current = null;
     }
-  }, [currentRunKey]);
+  }, [currentRunKey, isOpen, isRunning]);
 
   useEffect(() => {
     if (!isRunning || !defaultOpenWhenRunning || isOpen) {
       return;
     }
 
-    if (userCollapsedRunKeyRef.current === currentRunKey) {
+    if (
+      userCollapsedRunKeyRef.current === currentRunKey ||
+      runtimeOpenRunKeyRef.current === currentRunKey
+    ) {
       return;
     }
 
     setIsOpen(true);
-    autoOpenedRunKeyRef.current = currentRunKey;
+    runtimeOpenRunKeyRef.current = currentRunKey;
   }, [currentRunKey, defaultOpenWhenRunning, isOpen, isRunning, setIsOpen]);
 
   useEffect(() => {
@@ -103,14 +109,14 @@ export function StreamItem({
       isRunning ||
       !autoCloseOnFinish ||
       !isOpen ||
-      autoOpenedRunKeyRef.current !== currentRunKey
+      runtimeOpenRunKeyRef.current !== currentRunKey
     ) {
       return;
     }
 
     autoCloseTimerRef.current = window.setTimeout(() => {
       setIsOpen(false);
-      autoOpenedRunKeyRef.current = undefined;
+      runtimeOpenRunKeyRef.current = undefined;
       autoCloseTimerRef.current = null;
     }, autoCloseDelayMs);
 
@@ -143,13 +149,12 @@ export function StreamItem({
 
         if (!nextOpen && isRunning) {
           userCollapsedRunKeyRef.current = currentRunKey;
+          runtimeOpenRunKeyRef.current = undefined;
         }
 
         if (nextOpen) {
           userCollapsedRunKeyRef.current = undefined;
-          if (!isRunning) {
-            autoOpenedRunKeyRef.current = undefined;
-          }
+          runtimeOpenRunKeyRef.current = undefined;
         }
 
         setIsOpen(nextOpen);
@@ -210,10 +215,16 @@ export const StreamItemTrigger = memo(
         <span
           className={cn(
             "relative inline-flex min-w-0 items-center gap-2 overflow-hidden rounded-sm",
-            isRunning &&
-              "text-foreground after:pointer-events-none after:absolute after:inset-y-[-2px] after:left-[-30%] after:w-12 after:bg-linear-to-r after:from-transparent after:via-foreground/35 after:to-transparent after:animate-stream-item-shimmer"
+            isRunning && "text-foreground"
           )}
         >
+          {isRunning ? (
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-[-2px] -left-[30%] w-14 bg-linear-to-r from-transparent via-foreground/35 to-transparent animate-stream-item-shimmer"
+              data-slot="stream-item-shimmer"
+            />
+          ) : null}
           {icon ? <span className="shrink-0">{icon}</span> : null}
           <span className="truncate">{label}</span>
         </span>
