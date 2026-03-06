@@ -1,11 +1,9 @@
 use tool::{ReadTool, Tool, ToolContext};
 use serde_json::json;
+use tokio_util::sync::CancellationToken;
 
 fn test_context() -> ToolContext {
-    ToolContext {
-        session_id: "test".to_string(),
-        turn_id: "test".to_string(),
-    }
+    ToolContext::new("test", "test", CancellationToken::new())
 }
 
 #[tokio::test]

@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use argus_core::{Builtin, BuiltinToolCall};
 use async_trait::async_trait;
+use tokio_util::sync::CancellationToken;
 use tool::{scheduler::{BuiltinRegistration, EffectiveToolPolicy, ToolScheduler}, Tool, ToolContext, ToolError, ToolResult, ToolSpec};
 
 #[derive(Debug)]
@@ -46,10 +47,7 @@ impl Tool for SlowTool {
 }
 
 fn test_context() -> ToolContext {
-    ToolContext {
-        session_id: "s1".into(),
-        turn_id: "t1".into(),
-    }
+    ToolContext::new("s1", "t1", CancellationToken::new())
 }
 
 fn read_call(call_id: &str) -> BuiltinToolCall {

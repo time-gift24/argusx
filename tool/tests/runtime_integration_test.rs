@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use argus_core::{Builtin, BuiltinToolCall, McpCall, McpCallType, ToolCall};
 use async_trait::async_trait;
 use serde_json::json;
+use tokio_util::sync::CancellationToken;
 use tool::{
     Tool, ToolContext, ToolError, ToolResult, ToolSpec,
     config::AgentToolConfig,
@@ -41,10 +42,7 @@ impl Tool for DummyBuiltin {
 }
 
 fn test_context() -> ToolContext {
-    ToolContext {
-        session_id: "session-1".into(),
-        turn_id: "turn-1".into(),
-    }
+    ToolContext::new("session-1", "turn-1", CancellationToken::new())
 }
 
 #[tokio::test]

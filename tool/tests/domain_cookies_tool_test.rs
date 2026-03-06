@@ -1,12 +1,10 @@
 use axum::{extract::Json, routing::post, Router};
 use serde_json::{json, Value};
 use tool::{DomainCookiesTool, Tool, ToolContext};
+use tokio_util::sync::CancellationToken;
 
 fn test_context() -> ToolContext {
-    ToolContext {
-        session_id: "test-session".to_string(),
-        turn_id: "test-turn".to_string(),
-    }
+    ToolContext::new("test-session", "test-turn", CancellationToken::new())
 }
 
 #[tokio::test]

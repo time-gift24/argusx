@@ -59,6 +59,7 @@ impl Tool for ShellTool {
         };
 
         let mut command_builder = tokio::process::Command::new("sh");
+        command_builder.kill_on_drop(true);
         command_builder.args(["-c", command]);
         if let Some(cwd) = cwd {
             command_builder.current_dir(cwd);
