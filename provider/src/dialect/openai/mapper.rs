@@ -287,3 +287,9 @@ impl Mapper {
         Ok(events)
     }
 }
+
+impl Default for Mapper {
+    fn default() -> Self {
+        Self::new()
+    }
+}
