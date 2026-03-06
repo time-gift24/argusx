@@ -149,7 +149,7 @@ Inside the spawned task:
 
 ### 6.3 `[DONE]` handling
 
-- OpenAI-compatible streams use `[DONE]` as the normal terminal marker.
+- All streaming dialects use `[DONE]` as the normal terminal marker.
 - On `[DONE]`, the task must call `mapper.on_done()`.
 - The resulting events are forwarded in order.
 - The final emitted event must be `Done(_)`.
@@ -164,10 +164,7 @@ If the runtime sees any post-start failure, it emits a single terminal `Response
 - mapper protocol failure
 - explicit cancellation
 
-Dialect-specific EOF rule:
-
-- `Openai`: EOF before `[DONE]` is a terminal protocol error.
-- `Zai`: EOF after the terminal completion payload is finalized via `mapper.on_done()`.
+EOF before `[DONE]` is a terminal protocol error.
 
 Channel closure after a terminal event is normal and does not require an additional signal.
 
@@ -243,8 +240,7 @@ Add end-to-end tests using mocked SSE responses:
 - successful `[DONE]` flow
 - tool-call flush on terminal
 - runtime parse/protocol failures become `ResponseEvent::Error`
-- OpenAI EOF without `[DONE]` becomes terminal error
-- Z.AI EOF after terminal completion payload finalizes via `on_done()`
+- EOF without `[DONE]` becomes terminal error
 - dropped consumer cancels background task
 
 ## 10. Migration Plan

@@ -5,3 +5,5 @@ data: {"id":"zai-1","choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_mcp
 data: {"id":"zai-1","choices":[{"finish_reason":"tool_calls","index":0,"delta":{"tool_calls":[{"id":"call_fn_2","type":"function","function":{"name":"native__calculator__multiply","arguments":"{\"a\":88,\"b\":99}"},"index":1}]}}],"created":1772767894,"model":"MiniMax-M2.5","object":"chat.completion.chunk","usage":{"total_tokens":0}}
 
 data: {"id":"zai-1","choices":[{"finish_reason":"tool_calls","index":0,"message":{"content":"\n","role":"assistant","tool_calls":[{"id":"call_mcp_1","type":"function","function":{"name":"__mcp__filesystem","arguments":"{\"type\":\"mcp_call\",\"server_label\":\"filesystem\",\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"./config.yaml\\\"}\"}"},"index":0},{"id":"call_fn_2","type":"function","function":{"name":"native__calculator__multiply","arguments":"{\"a\":88,\"b\":99}"},"index":1}],"reasoning_content":"The user needs help."}}],"created":1772767894,"model":"MiniMax-M2.5","object":"chat.completion","usage":{"total_tokens":429,"prompt_tokens":316,"completion_tokens":113}}
+
+data: [DONE]

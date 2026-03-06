@@ -7,16 +7,20 @@ const ZAI_FIXTURE: &str = include_str!("fixtures/2026-03-06-zai-chat-completions
 fn replay_zai_fixture_emits_ordered_mcp_and_done_usage() {
     let mut mapper = Mapper::new(Dialect::Zai);
     let mut all = Vec::new();
+    let mut saw_done = false;
 
     for line in ZAI_FIXTURE.lines().filter(|l| l.starts_with("data: ")) {
         let payload = &line[6..];
         if payload == "[DONE]" {
             all.extend(mapper.on_done().unwrap());
+            saw_done = true;
             continue;
         }
         all.extend(mapper.feed(payload).unwrap());
     }
-    all.extend(mapper.on_done().unwrap());
+    if !saw_done {
+        all.extend(mapper.on_done().unwrap());
+    }
 
     let tools: Vec<_> = all
         .iter()

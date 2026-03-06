@@ -151,35 +151,15 @@ impl ProviderClient {
                 }
             }
 
-            match dialect {
-                Dialect::Zai => match mapper.on_done() {
-                    Ok(events) => {
-                        let _ = emit_events(&tx, &mut contract, events).await;
-                    }
-                    Err(err) => {
-                        send_terminal_error(
-                            &tx,
-                            &mut contract,
-                            StreamError {
-                                kind: ErrorKind::Protocol,
-                                message: err.to_string(),
-                            },
-                        )
-                        .await;
-                    }
+            send_terminal_error(
+                &tx,
+                &mut contract,
+                StreamError {
+                    kind: ErrorKind::Protocol,
+                    message: "stream ended before [DONE]".into(),
                 },
-                Dialect::Openai => {
-                    send_terminal_error(
-                        &tx,
-                        &mut contract,
-                        StreamError {
-                            kind: ErrorKind::Protocol,
-                            message: "stream ended before [DONE]".into(),
-                        },
-                    )
-                    .await;
-                }
-            }
+            )
+            .await;
         });
 
         Ok(ResponseStream::from_parts(rx, producer.abort_handle()))
