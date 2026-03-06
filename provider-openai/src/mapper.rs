@@ -23,6 +23,7 @@ struct PendingToolCall {
 pub struct Mapper {
     provider: String,
     created: bool,
+    terminated: bool,
     tool_calls: HashMap<String, PendingToolCall>,
     usage: Option<Usage>,
 }
@@ -32,12 +33,16 @@ impl Mapper {
         Self {
             provider,
             created: false,
+            terminated: false,
             tool_calls: HashMap::new(),
             usage: None,
         }
     }
 
     pub fn feed(&mut self, raw: &str) -> Result<Vec<ResponseEvent>, Error> {
+        if self.terminated {
+            return Err(Error::Protocol("event after terminal".into()));
+        }
         let chunk: ChatCompletionsChunk = parse_chunk(raw)?;
 
         let mut events = Vec::new();
@@ -129,6 +134,10 @@ impl Mapper {
     }
 
     pub fn on_done(&mut self) -> Result<Vec<ResponseEvent>, Error> {
+        if self.terminated {
+            return Err(Error::Protocol("already terminated".into()));
+        }
+        self.terminated = true;
         Ok(vec![ResponseEvent::Done(self.usage.take())])
     }
 }
