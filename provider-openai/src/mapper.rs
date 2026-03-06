@@ -6,6 +6,9 @@ use argus_core::{Meta, ResponseEvent, ToolCall, Usage};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
+const INITIAL_TEXT_BUFFER_CAPACITY: usize = 256;
+const TYPICAL_EVENTS_PER_CHUNK: usize = 4;
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("parse error: {0}")]
@@ -16,7 +19,6 @@ pub enum Error {
 
 #[derive(Debug)]
 struct PendingToolCall {
-    sequence: u32,
     call_id: Option<String>,
     name: Option<String>,
     arguments_json: String,
@@ -40,8 +42,8 @@ impl Mapper {
             terminated: false,
             tool_calls: BTreeMap::new(),
             usage: None,
-            content_buffer: String::new(),
-            reasoning_buffer: String::new(),
+            content_buffer: String::with_capacity(INITIAL_TEXT_BUFFER_CAPACITY),
+            reasoning_buffer: String::with_capacity(INITIAL_TEXT_BUFFER_CAPACITY),
             content_done: false,
             reasoning_done: false,
         }
@@ -69,55 +71,62 @@ impl Mapper {
         &mut self,
         chunk: ChatCompletionsStreamChunk,
     ) -> Result<Vec<ResponseEvent>, Error> {
-        let mut events = Vec::new();
+        let ChatCompletionsStreamChunk {
+            id,
+            object,
+            created,
+            model,
+            choices,
+            usage,
+            ..
+        } = chunk;
+        let mut events = Vec::with_capacity(TYPICAL_EVENTS_PER_CHUNK);
 
         if !self.created {
-            let created = i64::try_from(chunk.created).map_err(|_| {
-                Error::Protocol(format!("created is out of i64 range: {}", chunk.created))
+            let created = i64::try_from(created).map_err(|_| {
+                Error::Protocol(format!("created is out of i64 range: {}", created))
             })?;
             events.push(ResponseEvent::Created(Meta {
-                id: chunk.id.clone(),
+                id,
                 created,
-                object: chunk.object.clone(),
-                model: chunk.model.clone(),
+                object,
+                model,
             }));
             self.created = true;
         }
 
-        for choice in &chunk.choices {
-            if let Some(content) = &choice.delta.content {
+        for mut choice in choices {
+            if let Some(content) = choice.delta.content.take() {
                 if !content.is_empty() {
-                    self.content_buffer.push_str(content);
-                    events.push(ResponseEvent::ContentDelta(content.clone().into()));
+                    self.content_buffer.push_str(&content);
+                    events.push(ResponseEvent::ContentDelta(content.into()));
                 }
             }
 
-            if let Some(reasoning) = &choice.delta.reasoning_content {
+            if let Some(reasoning) = choice.delta.reasoning_content.take() {
                 if !reasoning.is_empty() {
-                    self.reasoning_buffer.push_str(reasoning);
-                    events.push(ResponseEvent::ReasoningDelta(reasoning.clone().into()));
+                    self.reasoning_buffer.push_str(&reasoning);
+                    events.push(ResponseEvent::ReasoningDelta(reasoning.into()));
                 }
             }
 
-            if let Some(tool_calls) = &choice.delta.tool_calls {
+            if let Some(tool_calls) = choice.delta.tool_calls.take() {
                 for tc in tool_calls {
                     self.process_tool_call_chunk(tc, &mut events)?;
                 }
             }
 
-            if let Some(finish_reason) = &choice.finish_reason {
-                match finish_reason.as_str() {
-                    "stop" => self.emit_text_done_events(&mut events),
-                    "tool_calls" => {
-                        self.flush_tool_calls(&mut events)?;
-                        self.emit_text_done_events(&mut events);
-                    }
-                    _ => {}
+            match choice.finish_reason.as_deref() {
+                Some("stop") => self.emit_text_done_events(&mut events),
+                Some("tool_calls") => {
+                    self.flush_tool_calls(&mut events)?;
+                    self.emit_text_done_events(&mut events);
                 }
+                _ => {}
             }
         }
 
-        if let Some(chunk_usage) = chunk.usage {
+        if let Some(chunk_usage) = usage {
             self.usage = Some(Usage {
                 input_tokens: chunk_usage.prompt_tokens,
                 output_tokens: chunk_usage.completion_tokens,
@@ -130,7 +139,7 @@ impl Mapper {
 
     fn process_tool_call_chunk(
         &mut self,
-        tc: &DeltaToolCall,
+        tc: DeltaToolCall,
         events: &mut Vec<ResponseEvent>,
     ) -> Result<(), Error> {
         let sequence = tc
@@ -141,46 +150,45 @@ impl Mapper {
             .tool_calls
             .entry(sequence)
             .or_insert_with(|| PendingToolCall {
-                sequence,
                 call_id: None,
                 name: None,
                 arguments_json: String::new(),
             });
 
-        if let Some(call_id) = &tc.id {
+        if let Some(call_id) = tc.id {
             if call_id.is_empty() {
                 return Err(Error::Protocol(format!(
                     "empty call_id for tool call sequence {sequence}"
                 )));
             }
-            match &pending.call_id {
-                Some(existing) if existing != call_id => {
+            match pending.call_id.as_ref() {
+                Some(existing) if existing != &call_id => {
                     return Err(Error::Protocol(format!(
                         "conflicting call_id for tool call sequence {sequence}: '{existing}' vs '{call_id}'"
                     )));
                 }
-                _ => pending.call_id = Some(call_id.clone()),
+                _ => pending.call_id = Some(call_id),
             }
         }
 
-        if let Some(function) = &tc.function {
-            if let Some(name) = &function.name {
+        if let Some(function) = tc.function {
+            if let Some(name) = function.name {
                 if !name.is_empty() {
-                    match &pending.name {
-                        Some(existing) if existing != name => {
+                    match pending.name.as_ref() {
+                        Some(existing) if existing != &name => {
                             return Err(Error::Protocol(format!(
                                 "conflicting tool name for sequence {sequence}: '{existing}' vs '{name}'"
                             )));
                         }
-                        _ => pending.name = Some(name.clone()),
+                        _ => pending.name = Some(name),
                     }
                 }
             }
 
-            if let Some(args) = &function.arguments {
+            if let Some(args) = function.arguments {
                 if !args.is_empty() {
-                    pending.arguments_json.push_str(args);
-                    events.push(ResponseEvent::ToolDelta(args.clone().into()));
+                    pending.arguments_json.push_str(&args);
+                    events.push(ResponseEvent::ToolDelta(args.into()));
                 }
             }
         }
@@ -189,19 +197,16 @@ impl Mapper {
     }
 
     fn flush_tool_calls(&mut self, events: &mut Vec<ResponseEvent>) -> Result<(), Error> {
-        for (_sequence, tc) in std::mem::take(&mut self.tool_calls) {
+        for (sequence, tc) in std::mem::take(&mut self.tool_calls) {
             let call_id = tc.call_id.ok_or_else(|| {
-                Error::Protocol(format!(
-                    "missing call_id for tool call sequence {}",
-                    tc.sequence
-                ))
+                Error::Protocol(format!("missing call_id for tool call sequence {sequence}"))
             })?;
             let name = tc.name.ok_or_else(|| {
                 Error::Protocol(format!("missing tool name for tool call '{call_id}'"))
             })?;
 
             events.push(ResponseEvent::ToolDone(ToolCall::FunctionCall {
-                sequence: tc.sequence,
+                sequence,
                 call_id,
                 name,
                 arguments_json: tc.arguments_json,
@@ -231,7 +236,7 @@ impl Mapper {
         }
         self.terminated = true;
 
-        let mut events = Vec::new();
+        let mut events = Vec::with_capacity(TYPICAL_EVENTS_PER_CHUNK);
         self.flush_tool_calls(&mut events)?;
         self.emit_text_done_events(&mut events);
         events.push(ResponseEvent::Done(self.usage.take()));

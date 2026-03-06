@@ -1,6 +1,6 @@
 use crate::schema::common::{StreamError, StreamErrorStructured};
 use crate::schema::stream::{ChatCompletionsStreamChunk, ChatCompletionsStreamEvent};
-use serde::Deserialize;
+use serde_json::Value;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -13,16 +13,6 @@ pub enum Error {
     UnexpectedEvent(&'static str),
 }
 
-#[derive(Debug, Deserialize)]
-struct ErrorEnvelope {
-    error: StreamErrorStructured,
-}
-
-#[derive(Debug, Deserialize)]
-struct ErrorStringEnvelope {
-    error: String,
-}
-
 pub fn parse_payload(payload: &str) -> Result<ChatCompletionsStreamEvent, Error> {
     let payload = payload.trim();
     if payload.is_empty() {
@@ -33,12 +23,10 @@ pub fn parse_payload(payload: &str) -> Result<ChatCompletionsStreamEvent, Error>
         return Ok(ChatCompletionsStreamEvent::Done);
     }
 
-    let chunk_attempt = serde_json::from_str::<ChatCompletionsStreamChunk>(payload);
-    if let Ok(chunk) = chunk_attempt {
-        return Ok(ChatCompletionsStreamEvent::Chunk(chunk));
-    }
-
-    let chunk_err = chunk_attempt.expect_err("already handled Ok above");
+    let chunk_err = match serde_json::from_str::<ChatCompletionsStreamChunk>(payload) {
+        Ok(chunk) => return Ok(ChatCompletionsStreamEvent::Chunk(chunk)),
+        Err(err) => err,
+    };
 
     let looks_like_json = payload
         .chars()
@@ -52,20 +40,37 @@ pub fn parse_payload(payload: &str) -> Result<ChatCompletionsStreamEvent, Error>
         )));
     }
 
-    if let Ok(error) = serde_json::from_str::<ErrorEnvelope>(payload) {
-        return Ok(ChatCompletionsStreamEvent::Error(StreamError::Structured(
-            error.error,
-        )));
-    }
+    let parsed: Value = match serde_json::from_str(payload) {
+        Ok(value) => value,
+        Err(_) => return Err(Error::Parse(chunk_err)),
+    };
 
-    if let Ok(error) = serde_json::from_str::<ErrorStringEnvelope>(payload) {
-        return Ok(ChatCompletionsStreamEvent::Error(StreamError::Raw(
-            error.error,
-        )));
-    }
+    match parsed {
+        Value::Object(mut map) => {
+            if let Some(error_value) = map.remove("error") {
+                if let Ok(structured) =
+                    serde_json::from_value::<StreamErrorStructured>(error_value.clone())
+                {
+                    return Ok(ChatCompletionsStreamEvent::Error(StreamError::Structured(
+                        structured,
+                    )));
+                }
 
-    if let Ok(error) = serde_json::from_str::<String>(payload) {
-        return Ok(ChatCompletionsStreamEvent::Error(StreamError::Raw(error)));
+                if let Some(raw) = error_value.as_str() {
+                    return Ok(ChatCompletionsStreamEvent::Error(StreamError::Raw(
+                        raw.to_string(),
+                    )));
+                }
+
+                return Ok(ChatCompletionsStreamEvent::Error(StreamError::Raw(
+                    error_value.to_string(),
+                )));
+            }
+        }
+        Value::String(raw) => {
+            return Ok(ChatCompletionsStreamEvent::Error(StreamError::Raw(raw)));
+        }
+        _ => {}
     }
 
     Err(Error::Parse(chunk_err))
