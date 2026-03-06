@@ -109,6 +109,27 @@ impl Usage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FinishReason {
+    Stop,
+    ToolCalls,
+    Length,
+    Cancelled,
+    Unknown(String),
+}
+
+impl FinishReason {
+    pub fn from_wire(reason: &str) -> Self {
+        match reason {
+            "stop" => Self::Stop,
+            "tool_calls" => Self::ToolCalls,
+            "length" => Self::Length,
+            "cancelled" => Self::Cancelled,
+            other => Self::Unknown(other.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
     pub message: String,
 }
@@ -141,7 +162,7 @@ impl ResponseContract {
         if self.terminated {
             return Err(ContractError::AfterTerminal);
         }
-        if matches!(event, ResponseEvent::Done(_) | ResponseEvent::Error(_)) {
+        if matches!(event, ResponseEvent::Done { .. } | ResponseEvent::Error(_)) {
             self.terminated = true;
         }
         Ok(())
@@ -192,6 +213,9 @@ pub enum ResponseEvent {
     ContentDone(String),
     ReasoningDone(String),
     ToolDone(ToolCall),
-    Done(Option<Usage>),
+    Done {
+        reason: FinishReason,
+        usage: Option<Usage>,
+    },
     Error(Error),
 }

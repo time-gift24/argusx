@@ -34,6 +34,6 @@ async fn custom_chat_completions_path_overrides_default_path() {
     assert!(
         events
             .iter()
-            .any(|e| matches!(e, ResponseEvent::Done(Some(_))))
+            .any(|e| matches!(e, ResponseEvent::Done { usage: Some(_), .. }))
     );
 }

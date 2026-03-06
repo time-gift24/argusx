@@ -1,4 +1,4 @@
-use argus_core::{ResponseEvent, ToolCall};
+use argus_core::{FinishReason, ResponseEvent, ToolCall};
 use provider::{Dialect, Mapper};
 
 const ZAI_FIXTURE: &str = include_str!("fixtures/2026-03-06-zai-chat-completions-sse.txt");
@@ -50,7 +50,10 @@ fn replay_zai_fixture_emits_ordered_mcp_and_done_usage() {
     ));
 
     let usage = all.iter().rev().find_map(|e| match e {
-        ResponseEvent::Done(Some(usage)) => Some(*usage),
+        ResponseEvent::Done {
+            reason: FinishReason::ToolCalls,
+            usage: Some(usage),
+        } => Some(*usage),
         _ => None,
     });
     assert!(usage.is_some());

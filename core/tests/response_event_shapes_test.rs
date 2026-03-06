@@ -1,4 +1,7 @@
-use core::{Builtin, BuiltinToolCall, McpCall, McpCallType, Meta, ResponseEvent, ToolCall, Usage};
+use core::{
+    Builtin, BuiltinToolCall, FinishReason, McpCall, McpCallType, Meta, ResponseEvent, ToolCall,
+    Usage,
+};
 use std::sync::Arc;
 
 #[test]
@@ -35,9 +38,12 @@ fn response_event_shape_matches_design() {
         tools_json: None,
         error: None,
     }));
-    let _ = ResponseEvent::Done(Some(Usage {
-        input_tokens: 1,
-        output_tokens: 2,
-        total_tokens: 3,
-    }));
+    let _ = ResponseEvent::Done {
+        reason: FinishReason::Stop,
+        usage: Some(Usage {
+            input_tokens: 1,
+            output_tokens: 2,
+            total_tokens: 3,
+        }),
+    };
 }

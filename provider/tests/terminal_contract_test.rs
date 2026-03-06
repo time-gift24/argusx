@@ -6,7 +6,7 @@ fn no_events_after_done() {
     let done = m.on_done().unwrap();
     assert!(
         done.iter()
-            .any(|e| matches!(e, argus_core::ResponseEvent::Done(_)))
+            .any(|e| matches!(e, argus_core::ResponseEvent::Done { .. }))
     );
 
     assert!(m.on_done().is_err());

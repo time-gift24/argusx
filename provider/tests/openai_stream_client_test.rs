@@ -42,6 +42,6 @@ async fn openai_stream_returns_created_deltas_and_done() {
     assert!(
         events
             .iter()
-            .any(|e| matches!(e, ResponseEvent::Done(Some(_))))
+            .any(|e| matches!(e, ResponseEvent::Done { usage: Some(_), .. }))
     );
 }
