@@ -10,9 +10,14 @@ thiserror = { workspace = true }
 reqwest = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "rt-multi-thread", "macros"] }
 eventsource_stream = { package = "eventsource-stream", path = "../vendor/eventsource_stream" }
 argus_core = { package = "core", path = "../core" }
+rpassword = "7"
+
+[[bin]]
+name = "provider_cli"
+path = "src/bin/provider_cli.rs"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["sync", "time"] }
