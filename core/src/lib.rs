@@ -1,24 +1,31 @@
 use std::sync::Arc;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Meta {
+    pub id: String,
+    pub created: i64,
+    pub object: String,
     pub model: String,
-    pub provider: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolCall {
     FunctionCall {
+        sequence: u32,
         call_id: String,
         name: String,
         arguments_json: String,
     },
     Mcp {
+        sequence: u32,
+        call_id: String,
         server: String,
         method: String,
         payload_json: String,
-        call_id: Option<String>,
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Usage {
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -35,6 +42,7 @@ impl Usage {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
     pub message: String,
 }
@@ -47,21 +55,23 @@ impl From<String> for Error {
 
 impl From<&str> for Error {
     fn from(message: &str) -> Self {
-        Error { message: message.to_string() }
+        Error {
+            message: message.to_string(),
+        }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ResponseContract {
     terminated: bool,
 }
 
 impl ResponseContract {
     pub fn new() -> Self {
-        Self { terminated: false }
+        Self::default()
     }
 
-    pub fn accept(&mut self, event: ResponseEvent) -> Result<(), ContractError> {
+    pub fn accept(&mut self, event: &ResponseEvent) -> Result<(), ContractError> {
         if self.terminated {
             return Err(ContractError::AfterTerminal);
         }
@@ -72,11 +82,12 @@ impl ResponseContract {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContractError {
     AfterTerminal,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResponseEvent {
     Created(Meta),
     ContentDelta(Arc<str>),

@@ -19,5 +19,10 @@ fn parse_content_chunk() {
 fn parse_tool_calls_chunk() {
     let raw = r#"{"id":"chatcmpl-123","created":1700000000,"object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{"}}]}}]}"#;
     let chunk = parse_chunk(raw).unwrap();
-    assert!(!chunk.choices[0].delta.tool_calls.as_ref().unwrap().is_empty());
+    assert!(!chunk.choices[0]
+        .delta
+        .tool_calls
+        .as_ref()
+        .unwrap()
+        .is_empty());
 }

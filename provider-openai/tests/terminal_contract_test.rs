@@ -1,4 +1,3 @@
-use argus_core::ResponseEvent;
 use provider_openai::Mapper;
 
 #[test]
