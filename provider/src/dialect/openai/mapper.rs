@@ -4,7 +4,7 @@ use crate::dialect::openai::schema::stream::{
 };
 use crate::normalize::tool_calls::{is_mcp_call, parse_zai_mcp_json};
 use argus_core::{Meta, ResponseEvent, ToolCall, Usage, ZaiMcpCall};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 const INITIAL_TEXT_BUFFER_CAPACITY: usize = 256;
@@ -30,6 +30,7 @@ pub struct Mapper {
     created: bool,
     terminated: bool,
     tool_calls: BTreeMap<u32, PendingToolCall>,
+    emitted_tool_sequences: BTreeSet<u32>,
     usage: Option<Usage>,
     content_buffer: String,
     reasoning_buffer: String,
@@ -43,6 +44,7 @@ impl Mapper {
             created: false,
             terminated: false,
             tool_calls: BTreeMap::new(),
+            emitted_tool_sequences: BTreeSet::new(),
             usage: None,
             content_buffer: String::with_capacity(INITIAL_TEXT_BUFFER_CAPACITY),
             reasoning_buffer: String::with_capacity(INITIAL_TEXT_BUFFER_CAPACITY),
@@ -147,6 +149,9 @@ impl Mapper {
         let sequence = tc
             .index
             .ok_or_else(|| Error::Protocol("missing tool call index".into()))?;
+        if self.emitted_tool_sequences.contains(&sequence) {
+            return Ok(());
+        }
 
         let pending = self
             .tool_calls
@@ -248,6 +253,7 @@ impl Mapper {
                     arguments_json: tc.arguments_json,
                 }));
             }
+            self.emitted_tool_sequences.insert(sequence);
         }
         Ok(())
     }
