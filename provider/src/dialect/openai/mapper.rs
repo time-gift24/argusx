@@ -2,7 +2,8 @@ use crate::dialect::openai::parser::parse_payload;
 use crate::dialect::openai::schema::stream::{
     ChatCompletionsStreamChunk, ChatCompletionsStreamEvent, DeltaToolCall,
 };
-use argus_core::{Meta, ResponseEvent, ToolCall, Usage};
+use crate::normalize::tool_calls::{is_mcp_call, parse_zai_mcp_json};
+use argus_core::{Meta, ResponseEvent, ToolCall, Usage, ZaiMcpCall};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -19,6 +20,7 @@ pub enum Error {
 
 #[derive(Debug)]
 struct PendingToolCall {
+    call_type: Option<String>,
     call_id: Option<String>,
     name: Option<String>,
     arguments_json: String,
@@ -150,10 +152,24 @@ impl Mapper {
             .tool_calls
             .entry(sequence)
             .or_insert_with(|| PendingToolCall {
+                call_type: None,
                 call_id: None,
                 name: None,
                 arguments_json: String::new(),
             });
+
+        if let Some(call_type) = tc.type_ {
+            if !call_type.is_empty() {
+                match pending.call_type.as_ref() {
+                    Some(existing) if existing != &call_type => {
+                        return Err(Error::Protocol(format!(
+                            "conflicting tool type for sequence {sequence}: '{existing}' vs '{call_type}'"
+                        )));
+                    }
+                    _ => pending.call_type = Some(call_type),
+                }
+            }
+        }
 
         if let Some(call_id) = tc.id {
             if call_id.is_empty() {
@@ -205,12 +221,33 @@ impl Mapper {
                 Error::Protocol(format!("missing tool name for tool call '{call_id}'"))
             })?;
 
-            events.push(ResponseEvent::ToolDone(ToolCall::FunctionCall {
-                sequence,
-                call_id,
-                name,
-                arguments_json: tc.arguments_json,
-            }));
+            if is_mcp_call(tc.call_type.as_deref(), Some(name.as_str())) {
+                let payload = parse_zai_mcp_json(&tc.arguments_json, name.strip_prefix("__mcp__"))
+                    .map_err(|err| {
+                        Error::Protocol(format!(
+                            "invalid mcp payload for call '{call_id}' (sequence {sequence}): {err}"
+                        ))
+                    })?;
+
+                events.push(ResponseEvent::ToolDone(ToolCall::Mcp(ZaiMcpCall {
+                    sequence,
+                    id: call_id,
+                    mcp_type: payload.mcp_type,
+                    server_label: payload.server_label,
+                    name: payload.name,
+                    arguments_json: payload.arguments_json,
+                    output_json: payload.output_json,
+                    tools_json: payload.tools_json,
+                    error: payload.error,
+                })));
+            } else {
+                events.push(ResponseEvent::ToolDone(ToolCall::FunctionCall {
+                    sequence,
+                    call_id,
+                    name,
+                    arguments_json: tc.arguments_json,
+                }));
+            }
         }
         Ok(())
     }
