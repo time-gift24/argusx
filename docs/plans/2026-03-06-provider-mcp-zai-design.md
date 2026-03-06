@@ -1,7 +1,7 @@
 # Provider Unified Dialects + Z.AI MCP-First Design
 
 Date: 2026-03-06
-Status: Approved
+Status: Approved and implemented on branch `core-provider-openai-streaming`
 Scope: Architecture and contract design only (no implementation in this document)
 
 ## 1. Goal
@@ -166,3 +166,11 @@ Provider tests:
 - MCP client runtime implementation
 - message multimodal normalization beyond current chat completion requirements
 - changing existing business semantics outside tool-call mapping and provider crate unification
+
+## 10. Implementation Status
+
+- Implemented: unified `provider` crate with `openai` and `zai` dialects.
+- Implemented: MCP-first mapping using `__mcp__` prefix and `type == "mcp"` classifier.
+- Implemented: strict MCP JSON parse failure -> protocol error.
+- Implemented: fixture replay tests for both openai and zai dialects.
+- Note: no external workspace call sites depended on `provider-openai`; migration step was a no-op in this branch.
