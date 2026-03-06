@@ -8,6 +8,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tool::{ToolContext, ToolResult};
+use tracing::{Instrument, info, info_span};
 
 use crate::{
     AuthorizationDecision, LlmRequestSnapshot, ModelRunner, PermissionDecision,
@@ -76,12 +77,18 @@ impl TurnDriver {
             cancel_token: CancellationToken::new(),
             options,
         };
+        let span = info_span!(
+            "turn.run",
+            session_id = %driver.context.session_id,
+            turn_id = %driver.context.turn_id
+        );
 
-        let task = task::spawn(async move { driver.run().await });
+        let task = task::spawn(async move { driver.run().await }.instrument(span));
         (handle, task)
     }
 
     async fn run(mut self) -> Result<(), TurnError> {
+        info!("turn started");
         self.emit(TurnEvent::TurnStarted).await?;
         let mut step_index = 0;
 
@@ -169,6 +176,7 @@ impl TurnDriver {
                     }
                 }
             };
+            info!(step_index, finish_reason = ?terminal_reason, "step finished");
 
             match terminal_reason {
                 FinishReason::ToolCalls => {
@@ -197,6 +205,7 @@ impl TurnDriver {
                         turn_id: self.context.turn_id.clone(),
                     };
                     self.state = TurnState::Cancelled(summary);
+                    info!(reason = ?TurnFinishReason::Cancelled, "turn finished");
                     self.emit(TurnEvent::TurnFinished {
                         reason: TurnFinishReason::Cancelled,
                     })
@@ -208,6 +217,7 @@ impl TurnDriver {
                         turn_id: self.context.turn_id.clone(),
                     };
                     self.state = TurnState::Completed(summary);
+                    info!(reason = ?TurnFinishReason::Completed, "turn finished");
                     self.emit(TurnEvent::TurnFinished {
                         reason: TurnFinishReason::Completed,
                     })
@@ -227,6 +237,7 @@ impl TurnDriver {
     }
 
     async fn execute_tool_batch(&mut self, batch: ToolBatch) -> Result<(), TurnError> {
+        info!(step_index = batch.step_index, tool_count = batch.calls.len(), "tool batch prepared");
         let mut join_set = JoinSet::new();
         let mut pending_permissions = Vec::new();
         let mut cancellation_requested = false;
@@ -245,6 +256,7 @@ impl TurnDriver {
             match self.authorizer.authorize(&call).await? {
                 AuthorizationDecision::Allow => self.spawn_tool_call(&mut join_set, call),
                 AuthorizationDecision::Deny => {
+                    info!(call_id = %call_id(&call), "tool call denied");
                     self.emit(TurnEvent::ToolCallCompleted {
                         call_id: call_id(&call),
                         result: ToolOutcome::Denied,
@@ -252,6 +264,7 @@ impl TurnDriver {
                     .await?;
                 }
                 AuthorizationDecision::Ask(request) => {
+                    info!(request_id = %request.request_id, tool_call_id = %request.tool_call_id, "tool permission requested");
                     self.emit(TurnEvent::ToolCallPermissionRequested {
                         request: request.clone(),
                     })
@@ -292,6 +305,7 @@ impl TurnDriver {
                                 .position(|pending| pending.request.request_id == request_id)
                             {
                                 let pending = pending_permissions.swap_remove(index);
+                                info!(request_id = %request_id, tool_call_id = %pending.request.tool_call_id, decision = ?decision, "tool permission resolved");
                                 self.emit(TurnEvent::ToolCallPermissionResolved {
                                     request_id: request_id.clone(),
                                     decision: decision.clone(),
@@ -324,6 +338,7 @@ impl TurnDriver {
                 Some(result) = join_set.join_next(), if !join_set.is_empty() => {
                     let (call_id, result) =
                         result.map_err(|err| TurnError::Runtime(format!("tool task join failed: {err}")))?;
+                    info!(call_id = %call_id, "tool call completed");
                     self.emit(TurnEvent::ToolCallCompleted {
                         call_id,
                         result: map_tool_result(result),
@@ -378,6 +393,7 @@ impl TurnDriver {
         self.state = TurnState::Cancelled(TurnSummary {
             turn_id: self.context.turn_id.clone(),
         });
+        info!(reason = ?TurnFinishReason::Cancelled, "turn finished");
         self.emit(TurnEvent::TurnFinished {
             reason: TurnFinishReason::Cancelled,
         })
