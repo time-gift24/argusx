@@ -1,4 +1,5 @@
 use std::{
+    fs,
     path::{Path, PathBuf},
     pin::Pin,
     task::{Context, Poll},
@@ -17,27 +18,7 @@ pub struct ReplayReader {
 
 impl ReplayReader {
     pub async fn open(path: impl Into<PathBuf>, timing: ReplayTiming) -> Result<Self, Error> {
-        let path = path.into();
-        let body = tokio::fs::read_to_string(&path)
-            .await
-            .map_err(|err| Error::Config(format!("failed to read replay file {}: {err}", path.display())))?;
-        let frames = parse_frames(&body)?;
-        let delays = match timing {
-            ReplayTiming::Fast => vec![0; frames.len()],
-            ReplayTiming::Recorded => load_delays(&path, frames.len()).await?,
-        };
-
-        let inner = try_stream! {
-            for (frame, delay_ms) in frames.into_iter().zip(delays) {
-                if delay_ms > 0 {
-                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                }
-                yield frame;
-            }
-        }
-        .boxed();
-
-        Ok(Self { inner })
+        Ok(Self::from_prepared(prepare(path, timing)?))
     }
 }
 
@@ -55,6 +36,53 @@ struct FrameTiming {
     delay_ms: u64,
 }
 
+pub(crate) struct PreparedReplay {
+    frames: Vec<PreparedReplayFrame>,
+}
+
+struct PreparedReplayFrame {
+    text: String,
+    delay_ms: u64,
+}
+
+pub(crate) fn prepare(
+    path: impl Into<PathBuf>,
+    timing: ReplayTiming,
+) -> Result<PreparedReplay, Error> {
+    let path = path.into();
+    let body = fs::read_to_string(&path)
+        .map_err(|err| Error::Config(format!("failed to read replay file {}: {err}", path.display())))?;
+    let frames = parse_frames(&body)?;
+    let delays = match timing {
+        ReplayTiming::Fast => vec![0; frames.len()],
+        ReplayTiming::Recorded => load_delays(&path, frames.len())?,
+    };
+
+    Ok(PreparedReplay {
+        frames: frames
+            .into_iter()
+            .zip(delays)
+            .map(|(text, delay_ms)| PreparedReplayFrame { text, delay_ms })
+            .collect(),
+    })
+}
+
+impl ReplayReader {
+    pub(crate) fn from_prepared(prepared: PreparedReplay) -> Self {
+        let inner = try_stream! {
+            for frame in prepared.frames {
+                if frame.delay_ms > 0 {
+                    tokio::time::sleep(Duration::from_millis(frame.delay_ms)).await;
+                }
+                yield frame.text;
+            }
+        }
+        .boxed();
+
+        Self { inner }
+    }
+}
+
 fn parse_frames(body: &str) -> Result<Vec<String>, Error> {
     let normalized = body.replace("\r\n", "\n");
     let frames: Vec<String> = normalized
@@ -70,9 +98,9 @@ fn parse_frames(body: &str) -> Result<Vec<String>, Error> {
     Ok(frames)
 }
 
-async fn load_delays(path: &Path, frame_count: usize) -> Result<Vec<u64>, Error> {
+fn load_delays(path: &Path, frame_count: usize) -> Result<Vec<u64>, Error> {
     let sidecar_path = sidecar_path(path);
-    let body = tokio::fs::read_to_string(&sidecar_path).await.map_err(|err| {
+    let body = fs::read_to_string(&sidecar_path).map_err(|err| {
         Error::Config(format!(
             "failed to read replay timing metadata {}: {err}",
             sidecar_path.display()

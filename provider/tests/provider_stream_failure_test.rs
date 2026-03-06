@@ -1,6 +1,8 @@
 use argus_core::ResponseEvent;
 use futures::StreamExt;
-use provider::{Dialect, ProviderClient, ProviderConfig, Request};
+use std::path::PathBuf;
+
+use provider::{Dialect, Error, ProviderClient, ProviderConfig, ProviderDevOptions, ReplayTiming, Request};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -10,6 +12,13 @@ fn request(model: &str) -> Request {
         stream: Some(true),
         ..Default::default()
     }
+}
+
+fn fixture_path(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join(name)
 }
 
 #[tokio::test]
@@ -99,4 +108,23 @@ async fn eof_without_done_becomes_terminal_protocol_error_event() {
         events.last(),
         Some(ResponseEvent::Error(err)) if err.message.contains("Protocol")
     ));
+}
+
+#[test]
+fn recorded_replay_without_sidecar_fails_before_stream_start() {
+    let client = ProviderClient::new(
+        ProviderConfig::new(Dialect::Openai, "http://unused", "test-key").with_dev_options(
+            ProviderDevOptions::replay(
+                fixture_path("2026-03-06-openai-chat-completions-sse.txt"),
+                ReplayTiming::Recorded,
+            ),
+        ),
+    )
+    .unwrap();
+
+    match client.stream(request("gpt-test")) {
+        Ok(_) => panic!("expected replay setup to fail without timing metadata"),
+        Err(Error::Config(message)) => assert!(message.contains("timing metadata")),
+        Err(other) => panic!("expected config error, got {other}"),
+    }
 }
