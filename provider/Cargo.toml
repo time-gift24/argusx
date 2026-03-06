@@ -7,4 +7,5 @@ edition = "2024"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+reqwest = { workspace = true }
 argus_core = { package = "core", path = "../core" }
