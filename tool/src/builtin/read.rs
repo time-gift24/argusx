@@ -19,11 +19,10 @@ impl ReadTool {
         Ok(Self { guard })
     }
 
-    /// Get default read tool with current directory as allowed root
-    pub fn default() -> Result<Self, FsError> {
-        Self::new(vec![
-            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-        ])
+    /// Build a read tool with the current directory as the allowed root.
+    pub fn from_current_dir() -> Result<Self, FsError> {
+        Self::new(vec![std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))])
     }
 }
 
@@ -108,7 +107,7 @@ impl Tool for ReadTool {
             .guard
             .authorize_existing(&args.path)
             .await
-            .map_err(|e| map_fs_error(e))?;
+            .map_err(map_fs_error)?;
 
         let result = match args.mode {
             ReadMode::Text => read_text(&authorized_path).await,

@@ -23,6 +23,6 @@ If you update upstream sync commit and patch commit, regenerate with:
 
 ```bash
 rm -f patches/eventsource-stream/*.patch
-git format-patch --stdout <upstream_sync_commit>..<latest_patch_commit> -- vendor/eventsource_stream \
+git diff --binary <upstream_sync_commit> -- vendor/eventsource_stream \
   > patches/eventsource-stream/0001-local-compat-and-parser-fixes.patch
 ```
