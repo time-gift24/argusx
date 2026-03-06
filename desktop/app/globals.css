@@ -3,3 +3,23 @@
 @import "shadcn/tailwind.css";
 @import "quill/dist/quill.bubble.css";
 @import "./styles/theme.css";
+
+@keyframes stream-item-shimmer {
+  0% {
+    transform: translateX(-180%);
+  }
+
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.animate-stream-item-shimmer {
+  animation: stream-item-shimmer 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-stream-item-shimmer {
+    animation: none;
+  }
+}
