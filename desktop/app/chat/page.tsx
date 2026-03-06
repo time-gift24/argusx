@@ -1,5 +1,5 @@
-import { ChatPage } from "@/components/features/chat/chat-page";
+import { ChatModulePlaceholder } from "@/components/placeholders/chat-module-placeholder";
 
 export default function Page() {
-  return <ChatPage />;
+  return <ChatModulePlaceholder variant="page" />;
 }

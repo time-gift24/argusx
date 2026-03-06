@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, MessageSquare, FileText, NotebookPen } from "lucide-react";
+import { Home, MessageSquare, NotebookPen } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -21,19 +21,14 @@ const navMain = [
     icon: Home,
   },
   {
-    title: "对话",
+    title: "对话占位",
     url: "/chat",
     icon: MessageSquare,
   },
   {
-    title: "标注",
-    url: "/annotation",
+    title: "SOP 标注",
+    url: "/sop/annotation",
     icon: NotebookPen,
-  },
-  {
-    title: "SOP",
-    url: "/sop/sample-sop",
-    icon: FileText,
   },
 ];
 

@@ -1,6 +1,0 @@
-import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
-import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
-
-export const STREAMDOWN_PLUGINS = { cjk, code, math, mermaid };

@@ -6,7 +6,6 @@ import { Slot } from "radix-ui"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
-import { CHAT_SIDEBAR_MIN_WIDTH } from "@/lib/layout/chat-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
@@ -33,7 +32,7 @@ const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
 // Resizable sidebar constants
 const SIDEBAR_WIDTH_MIN_LEFT = 180
-const SIDEBAR_WIDTH_MIN_RIGHT = CHAT_SIDEBAR_MIN_WIDTH
+const SIDEBAR_WIDTH_MIN_RIGHT = 360
 const SIDEBAR_WIDTH_MAX = 480
 const SIDEBAR_WIDTH_MAX_RIGHT_RATIO = 0.4
 const SIDEBAR_WIDTH_DEFAULT_LEFT = 256

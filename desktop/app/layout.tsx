@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 export const metadata: Metadata = {
   title: "ArgusX",
-  description: "ArgusX桌面应用 - AI Agent管理平台",
+  description: "ArgusX桌面应用 - 工作台原型",
 };
 
 const themeInitScript = `

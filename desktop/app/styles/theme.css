@@ -26,16 +26,6 @@
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
-  --color-chat-runtime-surface: var(--chat-runtime-surface);
-  --color-chat-runtime-surface-strong: var(--chat-runtime-surface-strong);
-  --color-chat-runtime-text-secondary: var(--chat-runtime-text-secondary);
-  --color-chat-runtime-accent-subtle: var(--chat-runtime-accent-subtle);
-  --color-chat-runtime-surface-bg: var(--chat-runtime-surface-bg);
-  --color-chat-runtime-surface-border: var(--chat-runtime-surface-border);
-  --color-chat-runtime-surface-label: var(--chat-runtime-surface-label);
-  --color-chat-runtime-surface-text: var(--chat-runtime-surface-text);
-  --color-chat-runtime-surface-icon: var(--chat-runtime-surface-icon);
-  --color-chat-runtime-surface-hover: var(--chat-runtime-surface-hover);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
@@ -88,25 +78,6 @@
   --sidebar-accent-foreground: oklch(0.98 0.02 201);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-  --chat-runtime-surface-bg: oklch(0.97 0 0);
-  --chat-runtime-surface-border: oklch(0.85 0 0);
-  --chat-runtime-surface-radius: 16px;
-  --chat-runtime-surface-padding-x: 18px;
-  --chat-runtime-surface-padding-y: 18px;
-  --chat-runtime-code-padding-x: 1ch;
-  --chat-runtime-code-padding-y: 1ch;
-  --chat-runtime-code-font-size: 11px;
-  --chat-runtime-code-line-height: 1.5;
-  --chat-runtime-surface-label: oklch(0.54 0 0);
-  --chat-runtime-surface-text: oklch(0.22 0 0);
-  --chat-runtime-surface-icon: oklch(0.56 0 0);
-  --chat-runtime-surface-hover: oklch(0.93 0 0);
-
-  /* Backward-compatible aliases */
-  --chat-runtime-surface: var(--chat-runtime-surface-bg);
-  --chat-runtime-surface-strong: var(--chat-runtime-surface-hover);
-  --chat-runtime-text-secondary: var(--chat-runtime-surface-label);
-  --chat-runtime-accent-subtle: oklch(from var(--primary) l c h / 0.14);
 }
 
 .dark {
@@ -141,25 +112,6 @@
   --sidebar-accent-foreground: oklch(0.30 0.05 230);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
-  --chat-runtime-surface-bg: oklch(0.29 0 0);
-  --chat-runtime-surface-border: oklch(0.39 0 0 / 0.85);
-  --chat-runtime-surface-radius: 16px;
-  --chat-runtime-surface-padding-x: 18px;
-  --chat-runtime-surface-padding-y: 18px;
-  --chat-runtime-code-padding-x: 1ch;
-  --chat-runtime-code-padding-y: 1ch;
-  --chat-runtime-code-font-size: 11px;
-  --chat-runtime-code-line-height: 1.5;
-  --chat-runtime-surface-label: oklch(0.74 0 0);
-  --chat-runtime-surface-text: oklch(0.94 0 0);
-  --chat-runtime-surface-icon: oklch(0.79 0 0);
-  --chat-runtime-surface-hover: oklch(0.35 0 0);
-
-  /* Backward-compatible aliases */
-  --chat-runtime-surface: var(--chat-runtime-surface-bg);
-  --chat-runtime-surface-strong: var(--chat-runtime-surface-hover);
-  --chat-runtime-text-secondary: var(--chat-runtime-surface-label);
-  --chat-runtime-accent-subtle: oklch(from var(--primary) l c h / 0.2);
 }
 
 @layer base {
@@ -181,27 +133,5 @@
   }
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
-  }
-}
-
-.chat-config-trigger {
-  animation: chat-config-pulse 2.6s ease-in-out infinite;
-}
-
-@keyframes chat-config-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 oklch(from var(--primary) l c h / 0.14);
-  }
-  50% {
-    transform: scale(1.04);
-    box-shadow: 0 0 0 7px oklch(from var(--primary) l c h / 0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chat-config-trigger {
-    animation: none;
   }
 }

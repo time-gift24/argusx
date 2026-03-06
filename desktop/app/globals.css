@@ -1,7 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@source "../node_modules/streamdown/dist/*.js";
 @import "quill/dist/quill.bubble.css";
 @import "./styles/theme.css";
-@import "./styles/streamdown.css";

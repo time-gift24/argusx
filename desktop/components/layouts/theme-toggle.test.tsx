@@ -19,8 +19,8 @@ describe("ThemeToggle", () => {
     render(<ThemeToggle />);
 
     const button = screen.getByRole("button");
-    expect(button).toHaveAttribute("aria-label", "Switch to dark");
-    expect(button).toHaveAttribute("title", "Switch to dark");
+    expect(button).toHaveAttribute("aria-label", "切换到深色");
+    expect(button).toHaveAttribute("title", "切换到深色");
   });
 
   it("uses actual theme label after mount", () => {
@@ -33,7 +33,7 @@ describe("ThemeToggle", () => {
     render(<ThemeToggle />);
 
     const button = screen.getByRole("button");
-    expect(button).toHaveAttribute("aria-label", "Switch to light");
-    expect(button).toHaveAttribute("title", "Switch to light");
+    expect(button).toHaveAttribute("aria-label", "切换到浅色");
+    expect(button).toHaveAttribute("title", "切换到浅色");
   });
 });

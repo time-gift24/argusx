@@ -37,12 +37,6 @@ export async function fetchApi<T>(
 
 // API endpoints
 export const endpoints = {
-  chat: {
-    list: "/api/chat",
-    create: "/api/chat",
-    get: (id: string) => `/api/chat/${id}`,
-    delete: (id: string) => `/api/chat/${id}`,
-  },
   user: {
     profile: "/api/user/profile",
     update: "/api/user/profile",

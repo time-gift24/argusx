@@ -9,7 +9,7 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import "../../app/globals.css";
 import { AppSidebar } from "./sidebar/app-sidebar";
-import { ChatSidebar } from "./sidebar/chat-sidebar";
+import { ModuleSidebar } from "./sidebar/module-sidebar";
 import { SidebarTrigger } from "./sidebar/sidebar-trigger";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -48,7 +48,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             {children}
           </div>
         </SidebarInset>
-        {!isChatRoute ? <ChatSidebar variant="sidebar" side="right" /> : null}
+        {!isChatRoute ? <ModuleSidebar variant="sidebar" side="right" /> : null}
       </SidebarProvider>
       <Toaster position="top-right" richColors />
     </TooltipProvider>
