@@ -42,20 +42,20 @@ pub fn parse_payload(payload: &str) -> Result<ZaiStreamEvent, Error> {
         Err(_) => return Err(Error::Parse(chunk_err)),
     };
 
-    if let Value::Object(mut map) = parsed {
-        if let Some(error_value) = map.remove("error") {
-            if let Some(raw) = error_value.as_str() {
-                return Ok(ZaiStreamEvent::Error(raw.to_string()));
-            }
-            if let Some(message) = error_value
-                .as_object()
-                .and_then(|obj| obj.get("message"))
-                .and_then(Value::as_str)
-            {
-                return Ok(ZaiStreamEvent::Error(message.to_string()));
-            }
-            return Ok(ZaiStreamEvent::Error(error_value.to_string()));
+    if let Value::Object(mut map) = parsed
+        && let Some(error_value) = map.remove("error")
+    {
+        if let Some(raw) = error_value.as_str() {
+            return Ok(ZaiStreamEvent::Error(raw.to_string()));
         }
+        if let Some(message) = error_value
+            .as_object()
+            .and_then(|obj| obj.get("message"))
+            .and_then(Value::as_str)
+        {
+            return Ok(ZaiStreamEvent::Error(message.to_string()));
+        }
+        return Ok(ZaiStreamEvent::Error(error_value.to_string()));
     }
 
     Err(Error::Parse(chunk_err))

@@ -93,18 +93,18 @@ impl Mapper {
         }
 
         for mut choice in choices {
-            if let Some(content) = choice.delta.content.take() {
-                if !content.is_empty() {
-                    self.content_buffer.push_str(&content);
-                    events.push(ResponseEvent::ContentDelta(content.into()));
-                }
+            if let Some(content) = choice.delta.content.take()
+                && !content.is_empty()
+            {
+                self.content_buffer.push_str(&content);
+                events.push(ResponseEvent::ContentDelta(content.into()));
             }
 
-            if let Some(reasoning) = choice.delta.reasoning_content.take() {
-                if !reasoning.is_empty() {
-                    self.reasoning_buffer.push_str(&reasoning);
-                    events.push(ResponseEvent::ReasoningDelta(reasoning.into()));
-                }
+            if let Some(reasoning) = choice.delta.reasoning_content.take()
+                && !reasoning.is_empty()
+            {
+                self.reasoning_buffer.push_str(&reasoning);
+                events.push(ResponseEvent::ReasoningDelta(reasoning.into()));
             }
 
             if let Some(tool_calls) = choice.delta.tool_calls.take() {
@@ -114,18 +114,18 @@ impl Mapper {
             }
 
             if let Some(mut message) = choice.message.take() {
-                if let Some(content) = message.content.take() {
-                    if !content.is_empty() {
-                        self.content_buffer.push_str(&content);
-                        events.push(ResponseEvent::ContentDelta(content.into()));
-                    }
+                if let Some(content) = message.content.take()
+                    && !content.is_empty()
+                {
+                    self.content_buffer.push_str(&content);
+                    events.push(ResponseEvent::ContentDelta(content.into()));
                 }
 
-                if let Some(reasoning) = message.reasoning_content.take() {
-                    if !reasoning.is_empty() {
-                        self.reasoning_buffer.push_str(&reasoning);
-                        events.push(ResponseEvent::ReasoningDelta(reasoning.into()));
-                    }
+                if let Some(reasoning) = message.reasoning_content.take()
+                    && !reasoning.is_empty()
+                {
+                    self.reasoning_buffer.push_str(&reasoning);
+                    events.push(ResponseEvent::ReasoningDelta(reasoning.into()));
                 }
 
                 if let Some(tool_calls) = message.tool_calls.take() {
@@ -178,16 +178,16 @@ impl Mapper {
                 arguments_json: String::new(),
             });
 
-        if let Some(call_type) = tc.type_ {
-            if !call_type.is_empty() {
-                match pending.call_type.as_ref() {
-                    Some(existing) if existing != &call_type => {
-                        return Err(Error::Protocol(format!(
-                            "conflicting tool type for sequence {sequence}: '{existing}' vs '{call_type}'"
-                        )));
-                    }
-                    _ => pending.call_type = Some(call_type),
+        if let Some(call_type) = tc.type_
+            && !call_type.is_empty()
+        {
+            match pending.call_type.as_ref() {
+                Some(existing) if existing != &call_type => {
+                    return Err(Error::Protocol(format!(
+                        "conflicting tool type for sequence {sequence}: '{existing}' vs '{call_type}'"
+                    )));
                 }
+                _ => pending.call_type = Some(call_type),
             }
         }
 
@@ -208,24 +208,24 @@ impl Mapper {
         }
 
         if let Some(function) = tc.function {
-            if let Some(name) = function.name {
-                if !name.is_empty() {
-                    match pending.name.as_ref() {
-                        Some(existing) if existing != &name => {
-                            return Err(Error::Protocol(format!(
-                                "conflicting tool name for sequence {sequence}: '{existing}' vs '{name}'"
-                            )));
-                        }
-                        _ => pending.name = Some(name),
+            if let Some(name) = function.name
+                && !name.is_empty()
+            {
+                match pending.name.as_ref() {
+                    Some(existing) if existing != &name => {
+                        return Err(Error::Protocol(format!(
+                            "conflicting tool name for sequence {sequence}: '{existing}' vs '{name}'"
+                        )));
                     }
+                    _ => pending.name = Some(name),
                 }
             }
 
-            if let Some(args) = function.arguments {
-                if !args.is_empty() {
-                    pending.arguments_json.push_str(&args);
-                    events.push(ResponseEvent::ToolDelta(args.into()));
-                }
+            if let Some(args) = function.arguments
+                && !args.is_empty()
+            {
+                pending.arguments_json.push_str(&args);
+                events.push(ResponseEvent::ToolDelta(args.into()));
             }
         }
 
@@ -299,5 +299,11 @@ impl Mapper {
         self.emit_text_done_events(&mut events);
         events.push(ResponseEvent::Done(self.usage.take()));
         Ok(events)
+    }
+}
+
+impl Default for Mapper {
+    fn default() -> Self {
+        Self::new()
     }
 }

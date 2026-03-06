@@ -92,10 +92,10 @@ impl ChatCompletionsOptions {
         let mut normalized = self.clone();
         normalized.apply_stream_defaults();
         let mut value = serde_json::to_value(normalized)?;
-        if let Some(obj) = value.as_object_mut() {
-            if let Some(v) = obj.remove("max_completion_tokens") {
-                obj.insert("max_tokens".to_string(), v);
-            }
+        if let Some(obj) = value.as_object_mut()
+            && let Some(v) = obj.remove("max_completion_tokens")
+        {
+            obj.insert("max_tokens".to_string(), v);
         }
         Ok(value)
     }
