@@ -36,15 +36,10 @@ impl ProviderClient {
     }
 
     pub fn stream(&self, request: Request) -> Result<ResponseStream, Error> {
-        match self._config.dialect {
-            Dialect::Openai => self.stream_openai(request),
-            Dialect::Zai => Err(Error::Config(
-                "stream() for dialect 'zai' is not implemented yet".into(),
-            )),
-        }
+        self.stream_dialect(self._config.dialect, request)
     }
 
-    fn stream_openai(&self, request: Request) -> Result<ResponseStream, Error> {
+    fn stream_dialect(&self, dialect: Dialect, request: Request) -> Result<ResponseStream, Error> {
         let url = format!(
             "{}/chat/completions",
             self._config.base_url.trim_end_matches('/')
@@ -94,7 +89,7 @@ impl ProviderClient {
                     return;
                 }
             };
-            let mut mapper = Mapper::new(Dialect::Openai);
+            let mut mapper = Mapper::new(dialect);
 
             while let Some(item) = sse.next().await {
                 match item {
@@ -156,15 +151,35 @@ impl ProviderClient {
                 }
             }
 
-            send_terminal_error(
-                &tx,
-                &mut contract,
-                StreamError {
-                    kind: ErrorKind::Protocol,
-                    message: "stream ended before [DONE]".into(),
+            match dialect {
+                Dialect::Zai => match mapper.on_done() {
+                    Ok(events) => {
+                        let _ = emit_events(&tx, &mut contract, events).await;
+                    }
+                    Err(err) => {
+                        send_terminal_error(
+                            &tx,
+                            &mut contract,
+                            StreamError {
+                                kind: ErrorKind::Protocol,
+                                message: err.to_string(),
+                            },
+                        )
+                        .await;
+                    }
                 },
-            )
-            .await;
+                Dialect::Openai => {
+                    send_terminal_error(
+                        &tx,
+                        &mut contract,
+                        StreamError {
+                            kind: ErrorKind::Protocol,
+                            message: "stream ended before [DONE]".into(),
+                        },
+                    )
+                    .await;
+                }
+            }
         });
 
         Ok(ResponseStream::from_parts(rx, producer.abort_handle()))
