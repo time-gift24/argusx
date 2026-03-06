@@ -1,5 +1,7 @@
-use crate::chunk::ToolCallChunk;
-use crate::parser::parse_chunk;
+use crate::parser::parse_payload;
+use crate::schema::stream::{
+    ChatCompletionsStreamChunk, ChatCompletionsStreamEvent, DeltaToolCall,
+};
 use argus_core::{Meta, ResponseEvent, ToolCall, Usage};
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -49,23 +51,40 @@ impl Mapper {
         if self.terminated {
             return Err(Error::Protocol("event after terminal".into()));
         }
-        let chunk = parse_chunk(raw)?;
 
+        match parse_payload(raw)? {
+            ChatCompletionsStreamEvent::Chunk(chunk) => self.process_chunk(chunk),
+            ChatCompletionsStreamEvent::Open => Ok(Vec::new()),
+            ChatCompletionsStreamEvent::Done => Err(Error::Protocol(
+                "received [DONE] in feed(); call on_done() instead".into(),
+            )),
+            ChatCompletionsStreamEvent::Error(err) => Err(Error::Protocol(format!(
+                "upstream stream error: {}",
+                err.message()
+            ))),
+        }
+    }
+
+    fn process_chunk(
+        &mut self,
+        chunk: ChatCompletionsStreamChunk,
+    ) -> Result<Vec<ResponseEvent>, Error> {
         let mut events = Vec::new();
 
-        // Emit Created only once
         if !self.created {
+            let created = i64::try_from(chunk.created).map_err(|_| {
+                Error::Protocol(format!("created is out of i64 range: {}", chunk.created))
+            })?;
             events.push(ResponseEvent::Created(Meta {
                 id: chunk.id.clone(),
-                created: chunk.created,
-                object: chunk.object_type.clone(),
+                created,
+                object: chunk.object.clone(),
                 model: chunk.model.clone(),
             }));
             self.created = true;
         }
 
         for choice in &chunk.choices {
-            // Handle content delta
             if let Some(content) = &choice.delta.content {
                 if !content.is_empty() {
                     self.content_buffer.push_str(content);
@@ -73,7 +92,6 @@ impl Mapper {
                 }
             }
 
-            // Handle reasoning delta
             if let Some(reasoning) = &choice.delta.reasoning_content {
                 if !reasoning.is_empty() {
                     self.reasoning_buffer.push_str(reasoning);
@@ -81,19 +99,15 @@ impl Mapper {
                 }
             }
 
-            // Handle tool calls
             if let Some(tool_calls) = &choice.delta.tool_calls {
                 for tc in tool_calls {
                     self.process_tool_call_chunk(tc, &mut events)?;
                 }
             }
 
-            // Handle finish_reason
             if let Some(finish_reason) = &choice.finish_reason {
                 match finish_reason.as_str() {
-                    "stop" => {
-                        self.emit_text_done_events(&mut events);
-                    }
+                    "stop" => self.emit_text_done_events(&mut events),
                     "tool_calls" => {
                         self.flush_tool_calls(&mut events)?;
                         self.emit_text_done_events(&mut events);
@@ -103,7 +117,6 @@ impl Mapper {
             }
         }
 
-        // Capture usage when present
         if let Some(chunk_usage) = chunk.usage {
             self.usage = Some(Usage {
                 input_tokens: chunk_usage.prompt_tokens,
@@ -117,14 +130,13 @@ impl Mapper {
 
     fn process_tool_call_chunk(
         &mut self,
-        tc: &ToolCallChunk,
+        tc: &DeltaToolCall,
         events: &mut Vec<ResponseEvent>,
     ) -> Result<(), Error> {
         let sequence = tc
             .index
             .ok_or_else(|| Error::Protocol("missing tool call index".into()))?;
 
-        // Get or create pending tool call
         let pending = self
             .tool_calls
             .entry(sequence)
@@ -135,7 +147,6 @@ impl Mapper {
                 arguments_json: String::new(),
             });
 
-        // Keep call_id stable by sequence
         if let Some(call_id) = &tc.id {
             if call_id.is_empty() {
                 return Err(Error::Protocol(format!(
@@ -152,26 +163,25 @@ impl Mapper {
             }
         }
 
-        // Update name if present
-        if let Some(name) = &tc.function.name {
-            if !name.is_empty() {
-                match &pending.name {
-                    Some(existing) if existing != name => {
-                        return Err(Error::Protocol(format!(
-                            "conflicting tool name for sequence {sequence}: '{existing}' vs '{name}'"
-                        )));
+        if let Some(function) = &tc.function {
+            if let Some(name) = &function.name {
+                if !name.is_empty() {
+                    match &pending.name {
+                        Some(existing) if existing != name => {
+                            return Err(Error::Protocol(format!(
+                                "conflicting tool name for sequence {sequence}: '{existing}' vs '{name}'"
+                            )));
+                        }
+                        _ => pending.name = Some(name.clone()),
                     }
-                    _ => pending.name = Some(name.clone()),
                 }
             }
-        }
 
-        // Accumulate arguments
-        if let Some(args) = &tc.function.arguments {
-            if !args.is_empty() {
-                pending.arguments_json.push_str(args);
-                // Emit ToolDelta for incremental arguments
-                events.push(ResponseEvent::ToolDelta(args.clone().into()));
+            if let Some(args) = &function.arguments {
+                if !args.is_empty() {
+                    pending.arguments_json.push_str(args);
+                    events.push(ResponseEvent::ToolDelta(args.clone().into()));
+                }
             }
         }
 
@@ -187,7 +197,7 @@ impl Mapper {
                 ))
             })?;
             let name = tc.name.ok_or_else(|| {
-                Error::Protocol(format!("missing tool name for tool call '{}'", call_id))
+                Error::Protocol(format!("missing tool name for tool call '{call_id}'"))
             })?;
 
             events.push(ResponseEvent::ToolDone(ToolCall::FunctionCall {
