@@ -4,6 +4,6 @@ use thiserror::Error;
 pub enum Error {
     #[error(transparent)]
     Openai(#[from] crate::dialect::openai::mapper::Error),
-    #[error("zai dialect is not implemented yet")]
-    ZaiNotImplemented,
+    #[error(transparent)]
+    Zai(#[from] crate::dialect::zai::mapper::Error),
 }

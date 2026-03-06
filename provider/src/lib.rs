@@ -16,7 +16,7 @@ pub enum Dialect {
 
 enum InnerMapper {
     Openai(dialect::openai::mapper::Mapper),
-    Zai,
+    Zai(dialect::zai::mapper::Mapper),
 }
 
 pub struct Mapper {
@@ -29,7 +29,7 @@ impl Mapper {
             Dialect::Openai => {
                 InnerMapper::Openai(dialect::openai::mapper::Mapper::new("openai".to_string()))
             }
-            Dialect::Zai => InnerMapper::Zai,
+            Dialect::Zai => InnerMapper::Zai(dialect::zai::mapper::Mapper::new()),
         };
         Self { inner }
     }
@@ -37,14 +37,14 @@ impl Mapper {
     pub fn feed(&mut self, raw: &str) -> Result<Vec<ResponseEvent>, Error> {
         match &mut self.inner {
             InnerMapper::Openai(mapper) => Ok(mapper.feed(raw)?),
-            InnerMapper::Zai => Err(Error::ZaiNotImplemented),
+            InnerMapper::Zai(mapper) => Ok(mapper.feed(raw)?),
         }
     }
 
     pub fn on_done(&mut self) -> Result<Vec<ResponseEvent>, Error> {
         match &mut self.inner {
             InnerMapper::Openai(mapper) => Ok(mapper.on_done()?),
-            InnerMapper::Zai => Err(Error::ZaiNotImplemented),
+            InnerMapper::Zai(mapper) => Ok(mapper.on_done()?),
         }
     }
 }
