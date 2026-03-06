@@ -3,6 +3,8 @@ use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
+use crate::catalog::EffectiveToolPolicy;
+
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct AgentToolConfig {
     #[serde(default)]
@@ -45,6 +47,27 @@ impl AgentToolConfig {
         }
 
         Ok(())
+    }
+
+    pub fn effective_builtin_policy(&self, builtin: Builtin) -> Option<EffectiveToolPolicy> {
+        let name = builtin.canonical_name();
+        if !self.tools.builtin_tools.iter().any(|enabled| enabled == name) {
+            return None;
+        }
+
+        Some(resolve_tool_policy(
+            &self.tools.defaults,
+            self.tools.builtin.get(name),
+        ))
+    }
+
+    pub fn effective_mcp_policy(&self, server_label: &str) -> Option<EffectiveToolPolicy> {
+        let server = self.mcp.server.get(server_label)?;
+        if !server.enabled {
+            return None;
+        }
+
+        Some(resolve_mcp_policy(&self.mcp.defaults, server))
     }
 }
 
@@ -170,4 +193,39 @@ fn validate_mcp_server_policy(scope: &str, config: &McpServerConfig) -> Result<(
     }
 
     Ok(())
+}
+
+fn resolve_tool_policy(
+    defaults: &ToolPolicyConfig,
+    override_policy: Option<&ToolPolicyConfig>,
+) -> EffectiveToolPolicy {
+    let allow_parallel = override_policy
+        .and_then(|policy| policy.allow_parallel)
+        .or(defaults.allow_parallel)
+        .unwrap_or(true);
+    let max_concurrency = override_policy
+        .and_then(|policy| policy.max_concurrency)
+        .or(defaults.max_concurrency)
+        .unwrap_or(1);
+
+    EffectiveToolPolicy {
+        allow_parallel,
+        max_concurrency,
+    }
+}
+
+fn resolve_mcp_policy(
+    defaults: &ToolPolicyConfig,
+    server: &McpServerConfig,
+) -> EffectiveToolPolicy {
+    let allow_parallel = server
+        .allow_parallel
+        .or(defaults.allow_parallel)
+        .unwrap_or(true);
+    let max_concurrency = server.max_concurrency.or(defaults.max_concurrency).unwrap_or(1);
+
+    EffectiveToolPolicy {
+        allow_parallel,
+        max_concurrency,
+    }
 }

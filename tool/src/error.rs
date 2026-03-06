@@ -5,6 +5,9 @@ pub enum ToolError {
     #[error("Tool not found: {0}")]
     NotFound(String),
 
+    #[error("Unsupported tool call: {0}")]
+    Unsupported(String),
+
     #[error("Invalid arguments: {0}")]
     InvalidArgs(String),
 
