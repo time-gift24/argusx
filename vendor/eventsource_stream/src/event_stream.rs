@@ -300,6 +300,59 @@ mod tests {
     use super::*;
     use futures::prelude::*;
 
+    #[test]
+    fn parse_event_flushes_complete_buffer() {
+        let mut buffer = "data: Hello, world!\n\n".to_string();
+        let mut builder = EventBuilder::default();
+
+        let event = parse_event::<()>(
+            &mut buffer,
+            &mut builder,
+        )
+        .expect("parse should succeed");
+
+        assert_eq!(
+            event,
+            Some(Event {
+                event: "message".to_string(),
+                data: "Hello, world!".to_string(),
+                ..Default::default()
+            })
+        );
+        assert_eq!(buffer, "");
+    }
+
+    #[test]
+    fn parse_event_preserves_remaining_buffer_after_one_event() {
+        let mut buffer = "data: first\n\ndata: second\n\n".to_string();
+        let mut builder = EventBuilder::default();
+
+        let first = parse_event::<()>(&mut buffer, &mut builder).expect("first parse should work");
+
+        assert_eq!(
+            first,
+            Some(Event {
+                event: "message".to_string(),
+                data: "first".to_string(),
+                ..Default::default()
+            })
+        );
+        assert_eq!(buffer, "data: second\n\n");
+
+        let second =
+            parse_event::<()>(&mut buffer, &mut builder).expect("second parse should work");
+
+        assert_eq!(
+            second,
+            Some(Event {
+                event: "message".to_string(),
+                data: "second".to_string(),
+                ..Default::default()
+            })
+        );
+        assert_eq!(buffer, "");
+    }
+
     #[tokio::test]
     async fn valid_data_fields() {
         assert_eq!(
