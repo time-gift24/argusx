@@ -1,4 +1,4 @@
-use argus_core::{ResponseEvent, ToolCall};
+use argus_core::{FinishReason, ResponseEvent, ToolCall};
 use provider::{Dialect, Mapper};
 
 const OPENAI_FIXTURE: &str = include_str!("fixtures/2026-03-06-openai-chat-completions-sse.txt");
@@ -28,7 +28,7 @@ fn openai_fixture_still_emits_expected_sequence() {
     );
     assert!(
         all.iter()
-            .any(|e| matches!(e, ResponseEvent::Done(Some(_))))
+            .any(|e| matches!(e, ResponseEvent::Done { usage: Some(_), .. }))
     );
 
     let tool_done: Vec<_> = all
@@ -77,7 +77,7 @@ fn openai_fixture_has_correct_event_order() {
 
     let done_idx = all
         .iter()
-        .rposition(|e| matches!(e, ResponseEvent::Done(_)));
+        .rposition(|e| matches!(e, ResponseEvent::Done { .. }));
     assert!(done_idx.is_some());
 
     if let (Some(c), Some(d)) = (created_idx, done_idx) {
@@ -138,11 +138,14 @@ fn minimax_fixture_emits_ordered_tool_calls_and_final_usage() {
     );
     assert!(
         all.iter()
-            .any(|e| matches!(e, ResponseEvent::Done(Some(_))))
+            .any(|e| matches!(e, ResponseEvent::Done { usage: Some(_), .. }))
     );
 
     let done_usage = all.iter().rev().find_map(|e| match e {
-        ResponseEvent::Done(Some(usage)) => Some(*usage),
+        ResponseEvent::Done {
+            reason: FinishReason::ToolCalls,
+            usage: Some(usage),
+        } => Some(*usage),
         _ => None,
     });
     assert!(done_usage.is_some());

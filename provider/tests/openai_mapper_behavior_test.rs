@@ -1,4 +1,4 @@
-use argus_core::{ResponseEvent, ToolCall};
+use argus_core::{FinishReason, ResponseEvent, ToolCall};
 use provider::{Dialect, Mapper};
 
 #[test]
@@ -34,6 +34,15 @@ fn assembles_tool_call_on_finish_reason_tool_calls() {
     assert_eq!(call_id, "call_1");
     assert_eq!(name, "get_weather");
     assert_eq!(args, "{\"city\":\"北京\"}");
+
+    let done = m.on_done().unwrap();
+    assert!(done.iter().any(|event| matches!(
+        event,
+        ResponseEvent::Done {
+            reason: FinishReason::ToolCalls,
+            ..
+        }
+    )));
 }
 
 #[test]

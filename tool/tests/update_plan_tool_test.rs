@@ -1,13 +1,12 @@
+use tokio_util::sync::CancellationToken;
+
 #[tokio::test]
 async fn update_plan_accepts_valid_plan_and_emits_structured_output() {
     use tool::{Tool, ToolContext};
     let tool = tool::builtin::update_plan::UpdatePlanTool;
     let result = tool
         .execute(
-            ToolContext {
-                session_id: "s1".into(),
-                turn_id: "t1".into(),
-            },
+            ToolContext::new("s1", "t1", CancellationToken::new()),
             serde_json::json!({
                 "explanation": "Starting execution",
                 "plan": [
@@ -34,10 +33,7 @@ async fn update_plan_rejects_multiple_in_progress_steps() {
     let tool = tool::builtin::update_plan::UpdatePlanTool;
     let err = tool
         .execute(
-            ToolContext {
-                session_id: "s1".into(),
-                turn_id: "t1".into(),
-            },
+            ToolContext::new("s1", "t1", CancellationToken::new()),
             serde_json::json!({
                 "plan": [
                     { "step": "Step A", "status": "in_progress" },
@@ -58,10 +54,7 @@ async fn update_plan_accepts_zero_in_progress_steps() {
     let tool = tool::builtin::update_plan::UpdatePlanTool;
     let result = tool
         .execute(
-            ToolContext {
-                session_id: "s1".into(),
-                turn_id: "t1".into(),
-            },
+            ToolContext::new("s1", "t1", CancellationToken::new()),
             serde_json::json!({
                 "plan": [
                     { "step": "Step A", "status": "pending" },
@@ -82,10 +75,7 @@ async fn update_plan_rejects_empty_step() {
     let tool = tool::builtin::update_plan::UpdatePlanTool;
     let err = tool
         .execute(
-            ToolContext {
-                session_id: "s1".into(),
-                turn_id: "t1".into(),
-            },
+            ToolContext::new("s1", "t1", CancellationToken::new()),
             serde_json::json!({
                 "plan": [
                     { "step": "   ", "status": "pending" }

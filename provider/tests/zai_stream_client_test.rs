@@ -35,6 +35,6 @@ async fn zai_stream_emits_mcp_and_done() {
     assert!(
         events
             .iter()
-            .any(|e| matches!(e, ResponseEvent::Done(Some(_))))
+            .any(|e| matches!(e, ResponseEvent::Done { usage: Some(_), .. }))
     );
 }

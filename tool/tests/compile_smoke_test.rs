@@ -1,11 +1,9 @@
 use tool::{Tool, ToolContext, ToolError};
+use tokio_util::sync::CancellationToken;
 
 #[test]
 fn tool_crate_exports_runtime_primitives() {
-    let _ctx = ToolContext {
-        session_id: "s1".into(),
-        turn_id: "t1".into(),
-    };
+    let _ctx = ToolContext::new("s1", "t1", CancellationToken::new());
     let _ = std::mem::size_of::<ToolError>();
 
     fn assert_tool<T: Tool>() {}

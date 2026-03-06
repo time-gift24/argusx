@@ -1,7 +1,7 @@
 use crate::dialect::zai::parser::parse_payload;
 use crate::dialect::zai::schema::stream::{ZaiDeltaToolCall, ZaiStreamChunk, ZaiStreamEvent};
 use crate::normalize::tool_calls::{classify_tool_call, parse_zai_mcp_json, ToolCallKind};
-use argus_core::{BuiltinToolCall, McpCall, Meta, ResponseEvent, ToolCall, Usage};
+use argus_core::{BuiltinToolCall, FinishReason, McpCall, Meta, ResponseEvent, ToolCall, Usage};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -30,6 +30,7 @@ pub struct Mapper {
     tool_calls: BTreeMap<u32, PendingToolCall>,
     emitted_tool_sequences: BTreeSet<u32>,
     usage: Option<Usage>,
+    finish_reason: Option<FinishReason>,
     content_buffer: String,
     reasoning_buffer: String,
     content_done: bool,
@@ -44,6 +45,7 @@ impl Mapper {
             tool_calls: BTreeMap::new(),
             emitted_tool_sequences: BTreeSet::new(),
             usage: None,
+            finish_reason: None,
             content_buffer: String::with_capacity(INITIAL_TEXT_BUFFER_CAPACITY),
             reasoning_buffer: String::with_capacity(INITIAL_TEXT_BUFFER_CAPACITY),
             content_done: false,
@@ -133,6 +135,10 @@ impl Mapper {
                         self.process_tool_call_chunk(tc, &mut events)?;
                     }
                 }
+            }
+
+            if let Some(reason) = choice.finish_reason.as_deref() {
+                self.finish_reason = Some(FinishReason::from_wire(reason));
             }
 
             match choice.finish_reason.as_deref() {
@@ -309,7 +315,13 @@ impl Mapper {
         let mut events = Vec::with_capacity(TYPICAL_EVENTS_PER_CHUNK);
         self.flush_tool_calls(&mut events)?;
         self.emit_text_done_events(&mut events);
-        events.push(ResponseEvent::Done(self.usage.take()));
+        events.push(ResponseEvent::Done {
+            reason: self
+                .finish_reason
+                .take()
+                .unwrap_or_else(|| FinishReason::Unknown("unknown".into())),
+            usage: self.usage.take(),
+        });
         Ok(events)
     }
 }

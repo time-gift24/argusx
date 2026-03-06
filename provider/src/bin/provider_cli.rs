@@ -129,8 +129,9 @@ async fn main() -> io::Result<()> {
             ResponseEvent::ReasoningDone(text) => {
                 println!("[reasoning done: {}]", text);
             }
-            ResponseEvent::Done(usage) => {
+            ResponseEvent::Done { reason, usage } => {
                 println!("\n--- Done ---");
+                println!("Reason: {:?}", reason);
                 if let Some(usage) = usage {
                     println!("Usage: {:?}", usage);
                 }

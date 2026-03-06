@@ -22,7 +22,7 @@ Current Rust workspace state:
 Implication:
 
 - the new backbone should be introduced as a fresh `turn` runtime crate aligned to `core`, `provider`, and `tool`
-- existing `tests/agent-turn-cli` and `tests/agent-session-cli` are stale historical artifacts and should not drive the new architecture
+- the old `tests/agent-turn-cli` and `tests/agent-session-cli` fixtures were stale historical artifacts and have been removed rather than carried forward into the new architecture
 
 ## 3. Approved Backbone Decisions
 
@@ -217,30 +217,31 @@ This keeps tool-level failures from collapsing into one ambiguous string.
 
 ## 9. Vercel Transport Mapping
 
-`TurnEvent` maps to Vercel Data Stream Protocol like this:
+The desktop client is pinned to `ai@6` and expects the current UI Message Stream v1 transport, not the older prefix-coded data stream.
 
-- `LlmTextDelta` -> prefix `0`
-- `LlmReasoningDelta` -> prefix `4`
-- `ToolCallPrepared` or `ToolCallDispatched` -> prefix `7`
-- `ToolCallCompleted` -> prefix `8`
-- `StepFinished` -> prefix `e`
-- `TurnFinished` -> prefix `d`
-- permission and control-plane events -> prefix `1` custom data payloads
+`TurnEvent` should therefore be adapted into SSE JSON chunks shaped like:
 
-Permission UI should be transported explicitly through `1` data events rather than masquerading as an error.
+- `TurnStarted` -> `{"type":"start"}` followed by `{"type":"start-step"}`
+- `LlmTextDelta` -> `text-start`, `text-delta`, and `text-end` around each active text part
+- `LlmReasoningDelta` -> `reasoning-start`, `reasoning-delta`, and `reasoning-end`
+- `ToolCallPrepared` -> `{"type":"tool-input-available", ...}`
+- `ToolCallPermissionRequested` -> `{"type":"tool-approval-request", ...}`
+- `ToolCallCompleted::Success` -> `{"type":"tool-output-available", ...}`
+- `ToolCallCompleted::Denied` -> `{"type":"tool-output-denied", ...}`
+- `ToolCallCompleted::Failed/TimedOut/Cancelled` -> `{"type":"tool-output-error", ...}`
+- `StepFinished` -> `{"type":"finish-step"}`
+- `TurnFinished` -> `{"type":"finish", "finishReason": ...}` followed by SSE `[DONE]`
+
+Control-plane details that do not have a first-class UI chunk should travel as transient `data-*` chunks rather than as fake tool or error events.
 
 Example:
 
 ```json
-1:[{
-  "type":"permission_required",
-  "turn_id":"t1",
-  "request_id":"perm_1",
-  "tool_call_id":"call_123",
-  "tool_name":"shell",
-  "arguments":{"command":"rm -rf /tmp/demo"},
-  "reason":"requires_user_approval"
-}]
+data: {"type":"tool-approval-request","approvalId":"perm_1","toolCallId":"call_123"}
+
+data: {"type":"data-turn-control","data":{"kind":"permission-resolved","requestId":"perm_1","decision":"allow"},"transient":true}
+
+data: [DONE]
 ```
 
 ## 10. Cancellation Semantics
@@ -345,5 +346,5 @@ Minimum required scenarios:
 - user cancels during LLM streaming
 - user cancels during tool execution
 - malformed provider stream fails the turn
-- Vercel adapter emits correct `0/1/4/7/8/e/d` ordering
+- UI message stream adapter emits valid SSE chunks for `start`, tool approval, tool output, `finish-step`, `finish`, and `[DONE]`
 - session replay can reconstruct partial output for cancelled turns

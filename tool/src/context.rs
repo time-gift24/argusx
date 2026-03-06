@@ -1,9 +1,25 @@
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ToolContext {
     pub session_id: String,
     pub turn_id: String,
+    pub cancel_token: CancellationToken,
+}
+
+impl ToolContext {
+    pub fn new(
+        session_id: impl Into<String>,
+        turn_id: impl Into<String>,
+        cancel_token: CancellationToken,
+    ) -> Self {
+        Self {
+            session_id: session_id.into(),
+            turn_id: turn_id.into(),
+            cancel_token,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
