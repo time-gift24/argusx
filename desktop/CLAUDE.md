@@ -41,11 +41,10 @@ When adding new Tauri commands:
 
 ```
 ../                          # Rust workspace root
-├── agent-core/              # Core agent logic
-├── common/                  # Shared config and utilities
-├── llm-provider/            # Provider adapters (includes BigModel API models)
-├── llm-sdk/                 # LLM SDK
-├── llm-cli/                 # LLM CLI tool
+├── core/                    # Shared core types and runtime models
+├── provider/                # LLM provider adapters
+├── tool/                    # Tool runtime and built-in tool implementations
+├── turn/                    # Turn/session orchestration
 └── desktop/                 # This project (Tauri + Next.js)
 ```
 

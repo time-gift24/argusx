@@ -1,9 +1,0 @@
-[database]
-path = "data/dev.db"
-busy_timeout_ms = 5000
-max_connections = 5
-
-[logging]
-level = "debug"
-# file = "logs/app.log"
-console = true
