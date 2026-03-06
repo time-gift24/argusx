@@ -1,7 +1,6 @@
 use argus_core::{ResponseEvent, ToolCall};
 use futures::StreamExt;
 use provider::{Dialect, ProviderClient, ProviderConfig, Request};
-use std::collections::HashMap;
 use std::io::{self, Write};
 
 #[tokio::main]
@@ -90,12 +89,7 @@ async fn main() -> io::Result<()> {
     let request = build_request(&model, &message);
 
     // Build config
-    let config = ProviderConfig {
-        dialect,
-        base_url,
-        api_key,
-        headers: HashMap::new(),
-    };
+    let config = ProviderConfig::new(dialect, base_url, api_key);
 
     // Create client
     let client = match ProviderClient::new(config) {

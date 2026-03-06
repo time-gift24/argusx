@@ -1,4 +1,4 @@
-use argus_core::{ResponseEvent, ToolCall, ZaiMcpType};
+use argus_core::{McpCallType, ResponseEvent, ToolCall};
 use provider::{Dialect, Mapper};
 
 #[test]
@@ -17,7 +17,7 @@ fn prefixed_openai_function_becomes_mcp() {
     let mcp = mcp.unwrap();
     assert_eq!(mcp.sequence, 0);
     assert_eq!(mcp.id, "call_1");
-    assert_eq!(mcp.mcp_type, ZaiMcpType::McpCall);
+    assert_eq!(mcp.mcp_type, McpCallType::McpCall);
     assert_eq!(mcp.server_label.as_deref(), Some("filesystem"));
     assert_eq!(mcp.name.as_deref(), Some("read_file"));
 }

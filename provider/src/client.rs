@@ -1,11 +1,9 @@
-use crate::{
-    Dialect, Error, ErrorKind, Mapper, ProviderConfig, Request, StreamError,
-};
+use crate::{Dialect, Error, ErrorKind, Mapper, ProviderConfig, Request, StreamError};
 use argus_core::{Error as CoreError, ResponseContract, ResponseEvent, ResponseStream};
 use bytes::Bytes;
 use eventsource_stream::{Event as SseMessage, EventStreamError, Eventsource};
-use futures::stream::{self, BoxStream};
 use futures::StreamExt;
+use futures::stream::{self, BoxStream};
 use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Error as ReqwestError, Response};
 use std::collections::HashMap;
@@ -38,10 +36,7 @@ impl ProviderClient {
     }
 
     fn stream_dialect(&self, dialect: Dialect, request: Request) -> Result<ResponseStream, Error> {
-        let url = format!(
-            "{}/chat/completions",
-            self.config.base_url.trim_end_matches('/')
-        );
+        let url = self.config.chat_completions_url();
         let http = self.http.clone();
         let api_key = self.config.api_key.clone();
         let headers = self.config.headers.clone();
@@ -75,15 +70,10 @@ impl ProviderClient {
             };
 
             let mut contract = ResponseContract::new();
-            let mut sse = match into_sse_message_stream(response) {
+            let mut sse = match into_sse_message_stream(response).await {
                 Ok(sse) => sse,
                 Err(err) => {
-                    send_terminal_error(
-                        &tx,
-                        &mut contract,
-                        err,
-                    )
-                    .await;
+                    send_terminal_error(&tx, &mut contract, err).await;
                     return;
                 }
             };
@@ -215,17 +205,27 @@ fn to_header_map(headers: &HashMap<String, String>) -> reqwest::header::HeaderMa
     map
 }
 
-fn into_sse_message_stream(response: Response) -> Result<MessageStream, StreamError> {
-    let response = check_response(response)?;
+async fn into_sse_message_stream(response: Response) -> Result<MessageStream, StreamError> {
+    let response = check_response(response).await?;
     let eof_flush = stream::once(async { Ok::<Bytes, ReqwestError>(Bytes::from_static(b"\n\n")) });
-    Ok(response.bytes_stream().chain(eof_flush).eventsource().boxed())
+    Ok(response
+        .bytes_stream()
+        .chain(eof_flush)
+        .eventsource()
+        .boxed())
 }
 
-fn check_response(response: Response) -> Result<Response, StreamError> {
+async fn check_response(response: Response) -> Result<Response, StreamError> {
     if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default().trim().to_owned();
         return Err(StreamError {
             kind: ErrorKind::HttpStatus,
-            message: format!("unexpected HTTP status {}", response.status()),
+            message: if body.is_empty() {
+                format!("unexpected HTTP status {status}")
+            } else {
+                format!("unexpected HTTP status {status}: {body}")
+            },
         });
     }
 

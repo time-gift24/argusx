@@ -15,13 +15,8 @@ async fn zai_stream_emits_mcp_and_done() {
         .mount(&server)
         .await;
 
-    let client = ProviderClient::new(ProviderConfig {
-        dialect: Dialect::Zai,
-        base_url: server.uri(),
-        api_key: "test-key".into(),
-        headers: Default::default(),
-    })
-    .unwrap();
+    let client =
+        ProviderClient::new(ProviderConfig::new(Dialect::Zai, server.uri(), "test-key")).unwrap();
 
     let request: Request = provider::dialect::openai::schema::request::ChatCompletionsOptions {
         model: "glm-test".into(),
@@ -32,6 +27,14 @@ async fn zai_stream_emits_mcp_and_done() {
     let stream = client.stream(request).unwrap();
     let events: Vec<_> = stream.collect().await;
 
-    assert!(events.iter().any(|e| matches!(e, ResponseEvent::ToolDone(_))));
-    assert!(events.iter().any(|e| matches!(e, ResponseEvent::Done(Some(_)))));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, ResponseEvent::ToolDone(_)))
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, ResponseEvent::Done(Some(_))))
+    );
 }

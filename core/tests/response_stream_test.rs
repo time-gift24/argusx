@@ -23,7 +23,10 @@ fn response_stream_yields_events_in_order() {
                 stream.next().await,
                 Some(ResponseEvent::ContentDelta(_))
             ));
-            assert!(matches!(stream.next().await, Some(ResponseEvent::Done(None))));
+            assert!(matches!(
+                stream.next().await,
+                Some(ResponseEvent::Done(None))
+            ));
             assert!(stream.next().await.is_none());
         });
 }

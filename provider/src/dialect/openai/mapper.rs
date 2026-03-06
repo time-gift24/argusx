@@ -3,7 +3,7 @@ use crate::dialect::openai::schema::stream::{
     ChatCompletionsStreamChunk, ChatCompletionsStreamEvent, DeltaToolCall,
 };
 use crate::normalize::tool_calls::{is_mcp_call, parse_zai_mcp_json};
-use argus_core::{Meta, ResponseEvent, ToolCall, Usage, ZaiMcpCall};
+use argus_core::{McpCall, Meta, ResponseEvent, ToolCall, Usage};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -235,7 +235,7 @@ impl Mapper {
                         ))
                     })?;
 
-                events.push(ResponseEvent::ToolDone(ToolCall::Mcp(ZaiMcpCall {
+                events.push(ResponseEvent::ToolDone(ToolCall::Mcp(McpCall {
                     sequence,
                     id: call_id,
                     mcp_type: payload.mcp_type,

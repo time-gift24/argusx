@@ -1,9 +1,9 @@
-use argus_core::ZaiMcpType;
+use argus_core::McpCallType;
 use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedZaiMcpPayload {
-    pub mcp_type: ZaiMcpType,
+    pub mcp_type: McpCallType,
     pub server_label: Option<String>,
     pub name: Option<String>,
     pub arguments_json: Option<String>,
@@ -27,10 +27,10 @@ pub fn parse_zai_mcp_json(
         .ok_or_else(|| "mcp json payload must be an object".to_string())?;
 
     let mcp_type = match object.get("type").and_then(Value::as_str) {
-        Some("mcp_call") => ZaiMcpType::McpCall,
-        Some("mcp_list_tools") => ZaiMcpType::McpListTools,
-        Some(other) => ZaiMcpType::Unknown(other.to_string()),
-        None => ZaiMcpType::Unknown("unknown".to_string()),
+        Some("mcp_call") => McpCallType::McpCall,
+        Some("mcp_list_tools") => McpCallType::McpListTools,
+        Some(other) => McpCallType::Unknown(other.to_string()),
+        None => McpCallType::Unknown("unknown".to_string()),
     };
 
     let server_label = object

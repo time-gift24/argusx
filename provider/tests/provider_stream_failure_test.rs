@@ -22,12 +22,11 @@ async fn http_status_failure_becomes_terminal_error_event() {
         .mount(&server)
         .await;
 
-    let client = ProviderClient::new(ProviderConfig {
-        dialect: Dialect::Openai,
-        base_url: server.uri(),
-        api_key: "test-key".into(),
-        headers: Default::default(),
-    })
+    let client = ProviderClient::new(ProviderConfig::new(
+        Dialect::Openai,
+        server.uri(),
+        "test-key",
+    ))
     .unwrap();
 
     let stream = client.stream(request("gpt-test")).unwrap();
@@ -35,7 +34,8 @@ async fn http_status_failure_becomes_terminal_error_event() {
 
     assert!(matches!(
         events.last(),
-        Some(ResponseEvent::Error(err)) if err.message.contains("HttpStatus")
+        Some(ResponseEvent::Error(err))
+            if err.message.contains("HttpStatus") && err.message.contains("boom")
     ));
 }
 
@@ -50,12 +50,11 @@ async fn malformed_chunk_becomes_terminal_parse_error_event() {
         .mount(&server)
         .await;
 
-    let client = ProviderClient::new(ProviderConfig {
-        dialect: Dialect::Openai,
-        base_url: server.uri(),
-        api_key: "test-key".into(),
-        headers: Default::default(),
-    })
+    let client = ProviderClient::new(ProviderConfig::new(
+        Dialect::Openai,
+        server.uri(),
+        "test-key",
+    ))
     .unwrap();
 
     let stream = client.stream(request("gpt-test")).unwrap();
@@ -81,18 +80,21 @@ async fn eof_without_done_becomes_terminal_protocol_error_event() {
         .mount(&server)
         .await;
 
-    let client = ProviderClient::new(ProviderConfig {
-        dialect: Dialect::Openai,
-        base_url: server.uri(),
-        api_key: "test-key".into(),
-        headers: Default::default(),
-    })
+    let client = ProviderClient::new(ProviderConfig::new(
+        Dialect::Openai,
+        server.uri(),
+        "test-key",
+    ))
     .unwrap();
 
     let stream = client.stream(request("gpt-test")).unwrap();
     let events: Vec<_> = stream.collect().await;
 
-    assert!(events.iter().any(|e| matches!(e, ResponseEvent::Created(_))));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, ResponseEvent::Created(_)))
+    );
     assert!(matches!(
         events.last(),
         Some(ResponseEvent::Error(err)) if err.message.contains("Protocol")

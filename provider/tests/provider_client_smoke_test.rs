@@ -2,12 +2,7 @@ use provider::{Dialect, ErrorKind, ProviderClient, ProviderConfig, StreamError};
 
 #[test]
 fn provider_client_can_be_constructed() {
-    let cfg = ProviderConfig {
-        dialect: Dialect::Openai,
-        base_url: "https://example.test".into(),
-        api_key: "secret".into(),
-        headers: Default::default(),
-    };
+    let cfg = ProviderConfig::new(Dialect::Openai, "https://example.test", "secret");
 
     let _client = ProviderClient::new(cfg).unwrap();
 }

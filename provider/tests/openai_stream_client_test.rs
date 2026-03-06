@@ -15,12 +15,11 @@ async fn openai_stream_returns_created_deltas_and_done() {
         .mount(&server)
         .await;
 
-    let client = ProviderClient::new(ProviderConfig {
-        dialect: Dialect::Openai,
-        base_url: server.uri(),
-        api_key: "test-key".into(),
-        headers: Default::default(),
-    })
+    let client = ProviderClient::new(ProviderConfig::new(
+        Dialect::Openai,
+        server.uri(),
+        "test-key",
+    ))
     .unwrap();
 
     let request: Request = provider::dialect::openai::schema::request::ChatCompletionsOptions {
@@ -35,6 +34,14 @@ async fn openai_stream_returns_created_deltas_and_done() {
         events.push(event);
     }
 
-    assert!(events.iter().any(|e| matches!(e, ResponseEvent::Created(_))));
-    assert!(events.iter().any(|e| matches!(e, ResponseEvent::Done(Some(_)))));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, ResponseEvent::Created(_)))
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, ResponseEvent::Done(Some(_))))
+    );
 }

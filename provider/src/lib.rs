@@ -25,6 +25,41 @@ pub struct ProviderConfig {
     pub base_url: String,
     pub api_key: String,
     pub headers: HashMap<String, String>,
+    pub chat_completions_path: Option<String>,
+}
+
+impl ProviderConfig {
+    pub const DEFAULT_CHAT_COMPLETIONS_PATH: &str = "/chat/completions";
+
+    pub fn new(dialect: Dialect, base_url: impl Into<String>, api_key: impl Into<String>) -> Self {
+        Self {
+            dialect,
+            base_url: base_url.into(),
+            api_key: api_key.into(),
+            headers: HashMap::new(),
+            chat_completions_path: None,
+        }
+    }
+
+    pub fn with_chat_completions_path(mut self, path: impl Into<String>) -> Self {
+        self.chat_completions_path = Some(path.into());
+        self
+    }
+
+    pub(crate) fn chat_completions_url(&self) -> String {
+        let path = self
+            .chat_completions_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .unwrap_or(Self::DEFAULT_CHAT_COMPLETIONS_PATH);
+
+        format!(
+            "{}/{}",
+            self.base_url.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        )
+    }
 }
 
 enum InnerMapper {
