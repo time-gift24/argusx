@@ -2,7 +2,7 @@
 // Local modifications:
 // - Default retry policy is `Never` for LLM streaming safety.
 
-use crate::sse::error::Error;
+use crate::error::Error;
 use std::time::Duration;
 
 /// Describes how an `EventSource` should retry on receiving an `Error`.

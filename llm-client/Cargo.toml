@@ -14,12 +14,11 @@ tokio.workspace = true
 futures.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
+eventsource_stream = { path = "../vendor/eventsource_stream" }
 
 # For retry jitter
 rand = "0.8"
 httpdate = "1.0"
-nom = "7"
-pin-project-lite = "0.2"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }

@@ -1,0 +1,18 @@
+[package]
+name = "eventsource_stream"
+version = "0.1.0"
+edition = "2021"
+description = "Vendored SSE stream and EventSource implementation used by llm-client"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+reqwest.workspace = true
+futures.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+nom = "7"
+pin-project-lite = "0.2"
+
+[dev-dependencies]
+bytes.workspace = true

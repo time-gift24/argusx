@@ -3,7 +3,7 @@
 // - Error payloads simplified for llm-client.
 // - Added conversion from internal EventStream parser errors.
 
-use crate::sse::event_stream::EventStreamError;
+use crate::event_stream::EventStreamError;
 use reqwest::Error as ReqwestError;
 use reqwest::StatusCode;
 use std::fmt;

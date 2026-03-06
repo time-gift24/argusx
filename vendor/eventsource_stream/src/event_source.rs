@@ -6,10 +6,10 @@
 // - Content-Type check is lenient by default (warn + continue).
 // - Fixed retry counter increment logic (`n + 1`).
 
-use crate::sse::error::{CannotCloneRequestError, Error};
-use crate::sse::message_event::MessageEvent;
-use crate::sse::retry::{RetryPolicy, DEFAULT_RETRY};
-use crate::sse::traits::Eventsource;
+use crate::error::{CannotCloneRequestError, Error};
+use crate::message_event::MessageEvent;
+use crate::retry::{RetryPolicy, DEFAULT_RETRY};
+use crate::traits::Eventsource;
 use core::pin::Pin;
 use futures::future::BoxFuture;
 use futures::stream::BoxStream;
@@ -33,10 +33,8 @@ pub enum ReadyState {
 }
 
 type ResponseFuture = BoxFuture<'static, Result<Response, ReqwestError>>;
-type MessageStream = BoxStream<
-    'static,
-    Result<MessageEvent, crate::sse::event_stream::EventStreamError<ReqwestError>>,
->;
+type MessageStream =
+    BoxStream<'static, Result<MessageEvent, crate::event_stream::EventStreamError<ReqwestError>>>;
 type BoxedRetry = Box<dyn RetryPolicy + Send + Unpin + 'static>;
 
 pin_project! {

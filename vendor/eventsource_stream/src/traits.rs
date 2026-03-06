@@ -1,6 +1,6 @@
 // Adapted from eventsource-stream v0.2.3 (MIT OR Apache-2.0).
 
-use crate::sse::event_stream::EventStream;
+use crate::event_stream::EventStream;
 use futures::Stream;
 
 /// Extension trait for turning a bytes stream into an SSE event stream.

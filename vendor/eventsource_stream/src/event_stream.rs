@@ -4,9 +4,9 @@
 // - Added configurable EOF flush behavior (`set_flush_on_eof`) and enabled it by default.
 // - On stream end, trailing partial line is finalized to preserve llm-client historical behavior.
 
-use crate::sse::message_event::MessageEvent;
-use crate::sse::parser::{is_bom, is_lf, line, RawEventLine};
-use crate::sse::utf8_stream::{Utf8Stream, Utf8StreamError};
+use crate::message_event::MessageEvent;
+use crate::parser::{is_bom, is_lf, line, RawEventLine};
+use crate::utf8_stream::{Utf8Stream, Utf8StreamError};
 use core::fmt;
 use core::pin::Pin;
 use core::time::Duration;
