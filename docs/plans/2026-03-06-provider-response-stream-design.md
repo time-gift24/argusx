@@ -149,6 +149,7 @@ Inside the spawned task:
 
 ### 6.3 `[DONE]` handling
 
+- OpenAI-compatible streams use `[DONE]` as the normal terminal marker.
 - On `[DONE]`, the task must call `mapper.on_done()`.
 - The resulting events are forwarded in order.
 - The final emitted event must be `Done(_)`.
@@ -161,8 +162,12 @@ If the runtime sees any post-start failure, it emits a single terminal `Response
 - SSE parse failure
 - JSON decode failure
 - mapper protocol failure
-- EOF before `[DONE]`
 - explicit cancellation
+
+Dialect-specific EOF rule:
+
+- `Openai`: EOF before `[DONE]` is a terminal protocol error.
+- `Zai`: EOF after the terminal completion payload is finalized via `mapper.on_done()`.
 
 Channel closure after a terminal event is normal and does not require an additional signal.
 
@@ -204,15 +209,15 @@ This keeps `core` transport-agnostic while still giving provider internals a sta
 
 ## 8. Transport Placement
 
-SSE transport moves into `provider`.
+SSE handling moves into `provider`, but not as a public wrapper layer.
 
-Recommended module shape:
+Implementation should consume `response.bytes_stream().eventsource()` directly from `vendor/eventsource_stream`, with small private helpers for:
 
-- `provider/src/transport/sse/mod.rs`
-- `provider/src/transport/sse/error.rs`
-- `provider/src/transport/sse/event_source.rs`
+- HTTP status and content-type validation
+- EOF flush (`\n\n`) to finalize trailing SSE blocks
+- mapping transport/parser failures into provider runtime error kinds
 
-Implementation should reuse the existing design from `llm-client/src/sse`, but the new stream path must not depend on `llm-client` at runtime.
+The new stream path must not depend on `llm-client` at runtime.
 
 ## 9. Testing Strategy
 
@@ -238,13 +243,14 @@ Add end-to-end tests using mocked SSE responses:
 - successful `[DONE]` flow
 - tool-call flush on terminal
 - runtime parse/protocol failures become `ResponseEvent::Error`
-- EOF without `[DONE]` becomes terminal error
+- OpenAI EOF without `[DONE]` becomes terminal error
+- Z.AI EOF after terminal completion payload finalizes via `on_done()`
 - dropped consumer cancels background task
 
 ## 10. Migration Plan
 
 1. Add `ResponseStream` to `core`.
-2. Add provider-owned SSE transport and end-to-end `stream()` API.
+2. Add provider-owned SSE handling and end-to-end `stream()` API.
 3. Keep current mapper tests and APIs while the new stream path is added.
 4. Wire the future `turn` path directly to `provider`.
 5. Remove `llm-client` and old `agent-turn` integrations once the new path is proven.
