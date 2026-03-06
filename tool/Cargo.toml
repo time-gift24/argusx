@@ -1,0 +1,24 @@
+[package]
+name = "tool"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+argus_core = { package = "core", path = "../core" }
+async-trait = { workspace = true }
+globset = "0.4"
+grep = "0.2"
+ignore = "0.4"
+regex = "1.0"
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "fs", "process", "io-util"] }
+toml = { workspace = true }
+walkdir = "2.0"
+
+[dev-dependencies]
+axum = "0.8"
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "rt-multi-thread", "macros", "net"] }

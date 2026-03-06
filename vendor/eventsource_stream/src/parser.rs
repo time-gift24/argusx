@@ -1,9 +1,10 @@
 use nom::branch::alt;
-use nom::bytes::streaming::{tag, take_while, take_while1, take_while_m_n};
+use nom::bytes::streaming::{take_while, take_while1, take_while_m_n};
 use nom::combinator::opt;
 use nom::sequence::{preceded, terminated};
 use nom::IResult;
 use nom::Parser;
+use nom::{error::ErrorKind, Err, Needed};
 
 /// ; ABNF definition from HTML spec
 ///
@@ -37,11 +38,6 @@ pub fn is_lf(c: char) -> bool {
 }
 
 #[inline]
-pub fn is_cr(c: char) -> bool {
-    c == '\u{000D}'
-}
-
-#[inline]
 pub fn is_space(c: char) -> bool {
     c == '\u{0020}'
 }
@@ -72,18 +68,24 @@ pub fn is_any_char(c: char) -> bool {
 }
 
 #[inline]
-fn crlf(input: &str) -> IResult<&str, &str> {
-    tag("\u{000D}\u{000A}").parse(input)
-}
-
-#[inline]
 fn end_of_line(input: &str) -> IResult<&str, &str> {
-    alt((
-        crlf,
-        take_while_m_n(1, 1, is_cr),
-        take_while_m_n(1, 1, is_lf),
-    ))
-    .parse(input)
+    if input.is_empty() {
+        return Err(Err::Incomplete(Needed::new(1)));
+    }
+
+    if let Some(rem) = input.strip_prefix("\u{000D}\u{000A}") {
+        return Ok((rem, &input[..2]));
+    }
+
+    if let Some(rem) = input.strip_prefix('\u{000D}') {
+        return Ok((rem, &input[..1]));
+    }
+
+    if let Some(rem) = input.strip_prefix('\u{000A}') {
+        return Ok((rem, &input[..1]));
+    }
+
+    Err(Err::Error(nom::error::Error::new(input, ErrorKind::CrLf)))
 }
 
 #[inline]
@@ -119,4 +121,48 @@ fn empty(input: &str) -> IResult<&str, RawEventLine<'_>> {
 
 pub fn line(input: &str) -> IResult<&str, RawEventLine<'_>> {
     alt((comment, field, empty)).parse(input)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn field_line_leaves_trailing_empty_line_in_buffer() {
+        let (rem, parsed) = line("data: Hello, world!\n\n").expect("field line should parse");
+
+        match parsed {
+            RawEventLine::Field(name, Some(value)) => {
+                assert_eq!(name, "data");
+                assert_eq!(value, "Hello, world!");
+            }
+            _ => panic!("expected field line"),
+        }
+
+        assert_eq!(rem, "\n");
+    }
+
+    #[test]
+    fn empty_line_parses_from_single_newline() {
+        let (rem, parsed) = line("\n").expect("empty line should parse");
+
+        assert!(matches!(parsed, RawEventLine::Empty));
+        assert_eq!(rem, "");
+    }
+
+    #[test]
+    fn empty_line_parses_from_single_carriage_return() {
+        let (rem, parsed) = line("\r").expect("empty CR line should parse");
+
+        assert!(matches!(parsed, RawEventLine::Empty));
+        assert_eq!(rem, "");
+    }
+
+    #[test]
+    fn empty_line_parses_from_crlf() {
+        let (rem, parsed) = line("\r\n").expect("empty CRLF line should parse");
+
+        assert!(matches!(parsed, RawEventLine::Empty));
+        assert_eq!(rem, "");
+    }
 }

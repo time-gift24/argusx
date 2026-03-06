@@ -148,6 +148,7 @@ async fn main() -> io::Result<()> {
             ResponseEvent::ToolDone(call) => {
                 let name = match call {
                     ToolCall::FunctionCall { name, .. } => name.clone(),
+                    ToolCall::Builtin(call) => call.builtin.canonical_name().to_string(),
                     ToolCall::Mcp(mcp) => mcp.name.clone().unwrap_or_default(),
                 };
                 println!("[tool done: {}]", name);

@@ -1,7 +1,7 @@
 #[tokio::test]
 async fn update_plan_accepts_valid_plan_and_emits_structured_output() {
-    use agent_tool::{Tool, ToolContext};
-    let tool = agent_tool::builtin::update_plan::UpdatePlanTool;
+    use tool::{Tool, ToolContext};
+    let tool = tool::builtin::update_plan::UpdatePlanTool;
     let result = tool
         .execute(
             ToolContext {
@@ -30,8 +30,8 @@ async fn update_plan_accepts_valid_plan_and_emits_structured_output() {
 
 #[tokio::test]
 async fn update_plan_rejects_multiple_in_progress_steps() {
-    use agent_tool::{Tool, ToolContext};
-    let tool = agent_tool::builtin::update_plan::UpdatePlanTool;
+    use tool::{Tool, ToolContext};
+    let tool = tool::builtin::update_plan::UpdatePlanTool;
     let err = tool
         .execute(
             ToolContext {
@@ -54,8 +54,8 @@ async fn update_plan_rejects_multiple_in_progress_steps() {
 #[tokio::test]
 async fn update_plan_accepts_zero_in_progress_steps() {
     // Relaxed rule: 0 in_progress is allowed (even with pending steps)
-    use agent_tool::{Tool, ToolContext};
-    let tool = agent_tool::builtin::update_plan::UpdatePlanTool;
+    use tool::{Tool, ToolContext};
+    let tool = tool::builtin::update_plan::UpdatePlanTool;
     let result = tool
         .execute(
             ToolContext {
@@ -78,8 +78,8 @@ async fn update_plan_accepts_zero_in_progress_steps() {
 
 #[tokio::test]
 async fn update_plan_rejects_empty_step() {
-    use agent_tool::{Tool, ToolContext};
-    let tool = agent_tool::builtin::update_plan::UpdatePlanTool;
+    use tool::{Tool, ToolContext};
+    let tool = tool::builtin::update_plan::UpdatePlanTool;
     let err = tool
         .execute(
             ToolContext {

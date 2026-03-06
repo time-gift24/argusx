@@ -2,8 +2,8 @@ use crate::dialect::openai::parser::parse_payload;
 use crate::dialect::openai::schema::stream::{
     ChatCompletionsStreamChunk, ChatCompletionsStreamEvent, DeltaToolCall,
 };
-use crate::normalize::tool_calls::{is_mcp_call, parse_zai_mcp_json};
-use argus_core::{McpCall, Meta, ResponseEvent, ToolCall, Usage};
+use crate::normalize::tool_calls::{classify_tool_call, parse_zai_mcp_json, ToolCallKind};
+use argus_core::{BuiltinToolCall, McpCall, Meta, ResponseEvent, ToolCall, Usage};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -227,32 +227,44 @@ impl Mapper {
                 Error::Protocol(format!("missing tool name for tool call '{call_id}'"))
             })?;
 
-            if is_mcp_call(tc.call_type.as_deref(), Some(name.as_str())) {
-                let payload = parse_zai_mcp_json(&tc.arguments_json, name.strip_prefix("__mcp__"))
-                    .map_err(|err| {
-                        Error::Protocol(format!(
-                            "invalid mcp payload for call '{call_id}' (sequence {sequence}): {err}"
-                        ))
-                    })?;
+            match classify_tool_call(tc.call_type.as_deref(), Some(name.as_str())) {
+                ToolCallKind::Mcp => {
+                    let payload =
+                        parse_zai_mcp_json(&tc.arguments_json, name.strip_prefix("__mcp__"))
+                            .map_err(|err| {
+                                Error::Protocol(format!(
+                                    "invalid mcp payload for call '{call_id}' (sequence {sequence}): {err}"
+                                ))
+                            })?;
 
-                events.push(ResponseEvent::ToolDone(ToolCall::Mcp(McpCall {
-                    sequence,
-                    id: call_id,
-                    mcp_type: payload.mcp_type,
-                    server_label: payload.server_label,
-                    name: payload.name,
-                    arguments_json: payload.arguments_json,
-                    output_json: payload.output_json,
-                    tools_json: payload.tools_json,
-                    error: payload.error,
-                })));
-            } else {
-                events.push(ResponseEvent::ToolDone(ToolCall::FunctionCall {
-                    sequence,
-                    call_id,
-                    name,
-                    arguments_json: tc.arguments_json,
-                }));
+                    events.push(ResponseEvent::ToolDone(ToolCall::Mcp(McpCall {
+                        sequence,
+                        id: call_id,
+                        mcp_type: payload.mcp_type,
+                        server_label: payload.server_label,
+                        name: payload.name,
+                        arguments_json: payload.arguments_json,
+                        output_json: payload.output_json,
+                        tools_json: payload.tools_json,
+                        error: payload.error,
+                    })));
+                }
+                ToolCallKind::Builtin(builtin) => {
+                    events.push(ResponseEvent::ToolDone(ToolCall::Builtin(BuiltinToolCall {
+                        sequence,
+                        call_id,
+                        builtin,
+                        arguments_json: tc.arguments_json,
+                    })));
+                }
+                ToolCallKind::Function => {
+                    events.push(ResponseEvent::ToolDone(ToolCall::FunctionCall {
+                        sequence,
+                        call_id,
+                        name,
+                        arguments_json: tc.arguments_json,
+                    }));
+                }
             }
             self.emitted_tool_sequences.insert(sequence);
         }

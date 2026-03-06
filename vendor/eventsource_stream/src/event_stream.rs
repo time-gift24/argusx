@@ -75,23 +75,23 @@ impl EventBuilder {
     /// From the HTML spec
     ///
     /// 1. Set the last event ID string of the event source to the value of the last event ID
-    /// buffer. The buffer does not get reset, so the last event ID string of the event source
-    /// remains set to this value until the next time it is set by the server.
+    ///    buffer. The buffer does not get reset, so the last event ID string of the event
+    ///    source remains set to this value until the next time it is set by the server.
     /// 2. If the data buffer is an empty string, set the data buffer and the event type buffer
-    /// to the empty string and return.
+    ///    to the empty string and return.
     /// 3. If the data buffer's last character is a U+000A LINE FEED (LF) character, then remove
-    /// the last character from the data buffer.
+    ///    the last character from the data buffer.
     /// 4. Let event be the result of creating an event using MessageEvent, in the relevant Realm
-    /// of the EventSource object.
+    ///    of the EventSource object.
     /// 5. Initialize event's type attribute to message, its data attribute to data, its origin
-    /// attribute to the serialization of the origin of the event stream's final URL (i.e., the
-    /// URL after redirects), and its lastEventId attribute to the last event ID string of the
-    /// event source.
+    ///    attribute to the serialization of the origin of the event stream's final URL (i.e.,
+    ///    the URL after redirects), and its lastEventId attribute to the last event ID string
+    ///    of the event source.
     /// 6. If the event type buffer has a value other than the empty string, change the type of
-    /// the newly created event to equal the value of the event type buffer.
+    ///    the newly created event to equal the value of the event type buffer.
     /// 7. Set the data buffer and the event type buffer to the empty string.
     /// 8. Queue a task which, if the readyState attribute is set to a value other than CLOSED,
-    /// dispatches the newly created event at the EventSource object.
+    ///    dispatches the newly created event at the EventSource object.
     fn dispatch(&mut self) -> Option<Event> {
         let builder = core::mem::take(self);
         let mut event = builder.event;
@@ -299,6 +299,59 @@ where
 mod tests {
     use super::*;
     use futures::prelude::*;
+
+    #[test]
+    fn parse_event_flushes_complete_buffer() {
+        let mut buffer = "data: Hello, world!\n\n".to_string();
+        let mut builder = EventBuilder::default();
+
+        let event = parse_event::<()>(
+            &mut buffer,
+            &mut builder,
+        )
+        .expect("parse should succeed");
+
+        assert_eq!(
+            event,
+            Some(Event {
+                event: "message".to_string(),
+                data: "Hello, world!".to_string(),
+                ..Default::default()
+            })
+        );
+        assert_eq!(buffer, "");
+    }
+
+    #[test]
+    fn parse_event_preserves_remaining_buffer_after_one_event() {
+        let mut buffer = "data: first\n\ndata: second\n\n".to_string();
+        let mut builder = EventBuilder::default();
+
+        let first = parse_event::<()>(&mut buffer, &mut builder).expect("first parse should work");
+
+        assert_eq!(
+            first,
+            Some(Event {
+                event: "message".to_string(),
+                data: "first".to_string(),
+                ..Default::default()
+            })
+        );
+        assert_eq!(buffer, "data: second\n\n");
+
+        let second =
+            parse_event::<()>(&mut buffer, &mut builder).expect("second parse should work");
+
+        assert_eq!(
+            second,
+            Some(Event {
+                event: "message".to_string(),
+                data: "second".to_string(),
+                ..Default::default()
+            })
+        );
+        assert_eq!(buffer, "");
+    }
 
     #[tokio::test]
     async fn valid_data_fields() {

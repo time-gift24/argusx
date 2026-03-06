@@ -5,7 +5,9 @@ This directory stores local modifications on top of the vendored
 
 ## Current patch
 
-- `0001-nom8-compat.patch`: updates parser usage for `nom` 8 API compatibility.
+- `0001-local-compat-and-parser-fixes.patch`: carries the full local delta on top of the
+  vendored upstream mirror, including `nom` 8 compatibility updates and the empty-line SSE
+  parsing fix required to flush complete events.
 
 ## Verify
 
@@ -20,6 +22,7 @@ From repo root:
 If you update upstream sync commit and patch commit, regenerate with:
 
 ```bash
-git format-patch --stdout <upstream_sync_commit>..<patch_commit> -- vendor/eventsource_stream \
-  > patches/eventsource-stream/0001-nom8-compat.patch
+rm -f patches/eventsource-stream/*.patch
+git diff --binary <upstream_sync_commit> -- vendor/eventsource_stream \
+  > patches/eventsource-stream/0001-local-compat-and-parser-fixes.patch
 ```

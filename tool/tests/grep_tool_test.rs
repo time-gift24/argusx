@@ -1,4 +1,4 @@
-use agent_tool::{GrepTool, Tool, ToolContext};
+use tool::{GrepTool, Tool, ToolContext};
 use serde_json::json;
 
 fn test_context() -> ToolContext {

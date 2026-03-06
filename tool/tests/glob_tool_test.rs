@@ -1,4 +1,4 @@
-use agent_tool::{GlobTool, Tool, ToolContext};
+use tool::{GlobTool, Tool, ToolContext};
 use serde_json::json;
 
 fn test_context() -> ToolContext {

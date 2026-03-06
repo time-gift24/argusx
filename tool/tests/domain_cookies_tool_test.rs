@@ -1,20 +1,12 @@
-use agent_core::tools::ToolCatalog;
-use agent_tool::{AgentToolRuntime, DomainCookiesTool, Tool, ToolContext, ToolRegistry};
 use axum::{extract::Json, routing::post, Router};
 use serde_json::{json, Value};
+use tool::{DomainCookiesTool, Tool, ToolContext};
 
 fn test_context() -> ToolContext {
     ToolContext {
         session_id: "test-session".to_string(),
         turn_id: "test-turn".to_string(),
     }
-}
-
-#[tokio::test]
-async fn default_runtime_registers_domain_cookie_tool() {
-    let runtime = AgentToolRuntime::default_with_builtins().await;
-    let tools = runtime.list_tools().await;
-    assert!(tools.iter().any(|tool| tool.name == "get_domain_cookies"));
 }
 
 #[tokio::test]
@@ -41,16 +33,11 @@ async fn domain_cookie_tool_calls_gateway_and_returns_payload() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let registry = ToolRegistry::new();
-    registry
-        .register(DomainCookiesTool::new(format!("http://{addr}")))
-        .await;
-
-    let result = registry
-        .call(
-            "get_domain_cookies",
-            json!({"domain":"github.com","refresh_after_ms":120000}),
+    let tool = DomainCookiesTool::new(format!("http://{addr}"));
+    let result = tool
+        .execute(
             test_context(),
+            json!({"domain":"github.com","refresh_after_ms":120000}),
         )
         .await
         .unwrap();

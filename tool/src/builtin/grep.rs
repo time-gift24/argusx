@@ -28,11 +28,9 @@ impl GrepTool {
         Ok(Self { guard })
     }
 
-    /// Get default grep tool with current directory as allowed root
-    pub fn default() -> Result<Self, FsError> {
-        Self::new(vec![
-            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-        ])
+    /// Build a grep tool with the current directory as the allowed root.
+    pub fn from_current_dir() -> Result<Self, FsError> {
+        Self::new(vec![std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))])
     }
 }
 
@@ -129,7 +127,7 @@ impl Tool for GrepTool {
             .guard
             .authorize_existing(&args.path)
             .await
-            .map_err(|e| map_fs_error(e))?;
+            .map_err(map_fs_error)?;
 
         // Build regex pattern
         let pattern = if args.is_regex {

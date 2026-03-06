@@ -1,4 +1,4 @@
-use agent_tool::{ReadTool, Tool, ToolContext};
+use tool::{ReadTool, Tool, ToolContext};
 use serde_json::json;
 
 fn test_context() -> ToolContext {

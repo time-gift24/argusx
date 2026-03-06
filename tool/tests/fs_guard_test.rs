@@ -1,4 +1,4 @@
-use agent_tool::builtin::fs::guard::FsGuard;
+use tool::builtin::fs::guard::FsGuard;
 use std::path::PathBuf;
 
 #[tokio::test]
@@ -145,7 +145,7 @@ async fn guard_denies_nonexistent_path_in_existing() {
     if let Err(e) = result {
         assert!(matches!(
             e,
-            agent_tool::builtin::fs::error::FsError::NotFound(_)
+            tool::builtin::fs::error::FsError::NotFound(_)
         ));
     }
 }

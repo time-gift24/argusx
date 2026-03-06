@@ -22,11 +22,9 @@ impl GlobTool {
         Ok(Self { guard })
     }
 
-    /// Get default glob tool with current directory as allowed root
-    pub fn default() -> Result<Self, FsError> {
-        Self::new(vec![
-            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-        ])
+    /// Build a glob tool with the current directory as the allowed root.
+    pub fn from_current_dir() -> Result<Self, FsError> {
+        Self::new(vec![std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))])
     }
 }
 
@@ -130,7 +128,7 @@ impl Tool for GlobTool {
             .guard
             .authorize_existing(&args.path)
             .await
-            .map_err(|e| map_fs_error(e))?;
+            .map_err(map_fs_error)?;
 
         if !authorized_path.is_dir() {
             return Err(ToolError::ExecutionFailed(
@@ -189,35 +187,33 @@ impl Tool for GlobTool {
             }
 
             // Check include pattern against relative path
-            if let Some(ref inc) = include_glob {
-                if !inc.is_match(&relative_path)
-                    && !inc.is_match(path.file_name().unwrap_or_default().to_str().unwrap_or(""))
-                {
-                    continue;
-                }
+            if let Some(ref inc) = include_glob
+                && !inc.is_match(&relative_path)
+                && !inc.is_match(path.file_name().unwrap_or_default().to_str().unwrap_or(""))
+            {
+                continue;
             }
 
             // Check exclude pattern against relative path
-            if let Some(ref exc) = exclude_glob {
-                if exc.is_match(&relative_path)
-                    || exc.is_match(path.file_name().unwrap_or_default().to_str().unwrap_or(""))
-                {
-                    continue;
-                }
+            if let Some(ref exc) = exclude_glob
+                && (exc.is_match(&relative_path)
+                    || exc.is_match(path.file_name().unwrap_or_default().to_str().unwrap_or("")))
+            {
+                continue;
             }
 
             // Check file size
             if let Ok(metadata) = path.metadata() {
                 let size = metadata.len();
-                if let Some(min) = min_size {
-                    if size < min {
-                        continue;
-                    }
+                if let Some(min) = min_size
+                    && size < min
+                {
+                    continue;
                 }
-                if let Some(max) = max_size {
-                    if size > max {
-                        continue;
-                    }
+                if let Some(max) = max_size
+                    && size > max
+                {
+                    continue;
                 }
             }
 
