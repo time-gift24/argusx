@@ -13,11 +13,11 @@ serde_json = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 chrono = { workspace = true }
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { workspace = true, features = ["serde"] }
 tracing = { workspace = true }
 futures = { workspace = true }
-tokio-stream = "0.1"
-rusqlite = { version = "0.32", features = ["bundled"] }
+tokio-stream = { workspace = true }
+rusqlite = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

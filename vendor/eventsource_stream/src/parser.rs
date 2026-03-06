@@ -1,8 +1,9 @@
 use nom::branch::alt;
 use nom::bytes::streaming::{tag, take_while, take_while1, take_while_m_n};
 use nom::combinator::opt;
-use nom::sequence::{preceded, terminated, tuple};
+use nom::sequence::{preceded, terminated};
 use nom::IResult;
+use nom::Parser;
 
 /// ; ABNF definition from HTML spec
 ///
@@ -25,7 +26,7 @@ use nom::IResult;
 
 #[derive(Debug)]
 pub enum RawEventLine<'a> {
-    Comment(&'a str),
+    Comment,
     Field(&'a str, Option<&'a str>),
     Empty,
 }
@@ -72,7 +73,7 @@ pub fn is_any_char(c: char) -> bool {
 
 #[inline]
 fn crlf(input: &str) -> IResult<&str, &str> {
-    tag("\u{000D}\u{000A}")(input)
+    tag("\u{000D}\u{000A}").parse(input)
 }
 
 #[inline]
@@ -81,38 +82,41 @@ fn end_of_line(input: &str) -> IResult<&str, &str> {
         crlf,
         take_while_m_n(1, 1, is_cr),
         take_while_m_n(1, 1, is_lf),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 #[inline]
-fn comment(input: &str) -> IResult<&str, RawEventLine> {
+fn comment(input: &str) -> IResult<&str, RawEventLine<'_>> {
     preceded(
         take_while_m_n(1, 1, is_colon),
         terminated(take_while(is_any_char), end_of_line),
-    )(input)
-    .map(|(input, comment)| (input, RawEventLine::Comment(comment)))
+    )
+    .parse(input)
+    .map(|(input, _)| (input, RawEventLine::Comment))
 }
 
 #[inline]
-fn field(input: &str) -> IResult<&str, RawEventLine> {
+fn field(input: &str) -> IResult<&str, RawEventLine<'_>> {
     terminated(
-        tuple((
+        (
             take_while1(is_name_char),
             opt(preceded(
                 take_while_m_n(1, 1, is_colon),
                 preceded(opt(take_while_m_n(1, 1, is_space)), take_while(is_any_char)),
             )),
-        )),
+        ),
         end_of_line,
-    )(input)
+    )
+    .parse(input)
     .map(|(input, (field, data))| (input, RawEventLine::Field(field, data)))
 }
 
 #[inline]
-fn empty(input: &str) -> IResult<&str, RawEventLine> {
+fn empty(input: &str) -> IResult<&str, RawEventLine<'_>> {
     end_of_line(input).map(|(i, _)| (i, RawEventLine::Empty))
 }
 
-pub fn line(input: &str) -> IResult<&str, RawEventLine> {
-    alt((comment, field, empty))(input)
+pub fn line(input: &str) -> IResult<&str, RawEventLine<'_>> {
+    alt((comment, field, empty)).parse(input)
 }

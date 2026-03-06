@@ -15,8 +15,8 @@ tokio = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 async-stream = { workspace = true }
-tokio-stream = "0.1"
-uuid = { version = "1", features = ["v4", "serde"] }
+tokio-stream = { workspace = true }
+uuid = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }

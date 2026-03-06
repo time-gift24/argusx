@@ -17,10 +17,10 @@ serde_json.workspace = true
 thiserror.workspace = true
 bytes.workspace = true
 tracing.workspace = true
-rand = "0.8"
-httpdate = "1.0"
+rand = { workspace = true }
+httpdate = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }
-wiremock = "0.6"
+wiremock = { workspace = true }
 futures = { workspace = true }

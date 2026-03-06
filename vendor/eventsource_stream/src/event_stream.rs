@@ -67,7 +67,7 @@ impl EventBuilder {
                     _ => {}
                 }
             }
-            RawEventLine::Comment(_) => {}
+            RawEventLine::Comment => {}
             RawEventLine::Empty => self.is_complete = true,
         }
     }
