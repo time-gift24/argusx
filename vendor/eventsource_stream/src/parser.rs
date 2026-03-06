@@ -1,17 +1,31 @@
-// Adapted from eventsource-stream v0.2.3 (MIT OR Apache-2.0).
-// Local modifications:
-// - Kept parser internals private to llm-client `sse` module.
-
 use nom::branch::alt;
 use nom::bytes::streaming::{tag, take_while, take_while1, take_while_m_n};
 use nom::combinator::opt;
 use nom::sequence::{preceded, terminated, tuple};
 use nom::IResult;
 
-/// Raw parsed SSE line.
+/// ; ABNF definition from HTML spec
+///
+/// stream        = [ bom ] *event
+/// event         = *( comment / field ) end-of-line
+/// comment       = colon *any-char end-of-line
+/// field         = 1*name-char [ colon [ space ] *any-char ] end-of-line
+/// end-of-line   = ( cr lf / cr / lf )
+///
+/// ; characters
+/// lf            = %x000A ; U+000A LINE FEED (LF)
+/// cr            = %x000D ; U+000D CARRIAGE RETURN (CR)
+/// space         = %x0020 ; U+0020 SPACE
+/// colon         = %x003A ; U+003A COLON (:)
+/// bom           = %xFEFF ; U+FEFF BYTE ORDER MARK
+/// name-char     = %x0000-0009 / %x000B-000C / %x000E-0039 / %x003B-10FFFF
+///                 ; a scalar value other than U+000A LINE FEED (LF), U+000D CARRIAGE RETURN (CR), or U+003A COLON (:)
+/// any-char      = %x0000-0009 / %x000B-000C / %x000E-10FFFF
+///                 ; a scalar value other than U+000A LINE FEED (LF) or U+000D CARRIAGE RETURN (CR)
+
 #[derive(Debug)]
 pub enum RawEventLine<'a> {
-    Comment,
+    Comment(&'a str),
     Field(&'a str, Option<&'a str>),
     Empty,
 }
@@ -43,18 +57,17 @@ pub fn is_bom(c: char) -> bool {
 
 #[inline]
 pub fn is_name_char(c: char) -> bool {
-    matches!(
-        c,
-        '\u{0000}'..='\u{0009}' | '\u{000B}'..='\u{000C}' | '\u{000E}'..='\u{0039}' | '\u{003B}'..='\u{10FFFF}'
-    )
+    matches!(c, '\u{0000}'..='\u{0009}'
+        | '\u{000B}'..='\u{000C}'
+        | '\u{000E}'..='\u{0039}'
+        | '\u{003B}'..='\u{10FFFF}')
 }
 
 #[inline]
 pub fn is_any_char(c: char) -> bool {
-    matches!(
-        c,
-        '\u{0000}'..='\u{0009}' | '\u{000B}'..='\u{000C}' | '\u{000E}'..='\u{10FFFF}'
-    )
+    matches!(c, '\u{0000}'..='\u{0009}'
+        | '\u{000B}'..='\u{000C}'
+        | '\u{000E}'..='\u{10FFFF}')
 }
 
 #[inline]
@@ -72,16 +85,16 @@ fn end_of_line(input: &str) -> IResult<&str, &str> {
 }
 
 #[inline]
-fn comment(input: &str) -> IResult<&str, RawEventLine<'_>> {
+fn comment(input: &str) -> IResult<&str, RawEventLine> {
     preceded(
         take_while_m_n(1, 1, is_colon),
         terminated(take_while(is_any_char), end_of_line),
     )(input)
-    .map(|(input, _)| (input, RawEventLine::Comment))
+    .map(|(input, comment)| (input, RawEventLine::Comment(comment)))
 }
 
 #[inline]
-fn field(input: &str) -> IResult<&str, RawEventLine<'_>> {
+fn field(input: &str) -> IResult<&str, RawEventLine> {
     terminated(
         tuple((
             take_while1(is_name_char),
@@ -96,10 +109,10 @@ fn field(input: &str) -> IResult<&str, RawEventLine<'_>> {
 }
 
 #[inline]
-fn empty(input: &str) -> IResult<&str, RawEventLine<'_>> {
+fn empty(input: &str) -> IResult<&str, RawEventLine> {
     end_of_line(input).map(|(i, _)| (i, RawEventLine::Empty))
 }
 
-pub fn line(input: &str) -> IResult<&str, RawEventLine<'_>> {
+pub fn line(input: &str) -> IResult<&str, RawEventLine> {
     alt((comment, field, empty))(input)
 }

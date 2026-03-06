@@ -1,18 +1,11 @@
-// Adapted from reqwest-eventsource v0.6.0 (MIT OR Apache-2.0).
-// Local modifications:
-// - Uses in-tree SSE parser/event stream (self-maintained).
-// - Added `EventSource::from_response` to preserve existing HTTP error mapping path in providers.
-// - Default retry policy changed to `Never` for LLM streaming safety.
-// - Content-Type check is lenient by default (warn + continue).
-// - Fixed retry counter increment logic (`n + 1`).
-
-use crate::error::{CannotCloneRequestError, Error};
-use crate::message_event::MessageEvent;
-use crate::retry::{RetryPolicy, DEFAULT_RETRY};
-use crate::traits::Eventsource;
+use crate::sse::error::{CannotCloneRequestError, Error};
+use crate::sse::retry::{RetryPolicy, DEFAULT_RETRY};
+use bytes::Bytes;
 use core::pin::Pin;
+use eventsource_stream::Event as MessageEvent;
+use eventsource_stream::Eventsource;
 use futures::future::BoxFuture;
-use futures::stream::BoxStream;
+use futures::stream::{self, BoxStream};
 use futures::task::{Context, Poll};
 use futures::{Future, Stream, StreamExt};
 use pin_project_lite::pin_project;
@@ -20,7 +13,6 @@ use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Error as ReqwestError, IntoUrl, RequestBuilder, Response};
 use std::time::Duration;
 use tokio::time::{sleep, Sleep};
-
 use tracing::warn;
 
 /// Ready state of an `EventSource` stream.
@@ -34,11 +26,10 @@ pub enum ReadyState {
 
 type ResponseFuture = BoxFuture<'static, Result<Response, ReqwestError>>;
 type MessageStream =
-    BoxStream<'static, Result<MessageEvent, crate::event_stream::EventStreamError<ReqwestError>>>;
+    BoxStream<'static, Result<MessageEvent, eventsource_stream::EventStreamError<ReqwestError>>>;
 type BoxedRetry = Box<dyn RetryPolicy + Send + Unpin + 'static>;
 
 pin_project! {
-/// SSE event source stream.
 #[project = EventSourceProjection]
 pub struct EventSource {
     builder: Option<RequestBuilder>,
@@ -149,11 +140,16 @@ impl EventSource {
 
     fn handle_response(&mut self, res: Response) {
         self.last_retry.take();
-        let mut stream = res.bytes_stream().eventsource();
-        stream.set_last_event_id(self.last_event_id.clone());
-        stream.set_flush_on_eof(true);
-        self.cur_stream = Some(stream.boxed());
+        self.cur_stream = Some(sse_message_stream(res, &self.last_event_id));
     }
+}
+
+fn sse_message_stream(response: Response, last_event_id: &str) -> MessageStream {
+    // Append a final blank line to flush trailing SSE event blocks without terminator.
+    let eof_flush = stream::once(async { Ok::<Bytes, ReqwestError>(Bytes::from_static(b"\n\n")) });
+    let mut stream = response.bytes_stream().chain(eof_flush).eventsource();
+    stream.set_last_event_id(last_event_id.to_string());
+    stream.boxed()
 }
 
 fn parse_content_type(value: Option<&HeaderValue>) -> Option<String> {
@@ -295,10 +291,8 @@ impl Stream for EventSource {
                     match check_response(res, *this.enforce_content_type) {
                         Ok(res) => {
                             this.last_retry.take();
-                            let mut stream = res.bytes_stream().eventsource();
-                            stream.set_last_event_id(this.last_event_id.clone());
-                            stream.set_flush_on_eof(true);
-                            this.cur_stream.replace(stream.boxed());
+                            this.cur_stream
+                                .replace(sse_message_stream(res, this.last_event_id));
                             return Poll::Ready(Some(Ok(Event::Open)));
                         }
                         Err(err) => {

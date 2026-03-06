@@ -1,10 +1,9 @@
-// Adapted from eventsource-stream v0.2.3 (MIT OR Apache-2.0).
-
 use crate::event_stream::EventStream;
-use futures::Stream;
+use futures_core::stream::Stream;
 
-/// Extension trait for turning a bytes stream into an SSE event stream.
+/// Main entrypoint for creating [`crate::Event`] streams
 pub trait Eventsource: Sized {
+    /// Create an event stream from a stream of bytes
     fn eventsource(self) -> EventStream<Self>;
 }
 

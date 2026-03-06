@@ -1,9 +1,4 @@
-// Adapted from reqwest-eventsource v0.6.0 (MIT OR Apache-2.0).
-// Local modifications:
-// - Error payloads simplified for llm-client.
-// - Added conversion from internal EventStream parser errors.
-
-use crate::event_stream::EventStreamError;
+use eventsource_stream::EventStreamError;
 use reqwest::Error as ReqwestError;
 use reqwest::StatusCode;
 use std::fmt;

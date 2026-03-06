@@ -1,8 +1,4 @@
-// Adapted from reqwest-eventsource v0.6.0 (MIT OR Apache-2.0).
-// Local modifications:
-// - Default retry policy is `Never` for LLM streaming safety.
-
-use crate::error::Error;
+use crate::sse::error::Error;
 use std::time::Duration;
 
 /// Describes how an `EventSource` should retry on receiving an `Error`.

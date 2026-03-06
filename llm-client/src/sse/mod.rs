@@ -1,6 +1,10 @@
-//! SSE APIs re-exported from the vendored `eventsource_stream` crate.
+//! SSE support built on the vendored `eventsource-stream` parser.
 
-pub use eventsource_stream::retry;
-pub use eventsource_stream::{
-    CannotCloneRequestError, Error, Event, EventSource, MessageEvent, ReadyState,
-};
+mod error;
+mod event_source;
+
+pub mod retry;
+
+pub use error::{CannotCloneRequestError, Error};
+pub use event_source::{Event, EventSource, ReadyState};
+pub use eventsource_stream::Event as MessageEvent;

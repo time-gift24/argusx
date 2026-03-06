@@ -14,7 +14,8 @@ tokio.workspace = true
 futures.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
-eventsource_stream = { path = "../vendor/eventsource_stream" }
+eventsource_stream = { package = "eventsource-stream", path = "../vendor/eventsource_stream" }
+pin-project-lite = "0.2"
 
 # For retry jitter
 rand = "0.8"
