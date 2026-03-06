@@ -14,8 +14,8 @@ use tokio::sync::mpsc;
 type MessageStream = BoxStream<'static, Result<SseMessage, EventStreamError<ReqwestError>>>;
 
 pub struct ProviderClient {
-    _http: reqwest::Client,
-    _config: ProviderConfig,
+    http: reqwest::Client,
+    config: ProviderConfig,
 }
 
 impl ProviderClient {
@@ -27,26 +27,24 @@ impl ProviderClient {
             return Err(Error::Config("api_key is required".into()));
         }
 
-        let _ = config.dialect;
-
         Ok(Self {
-            _http: reqwest::Client::new(),
-            _config: config,
+            http: reqwest::Client::new(),
+            config,
         })
     }
 
     pub fn stream(&self, request: Request) -> Result<ResponseStream, Error> {
-        self.stream_dialect(self._config.dialect, request)
+        self.stream_dialect(self.config.dialect, request)
     }
 
     fn stream_dialect(&self, dialect: Dialect, request: Request) -> Result<ResponseStream, Error> {
         let url = format!(
             "{}/chat/completions",
-            self._config.base_url.trim_end_matches('/')
+            self.config.base_url.trim_end_matches('/')
         );
-        let http = self._http.clone();
-        let api_key = self._config.api_key.clone();
-        let headers = self._config.headers.clone();
+        let http = self.http.clone();
+        let api_key = self.config.api_key.clone();
+        let headers = self.config.headers.clone();
         let request = request.normalized_for_send();
         let (tx, rx) = mpsc::channel(32);
 

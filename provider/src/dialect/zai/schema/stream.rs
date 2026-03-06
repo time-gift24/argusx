@@ -1,9 +1,6 @@
+use crate::dialect::util::map_is_empty;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-
-fn map_is_empty(map: &Map<String, Value>) -> bool {
-    map.is_empty()
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ZaiStreamChunk {
