@@ -8,4 +8,11 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 reqwest = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+eventsource_stream = { package = "eventsource-stream", path = "../vendor/eventsource_stream" }
 argus_core = { package = "core", path = "../core" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["sync", "time"] }
+wiremock = { workspace = true }
