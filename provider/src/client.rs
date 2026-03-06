@@ -106,7 +106,7 @@ impl ProviderClient {
                                         &tx,
                                         &mut contract,
                                         StreamError {
-                                            kind: ErrorKind::Protocol,
+                                            kind: classify_mapper_error(&err),
                                             message: err.to_string(),
                                         },
                                     )
@@ -127,7 +127,7 @@ impl ProviderClient {
                                     &tx,
                                     &mut contract,
                                     StreamError {
-                                        kind: ErrorKind::Protocol,
+                                        kind: classify_mapper_error(&err),
                                         message: err.to_string(),
                                     },
                                 )
@@ -284,5 +284,15 @@ fn classify_eventsource_error(err: &EventStreamError<ReqwestError>) -> ErrorKind
     match err {
         EventStreamError::Utf8(_) | EventStreamError::Parser(_) => ErrorKind::Parse,
         EventStreamError::Transport(_) => ErrorKind::Transport,
+    }
+}
+
+fn classify_mapper_error(err: &Error) -> ErrorKind {
+    match err {
+        Error::Openai(crate::dialect::openai::mapper::Error::Parse(_))
+        | Error::Zai(crate::dialect::zai::mapper::Error::Parse(_)) => ErrorKind::Parse,
+        Error::Openai(crate::dialect::openai::mapper::Error::Protocol(_))
+        | Error::Zai(crate::dialect::zai::mapper::Error::Protocol(_)) => ErrorKind::Protocol,
+        Error::Config(_) => ErrorKind::Protocol,
     }
 }
