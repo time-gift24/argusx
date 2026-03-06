@@ -12,9 +12,15 @@ use tool::{ToolContext, ToolResult};
 use crate::{
     AuthorizationDecision, LlmRequestSnapshot, ModelRunner, PermissionDecision,
     StepFinishReason, ToolAuthorizer, ToolOutcome, ToolRunner, TurnContext, TurnError, TurnEvent,
-    TurnFailure, TurnFinishReason, TurnHandle, TurnState, TurnSummary,
+    TurnFailure, TurnFinishReason, TurnHandle, TurnOptions, TurnState, TurnSummary,
     state::{ActiveLlmStep, PendingPermissionCall, PermissionPause, ToolBatch},
 };
+
+enum ToolTaskResult {
+    Completed(Result<ToolResult, TurnError>),
+    TimedOut,
+    Cancelled,
+}
 
 pub struct TurnDriver {
     context: TurnContext,
@@ -25,11 +31,31 @@ pub struct TurnDriver {
     state: TurnState,
     command_rx: mpsc::Receiver<crate::TurnCommand>,
     event_tx: mpsc::Sender<TurnEvent>,
+    cancel_token: CancellationToken,
+    options: TurnOptions,
 }
 
 impl TurnDriver {
     pub fn spawn(
         context: TurnContext,
+        model: Arc<dyn ModelRunner>,
+        tool_runner: Arc<dyn ToolRunner>,
+        authorizer: Arc<dyn ToolAuthorizer>,
+        observer: Arc<dyn crate::TurnObserver>,
+    ) -> (TurnHandle, JoinHandle<Result<(), TurnError>>) {
+        Self::spawn_with_options(
+            context,
+            TurnOptions::default(),
+            model,
+            tool_runner,
+            authorizer,
+            observer,
+        )
+    }
+
+    pub fn spawn_with_options(
+        context: TurnContext,
+        options: TurnOptions,
         model: Arc<dyn ModelRunner>,
         tool_runner: Arc<dyn ToolRunner>,
         authorizer: Arc<dyn ToolAuthorizer>,
@@ -48,6 +74,8 @@ impl TurnDriver {
             observer,
             command_rx,
             event_tx,
+            cancel_token: CancellationToken::new(),
+            options,
         };
 
         let task = task::spawn(async move { driver.run().await });
@@ -73,41 +101,52 @@ impl TurnDriver {
             let mut stream = self.model.start(request).await?;
 
             let terminal_reason = loop {
-                let event = stream.next().await.ok_or_else(|| {
-                    TurnError::Runtime("model stream ended before a terminal event".into())
-                })?;
-                match event {
-                    ResponseEvent::ContentDelta(text) => {
-                        self.emit(TurnEvent::LlmTextDelta {
-                            text: text.to_string(),
-                        })
-                        .await?;
+                tokio::select! {
+                    event = stream.next() => {
+                        let event = event.ok_or_else(|| {
+                            TurnError::Runtime("model stream ended before a terminal event".into())
+                        })?;
+                        match event {
+                            ResponseEvent::ContentDelta(text) => {
+                                self.emit(TurnEvent::LlmTextDelta {
+                                    text: text.to_string(),
+                                })
+                                .await?;
+                            }
+                            ResponseEvent::ReasoningDelta(text) => {
+                                self.emit(TurnEvent::LlmReasoningDelta {
+                                    text: text.to_string(),
+                                })
+                                .await?;
+                            }
+                            ResponseEvent::ToolDone(call) => {
+                                active_step.tool_calls.push(call.clone());
+                                self.emit(TurnEvent::ToolCallPrepared { call }).await?;
+                            }
+                            ResponseEvent::Done { reason, .. } => break reason,
+                            ResponseEvent::Error(err) => {
+                                self.state = TurnState::Failed(TurnFailure {
+                                    message: err.message.clone(),
+                                });
+                                self.emit(TurnEvent::TurnFinished {
+                                    reason: TurnFinishReason::Failed,
+                                })
+                                .await?;
+                                return Err(TurnError::Runtime(err.message));
+                            }
+                            ResponseEvent::Created(_)
+                            | ResponseEvent::ToolDelta(_)
+                            | ResponseEvent::ContentDone(_)
+                            | ResponseEvent::ReasoningDone(_) => {}
+                        }
                     }
-                    ResponseEvent::ReasoningDelta(text) => {
-                        self.emit(TurnEvent::LlmReasoningDelta {
-                            text: text.to_string(),
-                        })
-                        .await?;
+                    command = self.command_rx.recv() => {
+                        if matches!(command, Some(crate::TurnCommand::Cancel)) {
+                            self.cancel_token.cancel();
+                            self.finish_cancelled().await?;
+                            return Ok(());
+                        }
                     }
-                    ResponseEvent::ToolDone(call) => {
-                        active_step.tool_calls.push(call.clone());
-                        self.emit(TurnEvent::ToolCallPrepared { call }).await?;
-                    }
-                    ResponseEvent::Done { reason, .. } => break reason,
-                    ResponseEvent::Error(err) => {
-                        self.state = TurnState::Failed(TurnFailure {
-                            message: err.message.clone(),
-                        });
-                        self.emit(TurnEvent::TurnFinished {
-                            reason: TurnFinishReason::Failed,
-                        })
-                        .await?;
-                        return Err(TurnError::Runtime(err.message));
-                    }
-                    ResponseEvent::Created(_)
-                    | ResponseEvent::ToolDelta(_)
-                    | ResponseEvent::ContentDone(_)
-                    | ResponseEvent::ReasoningDone(_) => {}
                 }
             };
 
@@ -124,6 +163,9 @@ impl TurnDriver {
                     }
                     self.state = TurnState::WaitingTools(batch.clone());
                     self.execute_tool_batch(batch).await?;
+                    if matches!(self.state, TurnState::Cancelled(_)) {
+                        return Ok(());
+                    }
                     step_index += 1;
                 }
                 FinishReason::Cancelled => {
@@ -163,6 +205,7 @@ impl TurnDriver {
     async fn execute_tool_batch(&mut self, batch: ToolBatch) -> Result<(), TurnError> {
         let mut join_set = JoinSet::new();
         let mut pending_permissions = Vec::new();
+        let mut cancellation_requested = false;
 
         for call in batch.calls.clone() {
             match self.authorizer.authorize(&call).await? {
@@ -204,44 +247,60 @@ impl TurnDriver {
                     })
                     .await?;
                 }
-                command = self.command_rx.recv(), if !pending_permissions.is_empty() => {
+                command = self.command_rx.recv() => {
                     let command = command.ok_or_else(|| {
-                        TurnError::Runtime("turn command channel closed while waiting for permission".into())
+                        TurnError::Runtime("turn command channel closed while waiting for tool results".into())
                     })?;
-                    if let crate::TurnCommand::ResolvePermission { request_id, decision } = command
-                        && let Some(index) = pending_permissions
-                            .iter()
-                            .position(|pending| pending.request.request_id == request_id)
-                    {
-                        let pending = pending_permissions.swap_remove(index);
-                        self.emit(TurnEvent::ToolCallPermissionResolved {
-                            request_id: request_id.clone(),
-                            decision: decision.clone(),
-                        })
-                        .await?;
-
-                        match decision {
-                            PermissionDecision::Allow => self.spawn_tool_call(&mut join_set, pending.call),
-                            PermissionDecision::Deny => {
-                                self.emit(TurnEvent::ToolCallCompleted {
-                                    call_id: call_id(&pending.call),
-                                    result: ToolOutcome::Denied,
+                    match command {
+                        crate::TurnCommand::Cancel => {
+                            self.cancel_token.cancel();
+                            pending_permissions.clear();
+                            cancellation_requested = true;
+                            self.state = TurnState::Cancelled(TurnSummary {
+                                turn_id: self.context.turn_id.clone(),
+                            });
+                        }
+                        crate::TurnCommand::ResolvePermission { request_id, decision } => {
+                            if let Some(index) = pending_permissions
+                                .iter()
+                                .position(|pending| pending.request.request_id == request_id)
+                            {
+                                let pending = pending_permissions.swap_remove(index);
+                                self.emit(TurnEvent::ToolCallPermissionResolved {
+                                    request_id: request_id.clone(),
+                                    decision: decision.clone(),
                                 })
                                 .await?;
+
+                                match decision {
+                                    PermissionDecision::Allow => self.spawn_tool_call(&mut join_set, pending.call),
+                                    PermissionDecision::Deny => {
+                                        self.emit(TurnEvent::ToolCallCompleted {
+                                            call_id: call_id(&pending.call),
+                                            result: ToolOutcome::Denied,
+                                        })
+                                        .await?;
+                                    }
+                                }
+
+                                self.state = if pending_permissions.is_empty() {
+                                    TurnState::WaitingTools(batch.clone())
+                                } else {
+                                    TurnState::WaitingForPermission(PermissionPause {
+                                        batch: batch.clone(),
+                                        pending: pending_permissions.clone(),
+                                    })
+                                };
                             }
                         }
-
-                        self.state = if pending_permissions.is_empty() {
-                            TurnState::WaitingTools(batch.clone())
-                        } else {
-                            TurnState::WaitingForPermission(PermissionPause {
-                                batch: batch.clone(),
-                                pending: pending_permissions.clone(),
-                            })
-                        };
                     }
                 }
             }
+        }
+
+        if cancellation_requested {
+            self.finish_cancelled().await?;
+            return Ok(());
         }
 
         self.emit(TurnEvent::StepFinished {
@@ -254,22 +313,43 @@ impl TurnDriver {
 
     fn spawn_tool_call(
         &self,
-        join_set: &mut JoinSet<(String, Result<ToolResult, TurnError>)>,
+        join_set: &mut JoinSet<(String, ToolTaskResult)>,
         call: argus_core::ToolCall,
     ) {
         let tool_runner = Arc::clone(&self.tool_runner);
         let session_id = self.context.session_id.clone();
         let turn_id = self.context.turn_id.clone();
+        let cancel_token = self.cancel_token.child_token();
+        let timeout = self.options.tool_timeout;
         join_set.spawn(async move {
             let call_id = call_id(&call);
-            let result = tool_runner
-                .execute(
-                    call,
-                    ToolContext::new(session_id, turn_id, CancellationToken::new()),
-                )
-                .await;
+            let result = tokio::select! {
+                _ = cancel_token.cancelled() => ToolTaskResult::Cancelled,
+                result = tokio::time::timeout(
+                    timeout,
+                    tool_runner.execute(
+                        call,
+                        ToolContext::new(session_id, turn_id, cancel_token.clone()),
+                    ),
+                ) => {
+                    match result {
+                        Ok(result) => ToolTaskResult::Completed(result),
+                        Err(_) => ToolTaskResult::TimedOut,
+                    }
+                }
+            };
             (call_id, result)
         });
+    }
+
+    async fn finish_cancelled(&mut self) -> Result<(), TurnError> {
+        self.state = TurnState::Cancelled(TurnSummary {
+            turn_id: self.context.turn_id.clone(),
+        });
+        self.emit(TurnEvent::TurnFinished {
+            reason: TurnFinishReason::Cancelled,
+        })
+        .await
     }
 }
 
@@ -281,16 +361,18 @@ fn call_id(call: &argus_core::ToolCall) -> String {
     }
 }
 
-fn map_tool_result(result: Result<ToolResult, TurnError>) -> ToolOutcome {
+fn map_tool_result(result: ToolTaskResult) -> ToolOutcome {
     match result {
-        Ok(result) if result.is_error => ToolOutcome::Failed {
+        ToolTaskResult::Completed(Ok(result)) if result.is_error => ToolOutcome::Failed {
             message: result.output.to_string(),
             retryable: false,
         },
-        Ok(result) => ToolOutcome::Success(result.output),
-        Err(err) => ToolOutcome::Failed {
+        ToolTaskResult::Completed(Ok(result)) => ToolOutcome::Success(result.output),
+        ToolTaskResult::Completed(Err(err)) => ToolOutcome::Failed {
             message: err.to_string(),
             retryable: false,
         },
+        ToolTaskResult::TimedOut => ToolOutcome::TimedOut,
+        ToolTaskResult::Cancelled => ToolOutcome::Cancelled,
     }
 }
