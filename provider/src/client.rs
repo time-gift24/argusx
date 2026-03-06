@@ -11,6 +11,7 @@ use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Error as ReqwestError, Response};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
+use tracing::{Instrument, info, info_span, warn};
 
 type MessageStream = BoxStream<'static, Result<SseMessage, EventStreamError<ReqwestError>>>;
 
@@ -39,16 +40,17 @@ impl ProviderClient {
     }
 
     fn stream_dialect(&self, dialect: Dialect, request: Request) -> Result<ResponseStream, Error> {
+        let model = request.model.clone();
         if let Some(ProviderStreamMode::Replay { file_path, timing }) =
             self.config.dev.as_ref().map(|dev| &dev.stream_mode)
         {
-            return self.stream_replay(dialect, file_path.clone(), *timing);
+            return self.stream_replay(dialect, model, file_path.clone(), *timing);
         }
 
-        self.stream_live(dialect, request)
+        self.stream_live(dialect, model, request)
     }
 
-    fn stream_live(&self, dialect: Dialect, request: Request) -> Result<ResponseStream, Error> {
+    fn stream_live(&self, dialect: Dialect, model: String, request: Request) -> Result<ResponseStream, Error> {
         let url = self.config.chat_completions_url();
         let http = self.http.clone();
         let api_key = self.config.api_key.clone();
@@ -58,15 +60,30 @@ impl ProviderClient {
             .dev
             .as_ref()
             .and_then(|dev| dev.record_live_sse.clone());
+        let record_enabled = record_target.is_some();
         let request = request.normalized_for_send();
         let (tx, rx) = mpsc::channel(32);
+        let span = info_span!(
+            "provider.stream",
+            dialect = ?dialect,
+            mode = "live",
+            model = %model,
+            record_enabled
+        );
 
         let producer = tokio::spawn(async move {
+            info!("stream started");
             let mut recorder = match record_target {
                 Some(target) => {
-                    SseRecorder::create(target.file_path, target.write_timing_sidecar)
+                    match SseRecorder::create(target.file_path, target.write_timing_sidecar)
                         .await
-                        .ok()
+                    {
+                        Ok(recorder) => Some(recorder),
+                        Err(err) => {
+                            warn!(error = %err, "failed to create recorder");
+                            None
+                        }
+                    }
                 }
                 None => None,
             };
@@ -110,7 +127,8 @@ impl ProviderClient {
                 })
                 .boxed();
             drive_payload_stream(&tx, dialect, &mut payloads, &mut recorder).await;
-        });
+        }
+        .instrument(span));
 
         Ok(ResponseStream::from_parts(rx, producer.abort_handle()))
     }
@@ -118,20 +136,30 @@ impl ProviderClient {
     fn stream_replay(
         &self,
         dialect: Dialect,
+        model: String,
         file_path: std::path::PathBuf,
         timing: crate::ReplayTiming,
     ) -> Result<ResponseStream, Error> {
         let prepared = crate::replay::prepare(file_path, timing)?;
         let (tx, rx) = mpsc::channel(32);
+        let span = info_span!(
+            "provider.stream",
+            dialect = ?dialect,
+            mode = "replay",
+            model = %model,
+            record_enabled = false
+        );
 
         let producer = tokio::spawn(async move {
+            info!("stream started");
             let replay = ReplayReader::from_prepared(prepared);
             let mut payloads = replay
                 .map(|item| item.and_then(|frame| parse_replay_frame(&frame)))
                 .boxed();
             let mut recorder = None;
             drive_payload_stream(&tx, dialect, &mut payloads, &mut recorder).await;
-        });
+        }
+        .instrument(span));
 
         Ok(ResponseStream::from_parts(rx, producer.abort_handle()))
     }
@@ -205,6 +233,7 @@ async fn drive_payload_stream<S>(
                             finish_recorder(recorder).await;
                         }
                     }
+                    info!("stream completed");
                     finish_recorder(recorder).await;
                     return;
                 }
@@ -366,6 +395,7 @@ async fn write_payload_to_recorder(recorder: &mut Option<SseRecorder>, payload: 
     };
 
     if failed {
+        warn!("failed to write recorder frame");
         *recorder = None;
     }
 }

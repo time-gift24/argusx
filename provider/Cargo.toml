@@ -7,6 +7,7 @@ edition = "2024"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 reqwest = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
@@ -23,4 +24,5 @@ path = "src/bin/provider_cli.rs"
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time", "test-util"] }
+tracing-subscriber = { workspace = true }
 wiremock = { workspace = true }
