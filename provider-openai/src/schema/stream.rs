@@ -21,6 +21,7 @@ pub struct ChatCompletionsStreamChunk {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StreamChoice {
     pub index: u32,
+    #[serde(default)]
     pub delta: Delta,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub logprobs: Option<LogProbs>,

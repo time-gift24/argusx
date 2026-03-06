@@ -27,3 +27,16 @@ fn parse_tool_calls_chunk() {
         .unwrap()
         .is_empty());
 }
+
+#[test]
+fn parse_choice_without_delta() {
+    let raw = r#"{"id":"x","object":"chat.completion","created":1,"model":"MiniMax-M2.5","choices":[{"index":0,"finish_reason":"tool_calls","message":{"role":"assistant","content":"\n"}}],"usage":{"total_tokens":429,"prompt_tokens":316,"completion_tokens":113}}"#;
+    let chunk = parse_chunk(raw).unwrap();
+    assert_eq!(chunk.object, "chat.completion");
+    assert_eq!(
+        chunk.choices[0].finish_reason.as_deref(),
+        Some("tool_calls")
+    );
+    assert!(chunk.choices[0].delta.content.is_none());
+    assert_eq!(chunk.usage.unwrap().total_tokens, 429);
+}
