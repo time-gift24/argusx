@@ -2,6 +2,7 @@ pub const VERSION: &str = "0.1.0";
 
 pub mod dialect;
 pub mod error;
+pub mod normalize;
 
 pub use error::Error;
 
