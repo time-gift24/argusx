@@ -16,13 +16,27 @@ pub enum ToolCall {
         name: String,
         arguments_json: String,
     },
-    Mcp {
-        sequence: u32,
-        call_id: String,
-        server: String,
-        method: String,
-        payload_json: String,
-    },
+    Mcp(ZaiMcpCall),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZaiMcpCall {
+    pub sequence: u32,
+    pub id: String,
+    pub mcp_type: ZaiMcpType,
+    pub server_label: Option<String>,
+    pub name: Option<String>,
+    pub arguments_json: Option<String>,
+    pub output_json: Option<String>,
+    pub tools_json: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ZaiMcpType {
+    McpListTools,
+    McpCall,
+    Unknown(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,4 +1,4 @@
-use core::{Meta, ResponseEvent, ToolCall, Usage};
+use core::{Meta, ResponseEvent, ToolCall, Usage, ZaiMcpCall, ZaiMcpType};
 use std::sync::Arc;
 
 #[test]
@@ -18,13 +18,17 @@ fn response_event_shape_matches_design() {
         name: "get_weather".into(),
         arguments_json: "{\"city\":\"北京\"}".into(),
     });
-    let _ = ResponseEvent::ToolDone(ToolCall::Mcp {
+    let _ = ResponseEvent::ToolDone(ToolCall::Mcp(ZaiMcpCall {
         sequence: 1,
-        call_id: "call_2".into(),
-        server: "weather".into(),
-        method: "get_weather".into(),
-        payload_json: "{\"city\":\"北京\"}".into(),
-    });
+        id: "call_2".into(),
+        mcp_type: ZaiMcpType::McpCall,
+        server_label: Some("weather".into()),
+        name: Some("get_weather".into()),
+        arguments_json: Some("{\"city\":\"北京\"}".into()),
+        output_json: None,
+        tools_json: None,
+        error: None,
+    }));
     let _ = ResponseEvent::Done(Some(Usage {
         input_tokens: 1,
         output_tokens: 2,
