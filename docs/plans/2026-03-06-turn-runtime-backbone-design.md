@@ -22,7 +22,7 @@ Current Rust workspace state:
 Implication:
 
 - the new backbone should be introduced as a fresh `turn` runtime crate aligned to `core`, `provider`, and `tool`
-- existing `tests/agent-turn-cli` and `tests/agent-session-cli` are stale historical artifacts and should not drive the new architecture
+- the old `tests/agent-turn-cli` and `tests/agent-session-cli` fixtures were stale historical artifacts and have been removed rather than carried forward into the new architecture
 
 ## 3. Approved Backbone Decisions
 
