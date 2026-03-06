@@ -11,7 +11,7 @@ reqwest = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
 async-stream = { workspace = true }
-tokio = { workspace = true, features = ["sync", "rt-multi-thread", "macros", "fs", "time"] }
+tokio = { workspace = true, features = ["sync", "rt-multi-thread", "macros", "fs", "time", "io-util"] }
 eventsource_stream = { package = "eventsource-stream", path = "../vendor/eventsource_stream" }
 argus_core = { package = "core", path = "../core" }
 rpassword = "7"
@@ -21,5 +21,6 @@ name = "provider_cli"
 path = "src/bin/provider_cli.rs"
 
 [dev-dependencies]
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time", "test-util"] }
 wiremock = { workspace = true }
