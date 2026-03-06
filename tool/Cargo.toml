@@ -14,7 +14,7 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["sync", "fs", "process"] }
+tokio = { workspace = true, features = ["sync", "fs", "process", "io-util"] }
 toml = { workspace = true }
 walkdir = "2.0"
 

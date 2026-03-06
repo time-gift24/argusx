@@ -3,6 +3,7 @@ pub mod catalog;
 pub mod builtin;
 pub mod context;
 pub mod error;
+pub mod mcp;
 pub mod scheduler;
 pub mod spec;
 pub mod trait_def;
