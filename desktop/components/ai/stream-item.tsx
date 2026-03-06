@@ -209,8 +209,9 @@ export const StreamItemTrigger = memo(
       >
         <span
           className={cn(
-            "inline-flex min-w-0 items-center gap-2",
-            isRunning && "animate-pulse text-foreground"
+            "relative inline-flex min-w-0 items-center gap-2 overflow-hidden rounded-sm",
+            isRunning &&
+              "text-foreground after:pointer-events-none after:absolute after:inset-y-[-2px] after:left-[-30%] after:w-12 after:bg-linear-to-r after:from-transparent after:via-foreground/35 after:to-transparent after:animate-stream-item-shimmer"
           )}
         >
           {icon ? <span className="shrink-0">{icon}</span> : null}
