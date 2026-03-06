@@ -1,32 +1,11 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use argus_core::{Builtin, BuiltinToolCall};
+use argus_core::BuiltinToolCall;
 use tokio::sync::Semaphore;
 
+pub use crate::catalog::{BuiltinRegistration, EffectiveToolPolicy};
 use crate::{Tool, ToolContext, ToolError, ToolResult};
-
-pub struct BuiltinRegistration {
-    pub builtin: Builtin,
-    pub tool: Arc<dyn Tool>,
-    pub policy: EffectiveToolPolicy,
-}
-
-impl BuiltinRegistration {
-    pub fn new(builtin: Builtin, tool: Arc<dyn Tool>, policy: EffectiveToolPolicy) -> Self {
-        Self {
-            builtin,
-            tool,
-            policy,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EffectiveToolPolicy {
-    pub allow_parallel: bool,
-    pub max_concurrency: usize,
-}
 
 pub struct ToolScheduler {
     builtin_tools: BTreeMap<String, Arc<dyn Tool>>,

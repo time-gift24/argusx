@@ -1,0 +1,328 @@
+From 2b6d7504a63cd8718d59be7e110fc60105658426 Mon Sep 17 00:00:00 2001
+From: time-given24 <wanyaozhong973@gmail.com>
+Date: Fri, 6 Mar 2026 08:50:01 +0800
+Subject: [PATCH 1/2] chore(deps): centralize shared Cargo deps and fix nom8
+ parser compatibility
+
+---
+ vendor/eventsource_stream/Cargo.toml          | 12 +++----
+ vendor/eventsource_stream/src/event_stream.rs |  2 +-
+ vendor/eventsource_stream/src/parser.rs       | 32 +++++++++++--------
+ 3 files changed, 25 insertions(+), 21 deletions(-)
+
+diff --git a/vendor/eventsource_stream/Cargo.toml b/vendor/eventsource_stream/Cargo.toml
+index 3f6ba7c..d4b975c 100644
+--- a/vendor/eventsource_stream/Cargo.toml
++++ b/vendor/eventsource_stream/Cargo.toml
+@@ -19,12 +19,12 @@ std = ["futures-core/std", "nom/std"]
+ 
+ [dependencies]
+ futures-core = { version = "0.3", default-features = false }
+-nom = { version = "7.1", default-features = false }
+-pin-project-lite = "0.2.8"
++nom = { version = "8.0.0", default-features = false }
++pin-project-lite = { workspace = true }
+ 
+ [dev-dependencies]
+-futures = "0.3"
+-http = "0.2"
+-reqwest = { version = "0.11", features = ["stream"] }
+-tokio = { version = "1.0", features = ["macros", "rt"] }
++futures = { workspace = true }
++http = "1.4.0"
++reqwest = { version = "0.13.2", features = ["stream"] }
++tokio = { workspace = true, features = ["macros", "rt"] }
+ url = "2.2"
+diff --git a/vendor/eventsource_stream/src/event_stream.rs b/vendor/eventsource_stream/src/event_stream.rs
+index 0cb80bd..a6ff2d6 100644
+--- a/vendor/eventsource_stream/src/event_stream.rs
++++ b/vendor/eventsource_stream/src/event_stream.rs
+@@ -67,7 +67,7 @@ impl EventBuilder {
+                     _ => {}
+                 }
+             }
+-            RawEventLine::Comment(_) => {}
++            RawEventLine::Comment => {}
+             RawEventLine::Empty => self.is_complete = true,
+         }
+     }
+diff --git a/vendor/eventsource_stream/src/parser.rs b/vendor/eventsource_stream/src/parser.rs
+index 6b3a84b..e831eae 100644
+--- a/vendor/eventsource_stream/src/parser.rs
++++ b/vendor/eventsource_stream/src/parser.rs
+@@ -1,8 +1,9 @@
+ use nom::branch::alt;
+ use nom::bytes::streaming::{tag, take_while, take_while1, take_while_m_n};
+ use nom::combinator::opt;
+-use nom::sequence::{preceded, terminated, tuple};
++use nom::sequence::{preceded, terminated};
+ use nom::IResult;
++use nom::Parser;
+ 
+ /// ; ABNF definition from HTML spec
+ ///
+@@ -25,7 +26,7 @@ use nom::IResult;
+ 
+ #[derive(Debug)]
+ pub enum RawEventLine<'a> {
+-    Comment(&'a str),
++    Comment,
+     Field(&'a str, Option<&'a str>),
+     Empty,
+ }
+@@ -72,7 +73,7 @@ pub fn is_any_char(c: char) -> bool {
+ 
+ #[inline]
+ fn crlf(input: &str) -> IResult<&str, &str> {
+-    tag("\u{000D}\u{000A}")(input)
++    tag("\u{000D}\u{000A}").parse(input)
+ }
+ 
+ #[inline]
+@@ -81,38 +82,41 @@ fn end_of_line(input: &str) -> IResult<&str, &str> {
+         crlf,
+         take_while_m_n(1, 1, is_cr),
+         take_while_m_n(1, 1, is_lf),
+-    ))(input)
++    ))
++    .parse(input)
+ }
+ 
+ #[inline]
+-fn comment(input: &str) -> IResult<&str, RawEventLine> {
++fn comment(input: &str) -> IResult<&str, RawEventLine<'_>> {
+     preceded(
+         take_while_m_n(1, 1, is_colon),
+         terminated(take_while(is_any_char), end_of_line),
+-    )(input)
+-    .map(|(input, comment)| (input, RawEventLine::Comment(comment)))
++    )
++    .parse(input)
++    .map(|(input, _)| (input, RawEventLine::Comment))
+ }
+ 
+ #[inline]
+-fn field(input: &str) -> IResult<&str, RawEventLine> {
++fn field(input: &str) -> IResult<&str, RawEventLine<'_>> {
+     terminated(
+-        tuple((
++        (
+             take_while1(is_name_char),
+             opt(preceded(
+                 take_while_m_n(1, 1, is_colon),
+                 preceded(opt(take_while_m_n(1, 1, is_space)), take_while(is_any_char)),
+             )),
+-        )),
++        ),
+         end_of_line,
+-    )(input)
++    )
++    .parse(input)
+     .map(|(input, (field, data))| (input, RawEventLine::Field(field, data)))
+ }
+ 
+ #[inline]
+-fn empty(input: &str) -> IResult<&str, RawEventLine> {
++fn empty(input: &str) -> IResult<&str, RawEventLine<'_>> {
+     end_of_line(input).map(|(i, _)| (i, RawEventLine::Empty))
+ }
+ 
+-pub fn line(input: &str) -> IResult<&str, RawEventLine> {
+-    alt((comment, field, empty))(input)
++pub fn line(input: &str) -> IResult<&str, RawEventLine<'_>> {
++    alt((comment, field, empty)).parse(input)
+ }
+-- 
+2.50.1 (Apple Git-155)
+
+
+From 2a109edcab948967985ddff0a5a9784dd2ee3d19 Mon Sep 17 00:00:00 2001
+From: time-given24 <wanyaozhong973@gmail.com>
+Date: Fri, 6 Mar 2026 22:08:48 +0800
+Subject: [PATCH 2/2] fix(vendor): restore eventsource empty-line parsing
+
+---
+ vendor/eventsource_stream/src/event_stream.rs | 53 ++++++++++++
+ vendor/eventsource_stream/src/parser.rs       | 80 +++++++++++++++----
+ 2 files changed, 116 insertions(+), 17 deletions(-)
+
+diff --git a/vendor/eventsource_stream/src/event_stream.rs b/vendor/eventsource_stream/src/event_stream.rs
+index a6ff2d6..38fd01b 100644
+--- a/vendor/eventsource_stream/src/event_stream.rs
++++ b/vendor/eventsource_stream/src/event_stream.rs
+@@ -300,6 +300,59 @@ mod tests {
+     use super::*;
+     use futures::prelude::*;
+ 
++    #[test]
++    fn parse_event_flushes_complete_buffer() {
++        let mut buffer = "data: Hello, world!\n\n".to_string();
++        let mut builder = EventBuilder::default();
++
++        let event = parse_event::<()>(
++            &mut buffer,
++            &mut builder,
++        )
++        .expect("parse should succeed");
++
++        assert_eq!(
++            event,
++            Some(Event {
++                event: "message".to_string(),
++                data: "Hello, world!".to_string(),
++                ..Default::default()
++            })
++        );
++        assert_eq!(buffer, "");
++    }
++
++    #[test]
++    fn parse_event_preserves_remaining_buffer_after_one_event() {
++        let mut buffer = "data: first\n\ndata: second\n\n".to_string();
++        let mut builder = EventBuilder::default();
++
++        let first = parse_event::<()>(&mut buffer, &mut builder).expect("first parse should work");
++
++        assert_eq!(
++            first,
++            Some(Event {
++                event: "message".to_string(),
++                data: "first".to_string(),
++                ..Default::default()
++            })
++        );
++        assert_eq!(buffer, "data: second\n\n");
++
++        let second =
++            parse_event::<()>(&mut buffer, &mut builder).expect("second parse should work");
++
++        assert_eq!(
++            second,
++            Some(Event {
++                event: "message".to_string(),
++                data: "second".to_string(),
++                ..Default::default()
++            })
++        );
++        assert_eq!(buffer, "");
++    }
++
+     #[tokio::test]
+     async fn valid_data_fields() {
+         assert_eq!(
+diff --git a/vendor/eventsource_stream/src/parser.rs b/vendor/eventsource_stream/src/parser.rs
+index e831eae..48fffe0 100644
+--- a/vendor/eventsource_stream/src/parser.rs
++++ b/vendor/eventsource_stream/src/parser.rs
+@@ -1,9 +1,10 @@
+ use nom::branch::alt;
+-use nom::bytes::streaming::{tag, take_while, take_while1, take_while_m_n};
++use nom::bytes::streaming::{take_while, take_while1, take_while_m_n};
+ use nom::combinator::opt;
+ use nom::sequence::{preceded, terminated};
+ use nom::IResult;
+ use nom::Parser;
++use nom::{error::ErrorKind, Err, Needed};
+ 
+ /// ; ABNF definition from HTML spec
+ ///
+@@ -36,11 +37,6 @@ pub fn is_lf(c: char) -> bool {
+     c == '\u{000A}'
+ }
+ 
+-#[inline]
+-pub fn is_cr(c: char) -> bool {
+-    c == '\u{000D}'
+-}
+-
+ #[inline]
+ pub fn is_space(c: char) -> bool {
+     c == '\u{0020}'
+@@ -71,19 +67,25 @@ pub fn is_any_char(c: char) -> bool {
+         | '\u{000E}'..='\u{10FFFF}')
+ }
+ 
+-#[inline]
+-fn crlf(input: &str) -> IResult<&str, &str> {
+-    tag("\u{000D}\u{000A}").parse(input)
+-}
+-
+ #[inline]
+ fn end_of_line(input: &str) -> IResult<&str, &str> {
+-    alt((
+-        crlf,
+-        take_while_m_n(1, 1, is_cr),
+-        take_while_m_n(1, 1, is_lf),
+-    ))
+-    .parse(input)
++    if input.is_empty() {
++        return Err(Err::Incomplete(Needed::new(1)));
++    }
++
++    if let Some(rem) = input.strip_prefix("\u{000D}\u{000A}") {
++        return Ok((rem, &input[..2]));
++    }
++
++    if let Some(rem) = input.strip_prefix('\u{000D}') {
++        return Ok((rem, &input[..1]));
++    }
++
++    if let Some(rem) = input.strip_prefix('\u{000A}') {
++        return Ok((rem, &input[..1]));
++    }
++
++    Err(Err::Error(nom::error::Error::new(input, ErrorKind::CrLf)))
+ }
+ 
+ #[inline]
+@@ -120,3 +122,47 @@ fn empty(input: &str) -> IResult<&str, RawEventLine<'_>> {
+ pub fn line(input: &str) -> IResult<&str, RawEventLine<'_>> {
+     alt((comment, field, empty)).parse(input)
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn field_line_leaves_trailing_empty_line_in_buffer() {
++        let (rem, parsed) = line("data: Hello, world!\n\n").expect("field line should parse");
++
++        match parsed {
++            RawEventLine::Field(name, Some(value)) => {
++                assert_eq!(name, "data");
++                assert_eq!(value, "Hello, world!");
++            }
++            _ => panic!("expected field line"),
++        }
++
++        assert_eq!(rem, "\n");
++    }
++
++    #[test]
++    fn empty_line_parses_from_single_newline() {
++        let (rem, parsed) = line("\n").expect("empty line should parse");
++
++        assert!(matches!(parsed, RawEventLine::Empty));
++        assert_eq!(rem, "");
++    }
++
++    #[test]
++    fn empty_line_parses_from_single_carriage_return() {
++        let (rem, parsed) = line("\r").expect("empty CR line should parse");
++
++        assert!(matches!(parsed, RawEventLine::Empty));
++        assert_eq!(rem, "");
++    }
++
++    #[test]
++    fn empty_line_parses_from_crlf() {
++        let (rem, parsed) = line("\r\n").expect("empty CRLF line should parse");
++
++        assert!(matches!(parsed, RawEventLine::Empty));
++        assert_eq!(rem, "");
++    }
++}
+-- 
+2.50.1 (Apple Git-155)
+

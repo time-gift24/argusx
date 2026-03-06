@@ -1,4 +1,4 @@
-use tool::config::AgentToolConfig;
+use tool::config::{AgentToolConfig, ConfigError};
 
 #[test]
 fn parses_builtin_whitelist_and_overrides() {
@@ -37,4 +37,48 @@ fn rejects_unknown_builtin_override() {
     "#;
 
     assert!(AgentToolConfig::parse_and_validate(raw).is_err());
+}
+
+#[test]
+fn rejects_enabled_mcp_server_without_transport() {
+    let raw = r#"
+        [mcp.server.filesystem]
+        enabled = true
+        command = "uvx"
+    "#;
+
+    assert!(matches!(
+        AgentToolConfig::parse_and_validate(raw),
+        Err(ConfigError::MissingMcpTransport(scope)) if scope == "mcp.server.filesystem"
+    ));
+}
+
+#[test]
+fn rejects_enabled_mcp_server_with_unsupported_transport() {
+    let raw = r#"
+        [mcp.server.filesystem]
+        enabled = true
+        transport = "http"
+        command = "uvx"
+    "#;
+
+    assert!(matches!(
+        AgentToolConfig::parse_and_validate(raw),
+        Err(ConfigError::UnsupportedMcpTransport { scope, transport })
+            if scope == "mcp.server.filesystem" && transport == "http"
+    ));
+}
+
+#[test]
+fn rejects_enabled_stdio_mcp_server_without_command() {
+    let raw = r#"
+        [mcp.server.filesystem]
+        enabled = true
+        transport = "stdio"
+    "#;
+
+    assert!(matches!(
+        AgentToolConfig::parse_and_validate(raw),
+        Err(ConfigError::MissingMcpCommand(scope)) if scope == "mcp.server.filesystem"
+    ));
 }

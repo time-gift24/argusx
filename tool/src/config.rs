@@ -112,6 +112,12 @@ pub enum ConfigError {
     OverrideForDisabledBuiltin(String),
     #[error("max_concurrency must be >= 1 for {0}")]
     InvalidMaxConcurrency(String),
+    #[error("enabled MCP server requires a transport for {0}")]
+    MissingMcpTransport(String),
+    #[error("unsupported MCP transport `{transport}` for {scope}")]
+    UnsupportedMcpTransport { scope: String, transport: String },
+    #[error("enabled MCP stdio server requires a command for {0}")]
+    MissingMcpCommand(String),
 }
 
 fn validate_builtin_names(names: &[String]) -> Result<(), ConfigError> {
@@ -134,5 +140,34 @@ fn validate_mcp_server_policy(scope: &str, config: &McpServerConfig) -> Result<(
     if matches!(config.max_concurrency, Some(0)) {
         return Err(ConfigError::InvalidMaxConcurrency(scope.to_string()));
     }
+
+    if !config.enabled {
+        return Ok(());
+    }
+
+    let transport = config
+        .transport
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ConfigError::MissingMcpTransport(scope.to_string()))?;
+
+    if transport != "stdio" {
+        return Err(ConfigError::UnsupportedMcpTransport {
+            scope: scope.to_string(),
+            transport: transport.to_string(),
+        });
+    }
+
+    let has_command = config
+        .command
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty());
+
+    if !has_command {
+        return Err(ConfigError::MissingMcpCommand(scope.to_string()));
+    }
+
     Ok(())
 }
