@@ -1,5 +1,5 @@
 use argus_core::{Meta, ResponseEvent, ToolCall, Usage};
-use crate::chunk::{ChatCompletionsChunk, ToolCallChunk};
+use crate::chunk::{ChatCompletionsChunk, ToolCallChunk, ChunkUsage};
 use crate::parser::parse_chunk;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -91,7 +91,14 @@ impl Mapper {
             }
         }
 
-        // TODO: Handle usage when present
+        // Capture usage when present
+        if let Some(chunk_usage) = chunk.usage {
+            self.usage = Some(Usage {
+                input_tokens: chunk_usage.prompt_tokens,
+                output_tokens: chunk_usage.completion_tokens,
+                total_tokens: chunk_usage.total_tokens,
+            });
+        }
 
         Ok(events)
     }
@@ -119,5 +126,9 @@ impl Mapper {
             // Emit ToolDelta for incremental arguments
             events.push(ResponseEvent::ToolDelta(args.clone().into()));
         }
+    }
+
+    pub fn on_done(&mut self) -> Result<Vec<ResponseEvent>, Error> {
+        Ok(vec![ResponseEvent::Done(self.usage.take())])
     }
 }

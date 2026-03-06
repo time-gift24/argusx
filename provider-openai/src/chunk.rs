@@ -8,6 +8,18 @@ pub struct ChatCompletionsChunk {
     pub object_type: String,
     pub model: String,
     pub choices: Vec<Choice>,
+    #[serde(rename = "usage")]
+    pub usage: Option<ChunkUsage>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ChunkUsage {
+    #[serde(rename = "prompt_tokens")]
+    pub prompt_tokens: u64,
+    #[serde(rename = "completion_tokens")]
+    pub completion_tokens: u64,
+    #[serde(rename = "total_tokens")]
+    pub total_tokens: u64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -8,6 +8,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }
+argus_core = { package = "core", path = "../core" }
 
-[dev-dependencies]
-core = { path = "../core" }
+[[test]]
+name = "fixture_replay_test"
+harness = true
