@@ -1,33 +1,34 @@
+use std::sync::Arc;
+
 use argus_core::ToolCall;
+
+pub type SharedToolCall = Arc<ToolCall>;
+pub type SharedToolCalls = Arc<[SharedToolCall]>;
+pub type SharedTurnMessage = Arc<TurnMessage>;
+pub type TurnMessageSnapshot = Arc<[SharedTurnMessage]>;
 
 // Eq is valid: every field in every variant implements Eq.
 // ToolCall (in AssistantToolCalls) derives Eq in argus_core.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TurnMessage {
-    User {
-        content: String,
-    },
-    AssistantText {
-        content: String,
-    },
+    User { content: Arc<str> },
+    AssistantText { content: Arc<str> },
     AssistantToolCalls {
-        content: Option<String>,
-        calls: Vec<ToolCall>,
+        content: Option<Arc<str>>,
+        calls: SharedToolCalls,
     },
     ToolResult {
-        call_id: String,
-        tool_name: String,
-        content: String,
+        call_id: Arc<str>,
+        tool_name: Arc<str>,
+        content: Arc<str>,
         is_error: bool,
     },
-    SystemNote {
-        content: String,
-    },
+    SystemNote { content: Arc<str> },
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct TurnTranscript {
-    messages: Vec<TurnMessage>,
+    messages: Vec<SharedTurnMessage>,
 }
 
 impl TurnTranscript {
@@ -36,11 +37,15 @@ impl TurnTranscript {
     }
 
     pub fn push(&mut self, message: TurnMessage) {
-        self.messages.push(message);
+        self.messages.push(Arc::new(message));
     }
 
-    pub fn messages(&self) -> &[TurnMessage] {
+    pub fn messages(&self) -> &[SharedTurnMessage] {
         &self.messages
+    }
+
+    pub fn snapshot(&self) -> TurnMessageSnapshot {
+        Arc::from(self.messages.clone())
     }
 }
 
@@ -64,6 +69,9 @@ mod tests {
             content: "hi".into(),
         });
         assert_eq!(t.messages().len(), 2);
-        assert!(matches!(&t.messages()[0], TurnMessage::User { content } if content == "hello"));
+        assert!(matches!(
+            t.messages()[0].as_ref(),
+            TurnMessage::User { content } if content.as_ref() == "hello"
+        ));
     }
 }

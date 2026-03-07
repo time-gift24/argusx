@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use argus_core::{Builtin, BuiltinToolCall, ToolCall};
 use serde_json::{Value, json};
 use turn::{
@@ -10,12 +12,12 @@ fn ui_message_stream_adapter_maps_permission_and_tool_events() {
     let lines = turn::vercel::map_events(vec![
         TurnEvent::TurnStarted,
         TurnEvent::ToolCallPrepared {
-            call: ToolCall::Builtin(BuiltinToolCall {
+            call: Arc::new(ToolCall::Builtin(BuiltinToolCall {
                 sequence: 0,
                 call_id: "call-1".into(),
                 builtin: Builtin::Read,
                 arguments_json: "{}".into(),
-            }),
+            })),
         },
         TurnEvent::ToolCallPermissionRequested {
             request: PermissionRequest {

@@ -75,11 +75,11 @@ async fn turn_waits_for_permission_and_resumes_after_allow() {
     assert!(events.iter().any(|event| matches!(
         event,
         TurnEvent::ToolCallPermissionResolved { request_id, decision }
-            if request_id == "perm-1" && matches!(decision, PermissionDecision::Allow)
+            if request_id.as_ref() == "perm-1" && matches!(decision, PermissionDecision::Allow)
     )));
     assert!(events.iter().any(|event| matches!(
         event,
-        TurnEvent::ToolCallCompleted { call_id, .. } if call_id == "call-1"
+        TurnEvent::ToolCallCompleted { call_id, .. } if call_id.as_ref() == "call-1"
     )));
     assert!(events.iter().any(|event| matches!(
         event,

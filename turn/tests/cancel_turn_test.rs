@@ -160,7 +160,7 @@ async fn cancelling_during_tool_execution_keeps_results_that_finish_after_cancel
         TurnEvent::ToolCallCompleted {
             call_id,
             result: ToolOutcome::Success(value),
-        } if call_id == "call-1" && value["source"] == "completed-after-cancel"
+        } if call_id.as_ref() == "call-1" && value["source"] == "completed-after-cancel"
     )));
     assert!(events.iter().any(|event| matches!(
         event,

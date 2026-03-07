@@ -40,7 +40,7 @@ impl UiMessageStreamEncoder {
                 lines.push(sse(json!({
                     "type": "text-delta",
                     "id": text_id,
-                    "delta": text,
+                    "delta": text.as_ref(),
                 })));
             }
             TurnEvent::LlmReasoningDelta { text } => {
@@ -49,16 +49,16 @@ impl UiMessageStreamEncoder {
                 lines.push(sse(json!({
                     "type": "reasoning-delta",
                     "id": reasoning_id,
-                    "delta": text,
+                    "delta": text.as_ref(),
                 })));
             }
             TurnEvent::ToolCallPrepared { call } => {
                 self.ensure_step_started(lines);
                 lines.push(sse(json!({
                     "type": "tool-input-available",
-                    "toolCallId": tool_call_id(call),
-                    "toolName": tool_name(call),
-                    "input": tool_input(call),
+                    "toolCallId": tool_call_id(call.as_ref()),
+                    "toolName": tool_name(call.as_ref()),
+                    "input": tool_input(call.as_ref()),
                 })));
             }
             TurnEvent::ToolCallCompleted { call_id, result } => {
@@ -82,7 +82,7 @@ impl UiMessageStreamEncoder {
                     "type": "data-turn-control",
                     "data": {
                         "kind": "permission-resolved",
-                        "requestId": request_id,
+                        "requestId": request_id.as_ref(),
                         "decision": match decision {
                             PermissionDecision::Allow => "allow",
                             PermissionDecision::Deny => "deny",
@@ -194,19 +194,19 @@ impl UiMessageStreamEncoder {
     }
 }
 
-fn tool_call_id(call: &ToolCall) -> String {
+fn tool_call_id(call: &ToolCall) -> &str {
     match call {
-        ToolCall::FunctionCall { call_id, .. } => call_id.clone(),
-        ToolCall::Builtin(call) => call.call_id.clone(),
-        ToolCall::Mcp(call) => call.id.clone(),
+        ToolCall::FunctionCall { call_id, .. } => call_id,
+        ToolCall::Builtin(call) => &call.call_id,
+        ToolCall::Mcp(call) => &call.id,
     }
 }
 
-fn tool_name(call: &ToolCall) -> String {
+fn tool_name(call: &ToolCall) -> &str {
     match call {
-        ToolCall::FunctionCall { name, .. } => name.clone(),
-        ToolCall::Builtin(call) => call.builtin.canonical_name().to_string(),
-        ToolCall::Mcp(call) => call.name.clone().unwrap_or_default(),
+        ToolCall::FunctionCall { name, .. } => name,
+        ToolCall::Builtin(call) => call.builtin.canonical_name(),
+        ToolCall::Mcp(call) => call.name.as_deref().unwrap_or_default(),
     }
 }
 
@@ -236,7 +236,7 @@ fn tool_output_chunk(call_id: &str, result: &ToolOutcome) -> Value {
         ToolOutcome::Failed { message, .. } => json!({
             "type": "tool-output-error",
             "toolCallId": call_id,
-            "errorText": message,
+            "errorText": message.as_ref(),
         }),
         ToolOutcome::TimedOut => json!({
             "type": "tool-output-error",

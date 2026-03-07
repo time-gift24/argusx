@@ -42,6 +42,12 @@ async fn collect_events(handle: turn::TurnHandle) -> Vec<TurnEvent> {
     events
 }
 
+fn expect_shared_messages(_: &Arc<[Arc<TurnMessage>]>) {}
+
+fn message_at(messages: &Arc<[Arc<TurnMessage>]>, index: usize) -> &TurnMessage {
+    messages[index].as_ref()
+}
+
 // ---------------------------------------------------------------------------
 // Test 1: second step receives prior assistant tool calls and tool result
 // ---------------------------------------------------------------------------
@@ -83,6 +89,7 @@ async fn second_step_receives_tool_calls_and_result_in_messages() {
     assert_eq!(requests.len(), 2, "expected exactly two model invocations");
 
     let second = &requests[1];
+    expect_shared_messages(&second.messages);
     // messages must be: User, AssistantToolCalls, ToolResult
     assert_eq!(
         second.messages.len(),
@@ -91,21 +98,81 @@ async fn second_step_receives_tool_calls_and_result_in_messages() {
         second.messages
     );
     assert!(
-        matches!(&second.messages[0], TurnMessage::User { content } if content == "do tools"),
+        matches!(message_at(&second.messages, 0), TurnMessage::User { content } if content.as_ref() == "do tools"),
         "first message must be the user turn"
     );
     assert!(
-        matches!(&second.messages[1], TurnMessage::AssistantToolCalls { calls, .. } if calls.len() == 1),
+        matches!(message_at(&second.messages, 1), TurnMessage::AssistantToolCalls { calls, .. } if calls.len() == 1),
         "second message must carry the assistant tool call"
     );
     assert!(
         matches!(
-            &second.messages[2],
+            message_at(&second.messages, 2),
             TurnMessage::ToolResult { call_id, is_error, .. }
-                if call_id == "call-1" && !is_error
+                if call_id.as_ref() == "call-1" && !is_error
         ),
         "third message must be a successful tool result"
     );
+}
+
+#[tokio::test]
+async fn second_step_replays_tool_results_in_original_call_order() {
+    let first = builtin_call(0, "call-1");
+    let second = builtin_call(1, "call-2");
+
+    let first_step = vec![
+        ResponseEvent::ToolDone(first.clone()),
+        ResponseEvent::ToolDone(second.clone()),
+        ResponseEvent::Done {
+            reason: FinishReason::ToolCalls,
+            usage: Some(Usage::zero()),
+        },
+    ];
+    let second_step = vec![
+        ResponseEvent::ContentDelta("done".into()),
+        ResponseEvent::Done {
+            reason: FinishReason::Stop,
+            usage: Some(Usage::zero()),
+        },
+    ];
+
+    let model = Arc::new(support::FakeModelRunner::new(vec![first_step, second_step]));
+    let model_ref = Arc::clone(&model);
+
+    let (handle, task) = TurnDriver::spawn(
+        context(),
+        model,
+        Arc::new(support::delayed_tool_runner([
+            ("call-1", 40, ToolResult::ok(json!({"source":"slow"}))),
+            ("call-2", 5, ToolResult::ok(json!({"source":"fast"}))),
+        ])),
+        Arc::new(support::FakeAuthorizer::default()),
+        Arc::new(support::FakeObserver),
+    );
+
+    collect_events(handle).await;
+    task.await.unwrap().unwrap();
+
+    let requests = model_ref.received_requests().await;
+    assert_eq!(requests.len(), 2, "expected exactly two model invocations");
+
+    let replay = &requests[1].messages;
+    assert_eq!(replay.len(), 4);
+    assert!(matches!(
+        message_at(&requests[1].messages, 1),
+        TurnMessage::AssistantToolCalls { calls, .. }
+            if calls.len() == 2
+                && call_id_of(calls[0].as_ref()) == "call-1"
+                && call_id_of(calls[1].as_ref()) == "call-2"
+    ));
+    assert!(matches!(
+        message_at(&requests[1].messages, 2),
+        TurnMessage::ToolResult { call_id, .. } if call_id.as_ref() == "call-1"
+    ));
+    assert!(matches!(
+        message_at(&requests[1].messages, 3),
+        TurnMessage::ToolResult { call_id, .. } if call_id.as_ref() == "call-2"
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -156,9 +223,9 @@ async fn denied_tool_appears_as_error_tool_result_in_next_step() {
     assert_eq!(second.messages.len(), 3);
     assert!(
         matches!(
-            &second.messages[2],
+            message_at(&second.messages, 2),
             TurnMessage::ToolResult { call_id, is_error, .. }
-                if call_id == "call-denied" && *is_error
+                if call_id.as_ref() == "call-denied" && *is_error
         ),
         "denied tool must appear as is_error=true ToolResult, got: {:?}",
         second.messages[2]
@@ -219,9 +286,9 @@ async fn timed_out_tool_appears_as_error_tool_result_in_next_step() {
     assert_eq!(second.messages.len(), 3);
     assert!(
         matches!(
-            &second.messages[2],
+            message_at(&second.messages, 2),
             TurnMessage::ToolResult { call_id, is_error, .. }
-                if call_id == "call-slow" && *is_error
+                if call_id.as_ref() == "call-slow" && *is_error
         ),
         "timed-out tool must appear as is_error=true ToolResult"
     );
@@ -262,6 +329,14 @@ async fn length_finish_reason_maps_to_model_length_limit() {
         "Length finish reason must produce ModelLengthLimit, got: {:?}",
         events.last()
     );
+}
+
+fn call_id_of(call: &ToolCall) -> &str {
+    match call {
+        ToolCall::FunctionCall { call_id, .. } => call_id,
+        ToolCall::Builtin(call) => &call.call_id,
+        ToolCall::Mcp(call) => &call.id,
+    }
 }
 
 // ---------------------------------------------------------------------------

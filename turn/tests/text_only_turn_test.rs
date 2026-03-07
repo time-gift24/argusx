@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use turn::{TurnContext, TurnDriver, TurnEvent, TurnFinishReason};
 
+fn expect_shared_text(_: &Arc<str>) {}
+
 #[tokio::test]
 async fn text_only_turn_streams_text_and_completes() {
     let context = TurnContext {
@@ -29,7 +31,10 @@ async fn text_only_turn_streams_text_and_completes() {
 
     assert!(events.iter().any(|event| matches!(
         event,
-        TurnEvent::LlmTextDelta { text } if text == "hel"
+        TurnEvent::LlmTextDelta { text } if {
+            expect_shared_text(text);
+            text.as_ref() == "hel"
+        }
     )));
     assert!(events.iter().any(|event| matches!(
         event,

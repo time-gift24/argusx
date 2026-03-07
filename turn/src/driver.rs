@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{sync::Arc, time::Instant};
 
 use argus_core::{FinishReason, ResponseEvent};
 use futures::StreamExt;
@@ -16,6 +16,7 @@ use crate::{
     TurnFailure, TurnFinishReason, TurnHandle, TurnMessage, TurnOptions, TurnState, TurnSummary,
     TurnTranscript,
     state::{ActiveLlmStep, PendingPermissionCall, PermissionPause, ToolBatch},
+    transcript::SharedToolCall,
 };
 
 enum ToolTaskResult {
@@ -69,7 +70,7 @@ impl TurnDriver {
 
         let handle = TurnHandle::new(command_tx, event_rx);
         let driver = Self {
-            state: TurnState::Ready(context.clone()),
+            state: TurnState::Ready,
             context,
             model,
             tool_runner,
@@ -96,7 +97,7 @@ impl TurnDriver {
         info!("turn started");
         self.emit(TurnEvent::TurnStarted).await?;
         self.transcript.push(TurnMessage::User {
-            content: self.context.user_message.clone(),
+            content: self.context.user_message.as_str().into(),
         });
 
         let mut step_index: u32 = 0;
@@ -129,15 +130,14 @@ impl TurnDriver {
                 session_id: self.context.session_id.clone(),
                 turn_id: self.context.turn_id.clone(),
                 step_index,
-                messages: self.transcript.messages().to_vec(),
+                messages: self.transcript.snapshot(),
                 allow_tools,
             };
 
-            let mut active_step = ActiveLlmStep {
+            self.state = TurnState::StreamingLlm(ActiveLlmStep {
                 step_index,
                 tool_calls: Vec::new(),
-            };
-            self.state = TurnState::StreamingLlm(active_step.clone());
+            });
             let model = Arc::clone(&self.model);
             let start_fut = async move { model.start(request).await };
             tokio::pin!(start_fut);
@@ -190,19 +190,17 @@ impl TurnDriver {
                             }
                             Ok(Some(event)) => match event {
                                 ResponseEvent::ContentDelta(text) => {
-                                    self.emit(TurnEvent::LlmTextDelta {
-                                        text: text.to_string(),
-                                    })
-                                    .await?;
+                                    self.emit(TurnEvent::LlmTextDelta { text }).await?;
                                 }
                                 ResponseEvent::ReasoningDelta(text) => {
-                                    self.emit(TurnEvent::LlmReasoningDelta {
-                                        text: text.to_string(),
-                                    })
-                                    .await?;
+                                    self.emit(TurnEvent::LlmReasoningDelta { text }).await?;
                                 }
                                 ResponseEvent::ToolDone(call) => {
-                                    active_step.tool_calls.push(call.clone());
+                                    let call = Arc::new(call);
+                                    {
+                                        let active_step = self.streaming_step_mut()?;
+                                        active_step.tool_calls.push(Arc::clone(&call));
+                                    }
                                     self.emit(TurnEvent::ToolCallPrepared { call }).await?;
                                 }
                                 ResponseEvent::Done { reason, .. } => break reason,
@@ -233,6 +231,7 @@ impl TurnDriver {
                     return self.finish(TurnFinishReason::Completed).await;
                 }
                 FinishReason::ToolCalls => {
+                    let active_step = self.take_streaming_step()?;
                     if active_step.tool_calls.is_empty() {
                         return Err(TurnError::Runtime(
                             "finish_reason=tool_calls without any completed tool calls".into(),
@@ -242,14 +241,15 @@ impl TurnDriver {
                         return self.finish_cancelled().await;
                     }
 
+                    let calls = Arc::from(active_step.tool_calls);
                     self.transcript.push(TurnMessage::AssistantToolCalls {
                         content: None,
-                        calls: active_step.tool_calls.clone(),
+                        calls: Arc::clone(&calls),
                     });
 
                     let batch = ToolBatch {
                         step_index,
-                        calls: active_step.tool_calls.clone(),
+                        calls: Arc::clone(&calls),
                     };
                     self.state = TurnState::WaitingTools(batch.clone());
 
@@ -258,10 +258,10 @@ impl TurnDriver {
                         return Ok(());
                     }
 
-                    for (call, outcome) in active_step.tool_calls.iter().zip(outcomes.iter()) {
+                    for (call, outcome) in calls.iter().zip(outcomes.iter()) {
                         self.transcript.push(TurnMessage::ToolResult {
-                            call_id: call_id_str(call),
-                            tool_name: tool_name_str(call),
+                            call_id: call_id_arc(call.as_ref()),
+                            tool_name: tool_name_arc(call.as_ref()),
                             content: outcome_to_content(outcome),
                             is_error: outcome_is_error(outcome),
                         });
@@ -309,7 +309,7 @@ impl TurnDriver {
         );
         let mut join_set = JoinSet::new();
         let mut pending_permissions = Vec::new();
-        let mut outcome_map: HashMap<String, ToolOutcome> = HashMap::new();
+        let mut outcomes = vec![None; batch.calls.len()];
         let mut cancellation_requested = false;
 
         if self.consume_cancel_request()? {
@@ -317,25 +317,25 @@ impl TurnDriver {
             return Ok(vec![]);
         }
 
-        for call in &batch.calls {
+        for (call_index, call) in batch.calls.iter().enumerate() {
             if self.consume_cancel_request()? {
                 self.finish_cancelled().await?;
                 return Ok(vec![]);
             }
 
-            match self.authorizer.authorize(call).await? {
+            match self.authorizer.authorize(call.as_ref()).await? {
                 AuthorizationDecision::Allow => {
-                    self.spawn_tool_call(&mut join_set, call.clone());
+                    self.spawn_tool_call(&mut join_set, call_index, Arc::clone(call));
                 }
                 AuthorizationDecision::Deny => {
-                    let cid = call_id_str(call);
+                    let cid = call_id_arc(call.as_ref());
                     info!(call_id = %cid, "tool call denied");
                     self.emit(TurnEvent::ToolCallCompleted {
-                        call_id: cid.clone(),
+                        call_id: Arc::clone(&cid),
                         result: ToolOutcome::Denied,
                     })
                     .await?;
-                    outcome_map.insert(cid, ToolOutcome::Denied);
+                    outcomes[call_index] = Some(ToolOutcome::Denied);
                 }
                 AuthorizationDecision::Ask(request) => {
                     info!(
@@ -349,7 +349,7 @@ impl TurnDriver {
                     .await?;
                     pending_permissions.push(PendingPermissionCall {
                         request,
-                        call: call.clone(),
+                        call_index,
                     });
                 }
             }
@@ -395,23 +395,27 @@ impl TurnDriver {
                                     "tool permission resolved"
                                 );
                                 self.emit(TurnEvent::ToolCallPermissionResolved {
-                                    request_id: request_id.clone(),
+                                    request_id: request_id.as_str().into(),
                                     decision: decision.clone(),
                                 })
                                 .await?;
 
                                 match decision {
                                     PermissionDecision::Allow => {
-                                        self.spawn_tool_call(&mut join_set, pending.call);
+                                        self.spawn_tool_call(
+                                            &mut join_set,
+                                            pending.call_index,
+                                            Arc::clone(&batch.calls[pending.call_index]),
+                                        );
                                     }
                                     PermissionDecision::Deny => {
-                                        let cid = call_id_str(&pending.call);
+                                        let cid = call_id_arc(batch.calls[pending.call_index].as_ref());
                                         self.emit(TurnEvent::ToolCallCompleted {
-                                            call_id: cid.clone(),
+                                            call_id: Arc::clone(&cid),
                                             result: ToolOutcome::Denied,
                                         })
                                         .await?;
-                                        outcome_map.insert(cid, ToolOutcome::Denied);
+                                        outcomes[pending.call_index] = Some(ToolOutcome::Denied);
                                     }
                                 }
 
@@ -428,16 +432,18 @@ impl TurnDriver {
                     }
                 }
                 Some(result) = join_set.join_next(), if !join_set.is_empty() => {
-                    let (cid, task_result) = result
+                    let (call_index, task_result) = result
                         .map_err(|err| TurnError::Runtime(format!("tool task join failed: {err}")))?;
+                    let call = &batch.calls[call_index];
+                    let cid = call_id_arc(call.as_ref());
                     info!(call_id = %cid, "tool call completed");
                     let outcome = map_tool_result(task_result);
                     self.emit(TurnEvent::ToolCallCompleted {
-                        call_id: cid.clone(),
+                        call_id: Arc::clone(&cid),
                         result: outcome.clone(),
                     })
                     .await?;
-                    outcome_map.insert(cid, outcome);
+                    outcomes[call_index] = Some(outcome);
                 }
             }
         }
@@ -453,14 +459,9 @@ impl TurnDriver {
         })
         .await?;
 
-        let ordered = batch
-            .calls
-            .iter()
-            .map(|call| {
-                outcome_map
-                    .remove(&call_id_str(call))
-                    .unwrap_or(ToolOutcome::Denied)
-            })
+        let ordered = outcomes
+            .into_iter()
+            .map(|outcome| outcome.unwrap_or(ToolOutcome::Denied))
             .collect();
 
         Ok(ordered)
@@ -468,8 +469,9 @@ impl TurnDriver {
 
     fn spawn_tool_call(
         &self,
-        join_set: &mut JoinSet<(String, ToolTaskResult)>,
-        call: argus_core::ToolCall,
+        join_set: &mut JoinSet<(usize, ToolTaskResult)>,
+        call_index: usize,
+        call: SharedToolCall,
     ) {
         let tool_runner = Arc::clone(&self.tool_runner);
         let session_id = self.context.session_id.clone();
@@ -477,17 +479,19 @@ impl TurnDriver {
         let cancel_token = self.cancel_token.child_token();
         let timeout = self.options.tool_timeout;
         join_set.spawn(async move {
-            let cid = call_id_str(&call);
             let result = match tokio::time::timeout(
                 timeout,
-                tool_runner.execute(call, ToolContext::new(session_id, turn_id, cancel_token)),
+                tool_runner.execute(
+                    call.as_ref().clone(),
+                    ToolContext::new(session_id, turn_id, cancel_token),
+                ),
             )
             .await
             {
                 Ok(result) => ToolTaskResult::Completed(result),
                 Err(_) => ToolTaskResult::TimedOut,
             };
-            (cid, result)
+            (call_index, result)
         });
     }
 
@@ -513,28 +517,54 @@ impl TurnDriver {
             }
         }
     }
-}
 
-fn call_id_str(call: &argus_core::ToolCall) -> String {
-    match call {
-        argus_core::ToolCall::FunctionCall { call_id, .. } => call_id.clone(),
-        argus_core::ToolCall::Builtin(c) => c.call_id.clone(),
-        argus_core::ToolCall::Mcp(c) => c.id.clone(),
+    fn streaming_step_mut(&mut self) -> Result<&mut ActiveLlmStep, TurnError> {
+        match &mut self.state {
+            TurnState::StreamingLlm(step) => Ok(step),
+            _ => Err(TurnError::Runtime(
+                "turn state invariant violated: expected streaming step".into(),
+            )),
+        }
+    }
+
+    fn take_streaming_step(&mut self) -> Result<ActiveLlmStep, TurnError> {
+        match std::mem::replace(&mut self.state, TurnState::Ready) {
+            TurnState::StreamingLlm(step) => Ok(step),
+            _ => Err(TurnError::Runtime(
+                "turn state invariant violated: missing streaming step".into(),
+            )),
+        }
     }
 }
 
-fn tool_name_str(call: &argus_core::ToolCall) -> String {
+fn call_id_str(call: &argus_core::ToolCall) -> &str {
     match call {
-        argus_core::ToolCall::FunctionCall { name, .. } => name.clone(),
-        argus_core::ToolCall::Builtin(c) => c.builtin.canonical_name().to_string(),
-        argus_core::ToolCall::Mcp(c) => c.name.clone().unwrap_or_default(),
+        argus_core::ToolCall::FunctionCall { call_id, .. } => call_id,
+        argus_core::ToolCall::Builtin(c) => &c.call_id,
+        argus_core::ToolCall::Mcp(c) => &c.id,
     }
 }
 
-fn outcome_to_content(outcome: &ToolOutcome) -> String {
+fn call_id_arc(call: &argus_core::ToolCall) -> Arc<str> {
+    call_id_str(call).into()
+}
+
+fn tool_name_str(call: &argus_core::ToolCall) -> &str {
+    match call {
+        argus_core::ToolCall::FunctionCall { name, .. } => name,
+        argus_core::ToolCall::Builtin(c) => c.builtin.canonical_name(),
+        argus_core::ToolCall::Mcp(c) => c.name.as_deref().unwrap_or_default(),
+    }
+}
+
+fn tool_name_arc(call: &argus_core::ToolCall) -> Arc<str> {
+    tool_name_str(call).into()
+}
+
+fn outcome_to_content(outcome: &ToolOutcome) -> Arc<str> {
     match outcome {
-        ToolOutcome::Success(v) => v.to_string(),
-        ToolOutcome::Failed { message, .. } => message.clone(),
+        ToolOutcome::Success(v) => Arc::from(v.to_string()),
+        ToolOutcome::Failed { message, .. } => Arc::clone(message),
         ToolOutcome::TimedOut => "tool timed out".into(),
         ToolOutcome::Denied => "tool call denied".into(),
         ToolOutcome::Cancelled => "tool call cancelled".into(),
@@ -548,12 +578,12 @@ fn outcome_is_error(outcome: &ToolOutcome) -> bool {
 fn map_tool_result(result: ToolTaskResult) -> ToolOutcome {
     match result {
         ToolTaskResult::Completed(Ok(r)) if r.is_error => ToolOutcome::Failed {
-            message: r.output.to_string(),
+            message: Arc::from(r.output.to_string()),
             retryable: false,
         },
         ToolTaskResult::Completed(Ok(r)) => ToolOutcome::Success(r.output),
         ToolTaskResult::Completed(Err(e)) => ToolOutcome::Failed {
-            message: e.to_string(),
+            message: Arc::from(e.to_string()),
             retryable: false,
         },
         ToolTaskResult::TimedOut => ToolOutcome::TimedOut,

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use argus_core::ToolCall;
 use serde_json::Value;
 
@@ -11,7 +13,10 @@ pub enum StepFinishReason {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ToolOutcome {
     Success(Value),
-    Failed { message: String, retryable: bool },
+    Failed {
+        message: Arc<str>,
+        retryable: bool,
+    },
     TimedOut,
     Denied,
     Cancelled,
@@ -37,23 +42,23 @@ pub enum TurnFinishReason {
 pub enum TurnEvent {
     TurnStarted,
     LlmTextDelta {
-        text: String,
+        text: Arc<str>,
     },
     LlmReasoningDelta {
-        text: String,
+        text: Arc<str>,
     },
     ToolCallPrepared {
-        call: ToolCall,
+        call: Arc<ToolCall>,
     },
     ToolCallCompleted {
-        call_id: String,
+        call_id: Arc<str>,
         result: ToolOutcome,
     },
     ToolCallPermissionRequested {
         request: PermissionRequest,
     },
     ToolCallPermissionResolved {
-        request_id: String,
+        request_id: Arc<str>,
         decision: PermissionDecision,
     },
     StepFinished {

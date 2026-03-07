@@ -61,7 +61,7 @@ async fn tool_batch_emits_each_result_immediately_then_finishes_step_once() {
     let completed: Vec<_> = events
         .iter()
         .filter_map(|event| match event {
-            TurnEvent::ToolCallCompleted { call_id, result } => Some((call_id.as_str(), result)),
+            TurnEvent::ToolCallCompleted { call_id, result } => Some((call_id.as_ref(), result)),
             _ => None,
         })
         .collect();
