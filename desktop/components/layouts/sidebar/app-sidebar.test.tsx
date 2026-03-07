@@ -57,4 +57,39 @@ describe("AppSidebar", () => {
       container.querySelector('[data-slot="sidebar-wrapper"]')
     ).toHaveStyle("--sidebar-width: 208px");
   });
+
+  it("renders a separate Dev group below the workspace group", () => {
+    mockPathname = "/dev";
+
+    const { container } = render(
+      <SidebarProvider>
+        <AppSidebar />
+      </SidebarProvider>
+    );
+
+    const labels = Array.from(
+      container.querySelectorAll('[data-slot="sidebar-group-label"]')
+    ).map((element) => element.textContent);
+
+    expect(labels).toEqual(["工作区", "Dev"]);
+    expect(screen.getByRole("link", { name: /^dev$/i })).toHaveAttribute(
+      "href",
+      "/dev"
+    );
+  });
+
+  it("keeps the Dev entry active across dev child routes", () => {
+    mockPathname = "/dev/stream";
+
+    render(
+      <SidebarProvider>
+        <AppSidebar />
+      </SidebarProvider>
+    );
+
+    expect(screen.getByRole("link", { name: /^dev$/i })).toHaveAttribute(
+      "data-active",
+      "true"
+    );
+  });
 });

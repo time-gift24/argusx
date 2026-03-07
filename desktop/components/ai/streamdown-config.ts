@@ -22,6 +22,11 @@ import { AI_STREAMDOWN_CLASSNAME } from "@/components/ai/styles";
 
 export const sharedStreamdownClassName = AI_STREAMDOWN_CLASSNAME;
 
+export const sharedStreamdownShikiTheme = [
+  "github-light",
+  "github-dark-high-contrast",
+] as const;
+
 export const sharedStreamdownControls = {
   code: {
     copy: true,

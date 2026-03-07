@@ -78,6 +78,12 @@
   --sidebar-accent-foreground: oklch(0.98 0.02 201);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --ai-composer-agent-border: oklch(0.71 0.11 225);
+  --ai-composer-agent-foreground: oklch(0.46 0.08 230);
+  --ai-composer-agent-bg: color-mix(in srgb, oklch(0.71 0.11 225) 14%, white);
+  --ai-composer-workflow-border: oklch(0.76 0.12 72);
+  --ai-composer-workflow-foreground: oklch(0.54 0.1 62);
+  --ai-composer-workflow-bg: color-mix(in srgb, oklch(0.76 0.12 72) 16%, white);
 }
 
 .dark {
@@ -112,6 +118,12 @@
   --sidebar-accent-foreground: oklch(0.30 0.05 230);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --ai-composer-agent-border: oklch(0.8 0.12 220);
+  --ai-composer-agent-foreground: oklch(0.86 0.06 220);
+  --ai-composer-agent-bg: color-mix(in srgb, oklch(0.8 0.12 220) 18%, transparent);
+  --ai-composer-workflow-border: oklch(0.82 0.11 74);
+  --ai-composer-workflow-foreground: oklch(0.88 0.05 74);
+  --ai-composer-workflow-bg: color-mix(in srgb, oklch(0.82 0.11 74) 18%, transparent);
 }
 
 @layer base {

@@ -15,6 +15,7 @@ import {
   sharedStreamdownControls,
   sharedStreamdownIcons,
   sharedStreamdownPlugins,
+  sharedStreamdownShikiTheme,
   sharedStreamdownTranslations,
 } from "@/components/ai/streamdown";
 import { AI_RUNTIME_DENSITY } from "@/components/ai/styles";
@@ -52,6 +53,7 @@ export function Reasoning({
           icons={sharedStreamdownIcons}
           isAnimating={isRunning}
           plugins={sharedStreamdownPlugins}
+          shikiTheme={sharedStreamdownShikiTheme}
           translations={sharedStreamdownTranslations}
         >
           {children}
