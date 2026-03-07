@@ -30,6 +30,8 @@ describe("ToolCallItem", () => {
     );
     expect(screen.getByText("Running").className).toContain("text-[10px]");
     expect(screen.getByText("Running").className).toContain("leading-[12px]");
+    expect(screen.getByText("cwd: /workspace").className).toContain("text-[14px]");
+    expect(screen.getByText("cwd: /workspace").className).toContain("leading-5");
 
     rerender(
       <ToolCallItem
