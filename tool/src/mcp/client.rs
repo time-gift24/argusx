@@ -5,7 +5,7 @@ use serde_json::Value;
 use thiserror::Error;
 use tokio::sync::OnceCell;
 
-use super::process::{spawn_stdio_session, McpSession};
+use super::process::{McpSession, spawn_stdio_session};
 
 #[derive(Debug, Clone)]
 pub struct McpStdioConfig {

@@ -1,13 +1,16 @@
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicUsize, Ordering},
 };
 use std::time::Duration;
 
 use argus_core::{Builtin, BuiltinToolCall};
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
-use tool::{scheduler::{BuiltinRegistration, EffectiveToolPolicy, ToolScheduler}, Tool, ToolContext, ToolError, ToolResult, ToolSpec};
+use tool::{
+    Tool, ToolContext, ToolError, ToolResult, ToolSpec,
+    scheduler::{BuiltinRegistration, EffectiveToolPolicy, ToolScheduler},
+};
 
 #[derive(Debug)]
 struct SlowTool {
