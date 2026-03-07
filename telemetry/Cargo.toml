@@ -18,3 +18,4 @@ regex = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 wiremock = { workspace = true }
+toml = { workspace = true }

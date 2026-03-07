@@ -1,0 +1,12 @@
+enabled = true
+clickhouse_url = "http://localhost:8123"
+database = "argusx"
+table = "telemetry_logs"
+high_priority_batch_size = 5
+low_priority_batch_size = 500
+high_priority_flush_interval_ms = 1000
+low_priority_flush_interval_ms = 30000
+max_in_memory_events = 10000
+max_retry_backoff_ms = 30000
+full_logging = false
+delta_events = false
