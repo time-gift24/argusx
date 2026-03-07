@@ -85,6 +85,37 @@ impl ToolScheduler {
         ctx: ToolContext,
     ) -> Result<ToolResult, ToolError> {
         let builtin_name = call.builtin.canonical_name().to_string();
+        let start = std::time::Instant::now();
+
+        // Emit tool_started event
+        tracing::info!(
+            event_name = "tool_started",
+            tool_name = builtin_name.as_str(),
+            session_id = ctx.session_id.as_str(),
+            turn_id = ctx.turn_id.as_str()
+        );
+
+        let result = self.execute_builtin_inner(call, ctx).await;
+
+        // Emit tool_completed event
+        let duration_ms = start.elapsed().as_millis() as u64;
+        let outcome = if result.is_ok() { "success" } else { "failed" };
+        tracing::info!(
+            event_name = "tool_completed",
+            tool_name = builtin_name.as_str(),
+            tool_outcome = outcome,
+            tool_duration_ms = duration_ms
+        );
+
+        result
+    }
+
+    async fn execute_builtin_inner(
+        &self,
+        call: BuiltinToolCall,
+        ctx: ToolContext,
+    ) -> Result<ToolResult, ToolError> {
+        let builtin_name = call.builtin.canonical_name().to_string();
         let tool = self
             .builtin_tools
             .get(&builtin_name)
@@ -108,6 +139,38 @@ impl ToolScheduler {
     }
 
     pub async fn execute_mcp(&self, call: McpCall) -> Result<ToolResult, ToolError> {
+        let server_label = call
+            .server_label
+            .clone()
+            .ok_or_else(|| ToolError::InvalidArgs("missing MCP server label".to_string()))?;
+        let tool_name = call.name.clone().unwrap_or_default();
+        let start = std::time::Instant::now();
+
+        // Emit tool_started event for MCP
+        tracing::info!(
+            event_name = "tool_started",
+            tool_name = tool_name.as_str(),
+            tool_type = "mcp",
+            server_label = server_label.as_str()
+        );
+
+        let result = self.execute_mcp_inner(call).await;
+
+        // Emit tool_completed event
+        let duration_ms = start.elapsed().as_millis() as u64;
+        let outcome = if result.is_ok() { "success" } else { "failed" };
+        tracing::info!(
+            event_name = "tool_completed",
+            tool_name = tool_name.as_str(),
+            tool_type = "mcp",
+            tool_outcome = outcome,
+            tool_duration_ms = duration_ms
+        );
+
+        result
+    }
+
+    async fn execute_mcp_inner(&self, call: McpCall) -> Result<ToolResult, ToolError> {
         let server_label = call
             .server_label
             .clone()
