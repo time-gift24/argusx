@@ -283,26 +283,91 @@ fn get_current_branch(repo: &Repository) -> Result<Option<String>, GitError> {
 }
 
 // ============================================================================
-// Placeholder Actions (implemented in later tasks)
+// History Actions (Task 6)
 // ============================================================================
 
 async fn diff(
     guard: &GitGuard,
     repo_path: &str,
-    _staged: bool,
+    staged: bool,
     _revision_range: Option<&str>,
     _paths: &[String],
-    _max_bytes: usize,
+    max_bytes: usize,
 ) -> Result<ToolResult, GitError> {
-    let (path, _repo) = guard.authorize_repo(repo_path).await?;
-    // Placeholder - actual implementation in Task 6
+    let (path, repo) = guard.authorize_repo(repo_path).await?;
+
+    let mut diff_opts = git2::DiffOptions::new();
+    diff_opts.include_untracked(false);
+
+    let diff = if staged {
+        // Diff between HEAD and index (staged changes)
+        let head_tree = repo.head()
+            .ok()
+            .and_then(|h| h.target())
+            .and_then(|oid| repo.find_commit(oid).ok())
+            .and_then(|c| c.tree().ok());
+
+        let head_tree = match head_tree {
+            Some(t) => t,
+            None => {
+                // Empty tree for initial commit
+                let empty_tree = repo.find_tree(repo.treebuilder(None)?.write()?)?;
+                empty_tree
+            }
+        };
+
+        repo.diff_tree_to_index(Some(&head_tree), None, Some(&mut diff_opts))?
+    } else {
+        // Diff between HEAD tree and workdir (all changes including unstaged)
+        let head_tree = repo.head()
+            .ok()
+            .and_then(|h| h.target())
+            .and_then(|oid| repo.find_commit(oid).ok())
+            .and_then(|c| c.tree().ok());
+
+        match head_tree {
+            Some(t) => repo.diff_tree_to_workdir(Some(&t), Some(&mut diff_opts))?,
+            None => {
+                // Empty repo - diff empty tree to workdir
+                let empty_tree = repo.find_tree(repo.treebuilder(None)?.write()?)?;
+                repo.diff_tree_to_workdir(Some(&empty_tree), Some(&mut diff_opts))?
+            }
+        }
+    };
+
+    // Generate patch string
+    let mut patch = String::new();
+    diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        let origin = line.origin();
+        if origin == '+' || origin == '-' || origin == ' ' || origin == '\n' {
+            if origin != '\n' {
+                patch.push(origin);
+            }
+            if let Ok(content) = std::str::from_utf8(line.content()) {
+                patch.push_str(content);
+            }
+        }
+        true
+    })?;
+
+    // Get stats
+    let stats = diff.stats()?;
+    let (files_changed, insertions, deletions) = (stats.files_changed(), stats.insertions(), stats.deletions());
+
+    // Truncate if needed
+    let (patch, truncated) = truncate_string(patch, max_bytes);
+
     Ok(ToolResult::ok(json!({
         "action": "diff",
         "repo_path": path.to_string_lossy(),
         "data": {
-            "patch": "",
-            "stats": { "files_changed": 0, "insertions": 0, "deletions": 0 },
-            "truncated": false
+            "patch": patch,
+            "stats": {
+                "files_changed": files_changed,
+                "insertions": insertions,
+                "deletions": deletions
+            },
+            "truncated": truncated
         },
         "warnings": []
     })))
@@ -311,17 +376,54 @@ async fn diff(
 async fn log(
     guard: &GitGuard,
     repo_path: &str,
-    _max_count: usize,
+    max_count: usize,
     _revision_range: Option<&str>,
-    _oneline: bool,
+    oneline: bool,
 ) -> Result<ToolResult, GitError> {
-    let (path, _repo) = guard.authorize_repo(repo_path).await?;
-    // Placeholder - actual implementation in Task 6
+    let (path, repo) = guard.authorize_repo(repo_path).await?;
+
+    // Cap max_count at 200
+    let max_count = max_count.min(200).max(1);
+
+    let mut commits = Vec::new();
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push_head()?;
+    revwalk.set_sorting(git2::Sort::TIME)?;
+
+    let mut count = 0;
+    for oid_result in revwalk {
+        if count >= max_count {
+            break;
+        }
+
+        let oid = oid_result?;
+        let commit = repo.find_commit(oid)?;
+
+        let entry = if oneline {
+            json!({
+                "id": commit.id().to_string(),
+                "summary": commit.summary().unwrap_or("")
+            })
+        } else {
+            let author = commit.author();
+            json!({
+                "id": commit.id().to_string(),
+                "summary": commit.summary().unwrap_or(""),
+                "author": author.name().unwrap_or("unknown"),
+                "email": author.email().unwrap_or(""),
+                "time": commit.time().seconds()
+            })
+        };
+
+        commits.push(entry);
+        count += 1;
+    }
+
     Ok(ToolResult::ok(json!({
         "action": "log",
         "repo_path": path.to_string_lossy(),
         "data": {
-            "commits": [],
+            "commits": commits,
             "truncated": false
         },
         "warnings": []
@@ -331,21 +433,97 @@ async fn log(
 async fn show(
     guard: &GitGuard,
     repo_path: &str,
-    _object: &str,
-    _max_bytes: usize,
+    object: &str,
+    max_bytes: usize,
 ) -> Result<ToolResult, GitError> {
-    let (path, _repo) = guard.authorize_repo(repo_path).await?;
-    // Placeholder - actual implementation in Task 6
+    let (path, repo) = guard.authorize_repo(repo_path).await?;
+
+    // Try to parse as commit first
+    let obj = repo.revparse_single(object)?;
+
+    let (commit, tree) = if let Ok(commit) = obj.peel_to_commit() {
+        let tree = commit.tree()?;
+        (Some(commit), Some(tree))
+    } else if let Ok(tree) = obj.peel_to_tree() {
+        (None, Some(tree))
+    } else {
+        (None, None)
+    };
+
+    let mut patch = String::new();
+    if let (Some(commit), Some(tree)) = (&commit, &tree) {
+        // Get parent tree for diff
+        let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+
+        let mut diff_opts = git2::DiffOptions::new();
+        let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(tree), Some(&mut diff_opts))?;
+
+        diff.print(git2::DiffFormat::Patch, |_, _, line| {
+            match line.origin() {
+                '+' | '-' | ' ' => {
+                    patch.push(line.origin());
+                    if let Ok(content) = std::str::from_utf8(line.content()) {
+                        patch.push_str(content);
+                    }
+                }
+                _ => {}
+            }
+            true
+        })?;
+    }
+
+    let (patch, truncated) = truncate_string(patch, max_bytes);
+
+    let object_info = if let Some(commit) = commit {
+        let author = commit.author();
+        json!({
+            "id": commit.id().to_string(),
+            "type": "commit",
+            "summary": commit.summary().unwrap_or(""),
+            "author": author.name().unwrap_or("unknown"),
+            "email": author.email().unwrap_or(""),
+            "time": commit.time().seconds()
+        })
+    } else if tree.is_some() {
+        json!({
+            "id": obj.id().to_string(),
+            "type": "tree"
+        })
+    } else {
+        json!({
+            "id": obj.id().to_string(),
+            "type": "unknown"
+        })
+    };
+
     Ok(ToolResult::ok(json!({
         "action": "show",
         "repo_path": path.to_string_lossy(),
         "data": {
-            "object": null,
-            "patch": "",
-            "truncated": false
+            "object": object_info,
+            "patch": patch,
+            "truncated": truncated
         },
         "warnings": []
     })))
+}
+
+// ============================================================================
+// Truncation Helper
+// ============================================================================
+
+fn truncate_string(input: String, max_bytes: usize) -> (String, bool) {
+    if input.len() <= max_bytes {
+        return (input, false);
+    }
+
+    // Find a valid UTF-8 boundary
+    let mut end = max_bytes;
+    while end > 0 && !input.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    (input[..end].to_string(), true)
 }
 
 async fn add(
