@@ -19,12 +19,14 @@ import {
   saveProviderProfile,
   setDefaultProviderProfile,
   testProviderProfile,
+  type ProviderKind,
   type ProviderProfileSummary,
   type SaveProviderProfileInput,
 } from "@/lib/provider-settings";
 
 type FormState = {
   id?: string;
+  providerKind: ProviderKind;
   name: string;
   baseUrl: string;
   model: string;
@@ -32,13 +34,25 @@ type FormState = {
   isDefault: boolean;
 };
 
-function emptyForm(isDefault: boolean): FormState {
+const ZAI_DEFAULTS = {
+  baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4/",
+  model: "glm-5",
+  name: "Z.ai",
+} as const;
+
+function emptyForm(providerKind: ProviderKind, isDefault: boolean): FormState {
+  const defaults =
+    providerKind === "zai"
+      ? ZAI_DEFAULTS
+      : { baseUrl: "", model: "", name: "" };
+
   return {
     apiKey: "",
-    baseUrl: "",
+    baseUrl: defaults.baseUrl,
     isDefault,
-    model: "",
-    name: "",
+    model: defaults.model,
+    name: defaults.name,
+    providerKind,
   };
 }
 
@@ -50,13 +64,16 @@ function formFromProfile(profile: ProviderProfileSummary): FormState {
     isDefault: profile.isDefault,
     model: profile.model,
     name: profile.name,
+    providerKind: profile.providerKind,
   };
 }
 
 export function ProviderSettingsDialog() {
   const [open, setOpen] = useState(false);
   const [profiles, setProfiles] = useState<ProviderProfileSummary[]>([]);
-  const [form, setForm] = useState<FormState>(emptyForm(true));
+  const [form, setForm] = useState<FormState>(
+    emptyForm("openai_compatible", true)
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -79,7 +96,9 @@ export function ProviderSettingsDialog() {
       const nextProfiles = await listProviderProfiles();
       setProfiles(nextProfiles);
       setForm((current) =>
-        current.id ? current : emptyForm(nextProfiles.length === 0)
+        current.id
+          ? current
+          : emptyForm(current.providerKind, nextProfiles.length === 0)
       );
     } catch (cause) {
       setError(readableMessage(cause, "无法加载 provider 配置。"));
@@ -98,10 +117,21 @@ export function ProviderSettingsDialog() {
     }));
   };
 
-  const handleNewProfile = () => {
+  const handleNewOpenAiCompatibleProfile = () => {
     setError(null);
     setStatusMessage(null);
-    setForm(emptyForm(profiles.length === 0));
+    setForm(emptyForm("openai_compatible", profiles.length === 0));
+  };
+
+  const handleZaiProfile = () => {
+    setError(null);
+    setStatusMessage(null);
+    const existingZai = profiles.find((profile) => profile.providerKind === "zai");
+    setForm(
+      existingZai
+        ? formFromProfile(existingZai)
+        : emptyForm("zai", profiles.length === 0)
+    );
   };
 
   const handleEditProfile = (profile: ProviderProfileSummary) => {
@@ -117,21 +147,22 @@ export function ProviderSettingsDialog() {
     setStatusMessage(null);
 
     const trimmedApiKey = form.apiKey.trim();
-    const payload: SaveProviderProfileInput = {
-      baseUrl: form.baseUrl.trim(),
-      isDefault: form.isDefault,
-      model: form.model.trim(),
-      name: form.name.trim(),
-      ...(form.id ? { id: form.id } : {}),
-      ...(trimmedApiKey ? { apiKey: trimmedApiKey } : {}),
-    };
+      const payload: SaveProviderProfileInput = {
+        baseUrl: form.baseUrl.trim(),
+        isDefault: form.isDefault,
+        model: form.model.trim(),
+        name: form.name.trim(),
+        providerKind: form.providerKind,
+        ...(form.id ? { id: form.id } : {}),
+        ...(trimmedApiKey ? { apiKey: trimmedApiKey } : {}),
+      };
 
     try {
       await saveProviderProfile(payload);
       setStatusMessage("配置已保存。");
       const nextProfiles = await listProviderProfiles();
       setProfiles(nextProfiles);
-      setForm(emptyForm(nextProfiles.length === 0));
+      setForm(emptyForm(form.providerKind, nextProfiles.length === 0));
     } catch (cause) {
       setError(readableMessage(cause, "保存 provider 配置失败。"));
     } finally {
@@ -146,12 +177,12 @@ export function ProviderSettingsDialog() {
     try {
       await setDefaultProviderProfile(profileId);
       setStatusMessage("默认 provider 已更新。");
-      const nextProfiles = await listProviderProfiles();
-      setProfiles(nextProfiles);
-      setForm((current) => {
-        if (!current.id) {
-          return emptyForm(nextProfiles.length === 0);
-        }
+        const nextProfiles = await listProviderProfiles();
+        setProfiles(nextProfiles);
+        setForm((current) => {
+          if (!current.id) {
+          return emptyForm(current.providerKind, nextProfiles.length === 0);
+          }
 
         const currentProfile = nextProfiles.find(
           (profile) => profile.id === current.id
@@ -173,7 +204,9 @@ export function ProviderSettingsDialog() {
       const nextProfiles = await listProviderProfiles();
       setProfiles(nextProfiles);
       setForm((current) =>
-        current.id === profileId ? emptyForm(nextProfiles.length === 0) : current
+        current.id === profileId
+          ? emptyForm(current.providerKind, nextProfiles.length === 0)
+          : current
       );
     } catch (cause) {
       setError(readableMessage(cause, "删除 provider 配置失败。"));
@@ -196,6 +229,7 @@ export function ProviderSettingsDialog() {
         apiKey: form.apiKey.trim(),
         baseUrl: form.baseUrl.trim(),
         model: form.model.trim(),
+        providerKind: form.providerKind,
       });
       setStatusMessage(result.message);
     } catch (cause) {
@@ -233,17 +267,27 @@ export function ProviderSettingsDialog() {
               <div>
                 <p className="text-sm font-medium">已保存配置</p>
                 <p className="text-xs text-muted-foreground">
-                  当前仅支持 OpenAI-compatible
+                  支持单个 Z.ai 配置和多个 OpenAI-compatible profiles
                 </p>
               </div>
-              <Button
-                onClick={handleNewProfile}
-                size="sm"
-                type="button"
-                variant="secondary"
-              >
-                新增配置
-              </Button>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  onClick={handleZaiProfile}
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  配置 Z.ai
+                </Button>
+                <Button
+                  onClick={handleNewOpenAiCompatibleProfile}
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  新增 OpenAI-compatible
+                </Button>
+              </div>
             </div>
 
             {isLoading ? (
@@ -265,6 +309,9 @@ export function ProviderSettingsDialog() {
                           <p className="truncate text-sm font-medium">
                             {profile.name}
                           </p>
+                          <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] text-muted-foreground">
+                            {providerKindLabel(profile.providerKind)}
+                          </span>
                           {profile.isDefault ? (
                             <span className="rounded-full bg-foreground px-2 py-0.5 text-[10px] font-medium text-background">
                               默认
@@ -330,11 +377,20 @@ export function ProviderSettingsDialog() {
                   </p>
                 </div>
                 <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] text-muted-foreground">
-                  OpenAI-compatible
+                  {providerKindLabel(form.providerKind)}
                 </span>
               </div>
 
               <div className="grid gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="provider-profile-kind">Provider 类型</Label>
+                  <Input
+                    aria-label="Provider 类型"
+                    id="provider-profile-kind"
+                    readOnly
+                    value={providerKindLabel(form.providerKind)}
+                  />
+                </div>
                 <div className="grid gap-1.5">
                   <Label htmlFor="provider-profile-name">名称</Label>
                   <Input
@@ -419,4 +475,8 @@ function readableMessage(cause: unknown, fallback: string): string {
   }
 
   return fallback;
+}
+
+function providerKindLabel(providerKind: ProviderKind): string {
+  return providerKind === "zai" ? "Z.ai" : "OpenAI-compatible";
 }

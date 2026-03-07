@@ -15,6 +15,7 @@ fn save_profile_lists_summaries_and_reassigns_default() {
     let first = service
         .save_profile(SaveProviderProfileInput {
             id: None,
+            provider_kind: ProviderKind::OpenAiCompatible,
             name: "OpenRouter".into(),
             base_url: "https://openrouter.ai/api/v1/".into(),
             model: "openai/gpt-4.1-mini".into(),
@@ -26,6 +27,7 @@ fn save_profile_lists_summaries_and_reassigns_default() {
     let second = service
         .save_profile(SaveProviderProfileInput {
             id: None,
+            provider_kind: ProviderKind::OpenAiCompatible,
             name: "Local vLLM".into(),
             base_url: "http://127.0.0.1:8000/v1/".into(),
             model: "deepseek-v3".into(),
@@ -55,6 +57,7 @@ fn save_profile_encrypts_api_key_and_keeps_existing_secret_on_blank_update() {
     let profile = service
         .save_profile(SaveProviderProfileInput {
             id: None,
+            provider_kind: ProviderKind::OpenAiCompatible,
             name: "OpenRouter".into(),
             base_url: "https://openrouter.ai/api/v1/".into(),
             model: "openai/gpt-4.1-mini".into(),
@@ -70,6 +73,7 @@ fn save_profile_encrypts_api_key_and_keeps_existing_secret_on_blank_update() {
     let updated = service
         .save_profile(SaveProviderProfileInput {
             id: Some(profile.id.clone()),
+            provider_kind: ProviderKind::OpenAiCompatible,
             name: "OpenRouter Stable".into(),
             base_url: "https://openrouter.ai/api/v1/".into(),
             model: "openai/gpt-4.1".into(),
@@ -94,6 +98,7 @@ fn delete_default_profile_is_rejected() {
     let profile = service
         .save_profile(SaveProviderProfileInput {
             id: None,
+            provider_kind: ProviderKind::OpenAiCompatible,
             name: "OpenRouter".into(),
             base_url: "https://openrouter.ai/api/v1/".into(),
             model: "openai/gpt-4.1-mini".into(),
@@ -107,6 +112,42 @@ fn delete_default_profile_is_rejected() {
     assert!(matches!(
         error,
         ProviderSettingsError::Validation(message) if message.contains("default")
+    ));
+}
+
+#[test]
+fn save_profile_rejects_creating_a_second_zai_profile() {
+    let db_path = temp_db_path("provider-settings-zai");
+    let service = test_service(&db_path);
+
+    let first = service
+        .save_profile(SaveProviderProfileInput {
+            id: None,
+            provider_kind: ProviderKind::Zai,
+            name: "Z.ai".into(),
+            base_url: "https://open.bigmodel.cn/api/coding/paas/v4/".into(),
+            model: "glm-5".into(),
+            api_key: Some("sk-zai-1".into()),
+            is_default: true,
+        })
+        .unwrap();
+
+    let error = service
+        .save_profile(SaveProviderProfileInput {
+            id: None,
+            provider_kind: ProviderKind::Zai,
+            name: "Z.ai Backup".into(),
+            base_url: "https://open.bigmodel.cn/api/coding/paas/v4/".into(),
+            model: "glm-5".into(),
+            api_key: Some("sk-zai-2".into()),
+            is_default: false,
+        })
+        .unwrap_err();
+
+    assert_eq!(first.provider_kind, ProviderKind::Zai);
+    assert!(matches!(
+        error,
+        ProviderSettingsError::Validation(message) if message.contains("Z.ai")
     ));
 }
 

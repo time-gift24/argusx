@@ -4,13 +4,14 @@
 
 本文档定义桌面应用的 provider 配置入口、SQLite 持久化模型和 API key 加密存储方案。
 
-目标是让用户可以在右上角打开全局配置面板，维护多个 `OpenAI-compatible` provider profile，并指定一个全局默认 profile 供 `/chat` 页面发送消息时使用。
+目标是让用户可以在右上角打开全局配置面板，维护一个 `Z.ai` 配置和多个 `OpenAI-compatible` provider profile，并指定一个全局默认 profile 供 `/chat` 页面发送消息时使用。
 
 ## 目标
 
 - 在应用右上角提供统一的 provider 配置入口
 - 将 provider profile 持久化到本地 SQLite
 - 将 `api_key` 以密文形式存入 SQLite，而不是明文
+- 支持一个 `Z.ai` 配置
 - 支持多个 `OpenAI-compatible` profile
 - 支持一个全局默认 profile，chat 运行时优先使用它
 - 在没有 SQLite 配置时，继续支持现有环境变量回退路径
@@ -21,7 +22,7 @@
 - 不支持用户自定义 provider 类型
 - 不支持多默认 profile
 - 不引入“主密码解锁”流程
-- 不在 V1 中管理非 `OpenAI-compatible` provider profile
+- 不支持用户自定义 provider 类型
 
 ## 约束
 
@@ -101,6 +102,7 @@
 
 ### 表单字段
 
+- `Provider 类型`
 - `名称`
 - `Base URL`
 - `Model`
@@ -108,10 +110,11 @@
 
 ### 交互限制
 
-- V1 仅允许 `OpenAI-compatible`
+- V1 支持 `Z.ai` 和 `OpenAI-compatible`
 - 列表始终可以有多条 profile
 - 同一时刻只能有一个默认 profile
 - 默认 profile 不允许直接删除
+- `Z.ai` 仅允许保存一条 profile
 
 ## 数据模型
 
@@ -138,7 +141,7 @@ WHERE is_default = 1;
 
 ### 字段语义
 
-- `provider_kind`: 固定为 `openai_compatible`
+- `provider_kind`: `zai` 或 `openai_compatible`
 - `api_key_ciphertext`: 使用应用数据密钥加密后的密文
 - `api_key_nonce`: 对称加密所需随机 nonce
 - `is_default`: 全局唯一默认项
@@ -189,7 +192,7 @@ WHERE is_default = 1;
 V1 调整为：
 
 1. 优先从 SQLite 加载默认 profile
-2. 若存在默认 profile，则用其 `base_url`、`model`、`api_key`
+2. 若存在默认 profile，则按 `provider_kind` 映射到运行时 dialect，并使用其 `base_url`、`model`、`api_key`
 3. 若 SQLite 中没有任何默认 profile，则回退到现有环境变量
 4. 如果两者都不可用，则在启动 turn 时返回明确错误
 
@@ -199,6 +202,7 @@ V1 调整为：
 
 - 表单校验失败：直接在 dialog 内联提示
 - 默认项冲突：以后端唯一索引错误映射为用户可读消息
+- 第二条 `Z.ai` 配置：返回“Z.ai only supports a single saved profile”
 - 默认项删除：返回业务错误，不执行删除
 - 系统安全存储失败：返回“无法初始化本机密钥存储”
 
@@ -215,9 +219,11 @@ V1 调整为：
 - schema 初始化
 - 创建 profile 后可以列出摘要
 - 默认 profile 唯一性
+- `Z.ai` 只能保存单条 profile
 - 更新 profile 且 `api_key` 为空时不覆盖密文
 - 删除默认 profile 被拒绝
 - SQLite 默认 profile 优先于环境变量
+- `Z.ai` 默认 profile 会映射到 `Dialect::Zai`
 - 没有 SQLite 配置时 env fallback 仍然可用
 - 密文写入数据库时不包含明文 key
 
@@ -238,4 +244,4 @@ V1 调整为：
 
 ## 结果
 
-V1 完成后，用户可以在桌面应用右上角管理 `OpenAI-compatible` provider profile，API key 以密文落 SQLite，聊天运行时自动读取全局默认 profile，并在未配置 SQLite 时兼容现有环境变量流程。
+V1 完成后，用户可以在桌面应用右上角管理一个 `Z.ai` 配置和多个 `OpenAI-compatible` profile，API key 以密文落 SQLite，聊天运行时自动读取全局默认 profile，并在未配置 SQLite 时兼容现有环境变量流程。

@@ -39,6 +39,7 @@ impl ProviderSettingsService {
         &self,
         input: SaveProviderProfileInput,
     ) -> Result<ProviderProfileSummary, ProviderSettingsError> {
+        let provider_kind = input.provider_kind;
         let name = trim_required("name", input.name)?;
         let base_url = normalize_url(trim_required("base_url", input.base_url)?)?;
         let model = trim_required("model", input.model)?;
@@ -54,6 +55,7 @@ impl ProviderSettingsService {
             ),
             None => None,
         };
+        self.ensure_provider_kind_constraints(provider_kind, existing.as_ref())?;
 
         let api_key = input
             .api_key
@@ -97,7 +99,7 @@ impl ProviderSettingsService {
                 .map(|record| record.id.clone())
                 .or(input.id)
                 .unwrap_or_else(|| Uuid::new_v4().to_string()),
-            provider_kind: ProviderKind::OpenAiCompatible,
+            provider_kind,
             name,
             base_url,
             model,
@@ -155,6 +157,7 @@ impl ProviderSettingsService {
         })?;
 
         Ok(Some(ProviderRuntimeConfig {
+            provider_kind: profile.provider_kind,
             base_url: profile.base_url,
             model: profile.model,
             api_key,
@@ -165,6 +168,7 @@ impl ProviderSettingsService {
         &self,
         input: TestProviderProfileInput,
     ) -> Result<ProviderConnectionResult, ProviderSettingsError> {
+        let _provider_kind = input.provider_kind;
         let base_url = normalize_url(trim_required("base_url", input.base_url)?)?;
         let api_key = trim_required("api_key", input.api_key)?;
         let _model = trim_required("model", input.model)?;
@@ -193,6 +197,34 @@ impl ProviderSettingsService {
             success: false,
             message: format!("{}: {}", status, body.trim()),
         })
+    }
+
+    fn ensure_provider_kind_constraints(
+        &self,
+        provider_kind: ProviderKind,
+        existing: Option<&ProviderProfileRecord>,
+    ) -> Result<(), ProviderSettingsError> {
+        if !matches!(provider_kind, ProviderKind::Zai) {
+            return Ok(());
+        }
+
+        let current_id = existing.map(|record| record.id.as_str());
+        let has_other_zai = self
+            .store
+            .list_profiles()?
+            .into_iter()
+            .any(|profile| {
+                profile.provider_kind == ProviderKind::Zai
+                    && Some(profile.id.as_str()) != current_id
+            });
+
+        if has_other_zai {
+            return Err(ProviderSettingsError::Validation(
+                "Z.ai only supports a single saved profile".to_string(),
+            ));
+        }
+
+        Ok(())
     }
 }
 

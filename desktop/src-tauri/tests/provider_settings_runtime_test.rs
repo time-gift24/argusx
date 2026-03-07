@@ -22,10 +22,33 @@ fn provider_model_runner_uses_sqlite_default_profile_when_env_is_missing() {
     service
         .save_profile(SaveProviderProfileInput {
             id: None,
+            provider_kind: desktop_lib::provider_settings::ProviderKind::OpenAiCompatible,
             name: "OpenRouter".into(),
             base_url: "https://openrouter.ai/api/v1/".into(),
             model: "openai/gpt-4.1-mini".into(),
             api_key: Some("sk-sqlite".into()),
+            is_default: true,
+        })
+        .unwrap();
+
+    assert!(ProviderModelRunner::from_provider_settings(Some(&service)).is_ok());
+}
+
+#[test]
+fn provider_model_runner_supports_zai_profile_from_sqlite() {
+    let _guard = env_lock().lock().unwrap();
+    clear_provider_env();
+
+    let db_path = temp_db_path("provider-settings-runtime-zai");
+    let service = test_service(&db_path);
+    service
+        .save_profile(SaveProviderProfileInput {
+            id: None,
+            provider_kind: desktop_lib::provider_settings::ProviderKind::Zai,
+            name: "Z.ai".into(),
+            base_url: "https://open.bigmodel.cn/api/coding/paas/v4/".into(),
+            model: "glm-5".into(),
+            api_key: Some("sk-zai".into()),
             is_default: true,
         })
         .unwrap();

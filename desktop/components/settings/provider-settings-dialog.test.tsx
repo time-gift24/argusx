@@ -50,6 +50,7 @@ describe("ProviderSettingsDialog", () => {
       expect(providerSettingsApi.listProviderProfiles).toHaveBeenCalledTimes(1);
     });
     expect(screen.getByText("OpenRouter")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "配置 Z.ai" })).toBeInTheDocument();
   });
 
   it("creates a new default profile from the dialog form", async () => {
@@ -82,6 +83,7 @@ describe("ProviderSettingsDialog", () => {
       isDefault: true,
       model: "openai/gpt-4.1-mini",
       name: "OpenRouter",
+      providerKind: "openai_compatible",
     });
   });
 
@@ -121,6 +123,23 @@ describe("ProviderSettingsDialog", () => {
       isDefault: true,
       model: "openai/gpt-4.1",
       name: "OpenRouter Stable",
+      providerKind: "openai_compatible",
     });
+  });
+
+  it("prefills the form for a Z.ai profile", async () => {
+    const user = userEvent.setup();
+    providerSettingsApi.listProviderProfiles.mockResolvedValue([]);
+
+    render(<ProviderSettingsDialog />);
+    await user.click(screen.getByRole("button", { name: "Provider 配置" }));
+    await user.click(screen.getByRole("button", { name: "配置 Z.ai" }));
+
+    expect(screen.getByLabelText("Provider 类型")).toHaveValue("Z.ai");
+    expect(screen.getByLabelText("名称")).toHaveValue("Z.ai");
+    expect(screen.getByLabelText("Base URL")).toHaveValue(
+      "https://open.bigmodel.cn/api/coding/paas/v4/"
+    );
+    expect(screen.getByLabelText("Model")).toHaveValue("glm-5");
   });
 });
