@@ -59,3 +59,8 @@ pub fn ask_permission(call_id: &'static str, request_id: &'static str) -> Author
         tool_call_id: call_id.to_string(),
     })
 }
+
+#[allow(dead_code)]
+pub fn instant_tool_runner() -> FakeToolRunner {
+    FakeToolRunner::default()
+}
