@@ -22,6 +22,15 @@ pub enum TurnFinishReason {
     Completed,
     Cancelled,
     Failed,
+    /// The turn reached `max_steps` and `FinalStepPolicy::Fail` was set, or
+    /// the forced-text final step still returned tool calls.
+    MaxStepsExceeded,
+    /// The model returned `FinishReason::Length` (output was truncated).
+    ModelLengthLimit,
+    /// The model returned an unrecognised finish reason.
+    ModelProtocolError,
+    /// A model-start or stream-idle timeout fired.
+    LlmTimeout,
 }
 
 #[derive(Debug, Clone, PartialEq)]

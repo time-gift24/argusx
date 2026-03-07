@@ -121,6 +121,10 @@ impl UiMessageStreamEncoder {
                         TurnFinishReason::Completed => "stop",
                         TurnFinishReason::Cancelled => "other",
                         TurnFinishReason::Failed => "error",
+                        TurnFinishReason::MaxStepsExceeded => "error",
+                        TurnFinishReason::ModelLengthLimit => "error",
+                        TurnFinishReason::ModelProtocolError => "error",
+                        TurnFinishReason::LlmTimeout => "error",
                     },
                 })));
                 self.finished = true;
