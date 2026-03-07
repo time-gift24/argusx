@@ -11,6 +11,7 @@ import {
 import { Streamdown } from "streamdown";
 
 import {
+  PlanQueue,
   PromptComposer,
   Reasoning,
   ToolCallItem,
@@ -253,6 +254,8 @@ export default function ChatPage() {
                       className="space-y-4 text-sm"
                       data-slot="chat-turn-assistant"
                     >
+                      {turn.latestPlan ? <PlanQueue plan={turn.latestPlan} /> : null}
+
                       {turn.assistantText ? (
                         <Streamdown isAnimating={turn.status === "running"}>
                           {turn.assistantText}
@@ -272,7 +275,9 @@ export default function ChatPage() {
                         </Reasoning>
                       ) : null}
 
-                      {turn.toolCalls.map((toolCall) => (
+                      {turn.toolCalls
+                        .filter((toolCall) => toolCall.name !== "update_plan")
+                        .map((toolCall) => (
                         <ToolCallItem
                           errorSummary={toolCall.errorSummary}
                           inputSummary={formatArgumentsSummary(toolCall.argumentsJson)}
@@ -282,7 +287,7 @@ export default function ChatPage() {
                           outputSummary={toolCall.outputSummary}
                           runKey={turn.turnId ?? turn.clientKey}
                         />
-                      ))}
+                        ))}
 
                       {turn.error ? (
                         <p className="text-sm text-destructive" role="alert">
