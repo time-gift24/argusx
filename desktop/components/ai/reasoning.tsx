@@ -27,8 +27,8 @@ export function Reasoning({
   return (
     <StreamItem className={className} isRunning={isRunning} {...props}>
       <StreamItemTrigger
-        icon={<BrainIcon className="size-[10px]" />}
-        label="Reasoning"
+        icon={<BrainIcon />}
+        label="reasoning"
         status={isRunning ? "Thinking" : "Thought"}
       />
       <StreamItemContent

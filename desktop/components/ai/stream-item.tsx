@@ -235,7 +235,7 @@ export const StreamItemTrigger = memo(
               data-slot="stream-item-shimmer"
             />
           ) : null}
-          {icon ? <span className="shrink-0 [&_svg]:size-[10px]">{icon}</span> : null}
+          {icon ? <span className="shrink-0 [&_svg]:size-[14px]">{icon}</span> : null}
           <span className="truncate">{label}</span>
         </span>
         {status ? (
@@ -250,7 +250,7 @@ export const StreamItemTrigger = memo(
         ) : null}
         <ChevronDownIcon
           className={cn(
-            "size-[10px] shrink-0 transition-transform",
+            "size-[14px] shrink-0 transition-transform",
             isOpen ? "rotate-180" : "rotate-0"
           )}
         />

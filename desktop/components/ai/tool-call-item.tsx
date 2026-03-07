@@ -73,7 +73,6 @@ export function ToolCallItem({
         icon={
           <Icon
             className={cn(
-              "size-[10px]",
               errorSummary ? "text-destructive" : undefined
             )}
           />
@@ -92,7 +91,6 @@ export function ToolCallItem({
         icon={
           <Icon
             className={cn(
-              "size-[10px]",
               errorSummary ? "text-destructive" : undefined
             )}
           />
