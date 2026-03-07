@@ -2,7 +2,9 @@ use argus_core::ResponseEvent;
 use futures::StreamExt;
 use std::path::PathBuf;
 
-use provider::{Dialect, Error, ProviderClient, ProviderConfig, ProviderDevOptions, ReplayTiming, Request};
+use provider::{
+    Dialect, Error, ProviderClient, ProviderConfig, ProviderDevOptions, ReplayTiming, Request,
+};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -110,8 +112,8 @@ async fn eof_without_done_becomes_terminal_protocol_error_event() {
     ));
 }
 
-#[test]
-fn recorded_replay_without_sidecar_fails_before_stream_start() {
+#[tokio::test]
+async fn recorded_replay_without_sidecar_falls_back_to_fast_mode() {
     let client = ProviderClient::new(
         ProviderConfig::new(Dialect::Openai, "http://unused", "test-key").with_dev_options(
             ProviderDevOptions::replay(
@@ -122,9 +124,11 @@ fn recorded_replay_without_sidecar_fails_before_stream_start() {
     )
     .unwrap();
 
-    match client.stream(request("gpt-test")) {
-        Ok(_) => panic!("expected replay setup to fail without timing metadata"),
-        Err(Error::Config(message)) => assert!(message.contains("timing metadata")),
-        Err(other) => panic!("expected config error, got {other}"),
-    }
+    // Should succeed - falls back to fast mode when timing metadata is missing
+    let mut stream = client.stream(request("gpt-test")).unwrap();
+    let events: Vec<_> = stream.by_ref().collect().await;
+
+    // Should still emit created and done events
+    assert!(events.iter().any(|e| matches!(e, ResponseEvent::Created(_))));
+    assert!(events.iter().any(|e| matches!(e, ResponseEvent::Done { .. })));
 }

@@ -50,12 +50,22 @@ pub(crate) fn prepare(
     timing: ReplayTiming,
 ) -> Result<PreparedReplay, Error> {
     let path = path.into();
-    let body = fs::read_to_string(&path)
-        .map_err(|err| Error::Config(format!("failed to read replay file {}: {err}", path.display())))?;
+    let body = fs::read_to_string(&path).map_err(|err| {
+        Error::Config(format!(
+            "failed to read replay file {}: {err}",
+            path.display()
+        ))
+    })?;
     let frames = parse_frames(&body)?;
     let delays = match timing {
         ReplayTiming::Fast => vec![0; frames.len()],
-        ReplayTiming::Recorded => load_delays(&path, frames.len())?,
+        ReplayTiming::Recorded => match load_delays(&path, frames.len()) {
+            Ok(delays) => delays,
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to load timing metadata, falling back to fast mode");
+                vec![0; frames.len()]
+            }
+        },
     };
 
     Ok(PreparedReplay {
