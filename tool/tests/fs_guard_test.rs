@@ -1,5 +1,5 @@
-use tool::builtin::fs::guard::FsGuard;
 use std::path::PathBuf;
+use tool::builtin::fs::guard::FsGuard;
 
 #[tokio::test]
 async fn guard_denies_path_outside_allowed_roots() {
@@ -143,9 +143,6 @@ async fn guard_denies_nonexistent_path_in_existing() {
     assert!(result.is_err());
     // Check it's a NotFound error, not AccessDenied
     if let Err(e) = result {
-        assert!(matches!(
-            e,
-            tool::builtin::fs::error::FsError::NotFound(_)
-        ));
+        assert!(matches!(e, tool::builtin::fs::error::FsError::NotFound(_)));
     }
 }

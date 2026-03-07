@@ -1,6 +1,6 @@
-use tool::{GrepTool, Tool, ToolContext};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
+use tool::{GrepTool, Tool, ToolContext};
 
 fn test_context() -> ToolContext {
     ToolContext::new("test", "test", CancellationToken::new())

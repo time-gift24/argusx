@@ -1,5 +1,5 @@
-use tool::{Tool, ToolContext, ToolError};
 use tokio_util::sync::CancellationToken;
+use tool::{Tool, ToolContext, ToolError};
 
 #[test]
 fn tool_crate_exports_runtime_primitives() {

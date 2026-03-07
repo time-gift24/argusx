@@ -15,7 +15,12 @@ async fn writer_posts_json_each_row_to_clickhouse() {
     config.clickhouse_url = server.uri();
     let writer = ClickHouseWriter::new(config).unwrap();
 
-    writer.write_batch(vec![TelemetryRecord::builder("turn_finished", EventPriority::High).build()]).await.unwrap();
+    writer
+        .write_batch(vec![
+            TelemetryRecord::builder("turn_finished", EventPriority::High).build(),
+        ])
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

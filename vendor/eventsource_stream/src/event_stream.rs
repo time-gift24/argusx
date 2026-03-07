@@ -305,11 +305,7 @@ mod tests {
         let mut buffer = "data: Hello, world!\n\n".to_string();
         let mut builder = EventBuilder::default();
 
-        let event = parse_event::<()>(
-            &mut buffer,
-            &mut builder,
-        )
-        .expect("parse should succeed");
+        let event = parse_event::<()>(&mut buffer, &mut builder).expect("parse should succeed");
 
         assert_eq!(
             event,

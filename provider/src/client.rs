@@ -1,5 +1,7 @@
 use crate::{Dialect, Error, ErrorKind, Mapper, ProviderConfig, Request, StreamError};
-use argus_core::{Error as CoreError, ResponseContract, ResponseEvent, ResponseStream, Usage};
+use argus_core::{
+    Error as CoreError, Meta, ResponseContract, ResponseEvent, ResponseStream, Usage,
+};
 use bytes::Bytes;
 use eventsource_stream::{Event as SseMessage, EventStreamError, Eventsource};
 use futures::StreamExt;
@@ -44,6 +46,7 @@ impl ProviderClient {
         let request = request.normalized_for_send();
         let (tx, rx) = mpsc::channel(32);
         let provider = format!("{:?}", dialect);
+        let model_name = request.model.clone();
         let span = tracing::Span::current();
 
         let producer = tokio::spawn(
@@ -52,6 +55,7 @@ impl ProviderClient {
                 tracing::info!(
                     event_name = "llm_request",
                     provider = provider.as_str(),
+                    model_name = model_name.as_str(),
                 );
 
                 let response = match http
@@ -89,6 +93,7 @@ impl ProviderClient {
                 };
                 let mut mapper = Mapper::new(dialect);
                 let mut final_usage: Option<Usage> = None;
+                let mut response_meta: Option<Meta> = None;
 
                 while let Some(item) = sse.next().await {
                     match item {
@@ -98,13 +103,20 @@ impl ProviderClient {
                                     Ok(events) => {
                                         // Extract usage from Done event
                                         for event in &events {
+                                            if let ResponseEvent::Created(meta) = event {
+                                                response_meta = Some(meta.clone());
+                                            }
                                             if let ResponseEvent::Done { usage, .. } = event {
                                                 final_usage = usage.clone();
                                             }
                                         }
 
                                         // Emit llm_response_completed event
-                                        emit_completion_event(&final_usage);
+                                        emit_completion_event(
+                                            provider.as_str(),
+                                            response_meta.as_ref(),
+                                            &final_usage,
+                                        );
 
                                         if emit_events(&tx, &mut contract, events).await.is_err() {
                                             return;
@@ -129,6 +141,9 @@ impl ProviderClient {
                                 Ok(events) => {
                                     // Track usage from streaming events
                                     for event in &events {
+                                        if let ResponseEvent::Created(meta) = event {
+                                            response_meta = Some(meta.clone());
+                                        }
                                         if let ResponseEvent::Done { usage, .. } = event {
                                             final_usage = usage.clone();
                                         }
@@ -305,13 +320,18 @@ fn classify_mapper_error(err: &Error) -> ErrorKind {
     }
 }
 
-fn emit_completion_event(usage: &Option<Usage>) {
-    let billing_key = uuid::Uuid::new_v4().to_string();
+fn emit_completion_event(provider: &str, meta: Option<&Meta>, usage: &Option<Usage>) {
+    let billing_key = billing_dedupe_key(provider, meta, usage);
+    let model_name = meta.map(|value| value.model.as_str());
+    let response_id = meta.map(|value| value.id.as_str());
     match usage {
         Some(u) => {
             tracing::info!(
                 event_name = "llm_response_completed",
                 event_priority = "high",
+                provider = provider,
+                model_name = model_name.unwrap_or(""),
+                response_id = response_id.unwrap_or(""),
                 input_tokens = u.input_tokens,
                 output_tokens = u.output_tokens,
                 total_tokens = u.total_tokens,
@@ -322,8 +342,26 @@ fn emit_completion_event(usage: &Option<Usage>) {
             tracing::info!(
                 event_name = "llm_response_completed",
                 event_priority = "high",
+                provider = provider,
+                model_name = model_name.unwrap_or(""),
+                response_id = response_id.unwrap_or(""),
                 billing_dedupe_key = billing_key.as_str()
             );
         }
     }
+}
+
+fn billing_dedupe_key(provider: &str, meta: Option<&Meta>, usage: &Option<Usage>) -> String {
+    let response_id = meta.map(|value| value.id.as_str()).unwrap_or("unknown");
+    let model_name = meta.map(|value| value.model.as_str()).unwrap_or("unknown");
+    let usage = usage.unwrap_or(Usage {
+        input_tokens: 0,
+        output_tokens: 0,
+        total_tokens: 0,
+    });
+
+    format!(
+        "provider:{provider}|response:{response_id}|model:{model_name}|tokens:{}:{}:{}",
+        usage.input_tokens, usage.output_tokens, usage.total_tokens
+    )
 }

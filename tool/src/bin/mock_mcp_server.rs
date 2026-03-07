@@ -14,8 +14,8 @@ fn main() -> io::Result<()> {
             continue;
         }
 
-        let message: Value = serde_json::from_str(&line)
-            .expect("mock server should only receive valid json");
+        let message: Value =
+            serde_json::from_str(&line).expect("mock server should only receive valid json");
         let method = message.get("method").and_then(Value::as_str);
         let id = message.get("id").and_then(Value::as_u64);
 
@@ -41,7 +41,10 @@ fn main() -> io::Result<()> {
                 )?;
             }
             (Some("notifications/initialized"), None) => {
-                assert!(initialized, "initialized notification must follow initialize");
+                assert!(
+                    initialized,
+                    "initialized notification must follow initialize"
+                );
                 got_initialized_notification = true;
             }
             (Some("tools/list"), Some(id)) => {
@@ -77,7 +80,9 @@ fn main() -> io::Result<()> {
                     got_initialized_notification,
                     "tools/call must not be called before notifications/initialized"
                 );
-                let params = message.get("params").expect("tools/call params should exist");
+                let params = message
+                    .get("params")
+                    .expect("tools/call params should exist");
                 let tool_name = params
                     .get("name")
                     .and_then(Value::as_str)

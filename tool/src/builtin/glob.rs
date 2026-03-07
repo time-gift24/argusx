@@ -24,7 +24,9 @@ impl GlobTool {
 
     /// Build a glob tool with the current directory as the allowed root.
     pub fn from_current_dir() -> Result<Self, FsError> {
-        Self::new(vec![std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))])
+        Self::new(vec![
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        ])
     }
 }
 

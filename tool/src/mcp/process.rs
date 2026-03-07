@@ -202,7 +202,9 @@ async fn fail_pending(pending: &PendingMap, err: McpError) {
 
     for sender in senders {
         let _ = sender.send(Err(match &err {
-            McpError::Io(inner) => McpError::Io(std::io::Error::new(inner.kind(), inner.to_string())),
+            McpError::Io(inner) => {
+                McpError::Io(std::io::Error::new(inner.kind(), inner.to_string()))
+            }
             McpError::Json(inner) => {
                 McpError::Protocol(format!("invalid JSON message from server: {inner}"))
             }

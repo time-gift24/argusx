@@ -67,10 +67,11 @@ async fn turn_waits_for_permission_and_resumes_after_allow() {
 
     task.await.unwrap().unwrap();
 
-    assert!(events.iter().any(|event| matches!(
-        event,
-        TurnEvent::ToolCallPermissionRequested { .. }
-    )));
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, TurnEvent::ToolCallPermissionRequested { .. }))
+    );
     assert!(events.iter().any(|event| matches!(
         event,
         TurnEvent::ToolCallPermissionResolved { request_id, decision }
