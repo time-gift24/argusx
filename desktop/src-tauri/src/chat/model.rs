@@ -12,7 +12,7 @@ use provider::{
     },
 };
 use serde_json::{Map, Value};
-use tool::{GlobTool, GrepTool, ReadTool, Tool as RuntimeTool};
+use tool::{GlobTool, GrepTool, ReadTool, Tool as RuntimeTool, UpdatePlanTool};
 use turn::{LlmStepRequest, ModelRunner, TurnError, TurnMessage};
 
 use crate::provider_settings::ProviderSettingsService;
@@ -212,6 +212,7 @@ fn read_only_tool_definitions() -> Result<Vec<ProviderTool>, TurnError> {
         to_provider_tool(&ReadTool::from_current_dir().map_err(map_tool_init_error)?),
         to_provider_tool(&GlobTool::from_current_dir().map_err(map_tool_init_error)?),
         to_provider_tool(&GrepTool::from_current_dir().map_err(map_tool_init_error)?),
+        to_provider_tool(&UpdatePlanTool),
     ])
 }
 
@@ -334,14 +335,35 @@ mod tests {
         let built = runner.build_request(&request);
         let tools = built.tools.expect("tools should be present");
 
-        assert_eq!(tools.len(), 3);
+        assert_eq!(tools.len(), 4);
         assert_eq!(tools[0].function.name, "read");
         assert_eq!(tools[1].function.name, "glob");
         assert_eq!(tools[2].function.name, "grep");
+        assert_eq!(tools[3].function.name, "update_plan");
         assert!(matches!(
             built.tool_choice,
             Some(ToolChoice::String(ref choice)) if choice == "auto"
         ));
         assert_eq!(built.parallel_tool_calls, Some(true));
+    }
+
+    #[test]
+    fn build_request_includes_update_plan_tool_when_allowed() {
+        let runner = ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"))
+            .unwrap();
+        let request = LlmStepRequest {
+            session_id: "session-1".into(),
+            turn_id: "turn-1".into(),
+            step_index: 0,
+            messages: Arc::from([Arc::new(TurnMessage::User {
+                content: "keep a plan".into(),
+            })]),
+            allow_tools: true,
+        };
+
+        let built = runner.build_request(&request);
+        let tools = built.tools.expect("tools should be present");
+
+        assert!(tools.iter().any(|tool| tool.function.name == "update_plan"));
     }
 }
