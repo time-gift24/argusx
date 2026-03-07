@@ -9,15 +9,6 @@ import {
   StreamItemTrigger,
   type StreamItemProps,
 } from "@/components/ai/stream-item";
-import {
-  sharedStreamdownClassName,
-  sharedStreamdownComponents,
-  sharedStreamdownControls,
-  sharedStreamdownIcons,
-  sharedStreamdownPlugins,
-  sharedStreamdownShikiTheme,
-  sharedStreamdownTranslations,
-} from "@/components/ai/streamdown";
 import { AI_RUNTIME_DENSITY } from "@/components/ai/styles";
 import { cn } from "@/lib/utils";
 
@@ -46,16 +37,7 @@ export function Reasoning({
           contentClassName
         )}
       >
-        <Streamdown
-          className={sharedStreamdownClassName}
-          components={sharedStreamdownComponents}
-          controls={sharedStreamdownControls}
-          icons={sharedStreamdownIcons}
-          isAnimating={isRunning}
-          plugins={sharedStreamdownPlugins}
-          shikiTheme={sharedStreamdownShikiTheme}
-          translations={sharedStreamdownTranslations}
-        >
+        <Streamdown isAnimating={isRunning}>
           {children}
         </Streamdown>
       </StreamItemContent>

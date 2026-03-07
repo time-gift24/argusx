@@ -1,3 +1,7 @@
+/**
+ * @deprecated Preserved only as legacy Streamdown customization reference.
+ * Runtime callsites now use default Streamdown rendering without this layer.
+ */
 export {
   sharedMathPlugin,
   sharedMermaidPlugin,
