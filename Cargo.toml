@@ -1,5 +1,5 @@
 [workspace]
-members = ["core", "desktop/src-tauri", "provider", "tool", "turn", "vendor/eventsource_stream"]
+members = ["core", "desktop/src-tauri", "provider", "tool", "turn", "telemetry", "vendor/eventsource_stream"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -43,3 +43,4 @@ tokio-stream = "0.1"
 rand = "0.8"
 httpdate = "1.0"
 wiremock = "0.6"
+regex = "1"

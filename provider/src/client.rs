@@ -1,5 +1,7 @@
 use crate::{Dialect, Error, ErrorKind, Mapper, ProviderConfig, Request, StreamError};
-use argus_core::{Error as CoreError, ResponseContract, ResponseEvent, ResponseStream};
+use argus_core::{
+    Error as CoreError, Meta, ResponseContract, ResponseEvent, ResponseStream, Usage,
+};
 use bytes::Bytes;
 use eventsource_stream::{Event as SseMessage, EventStreamError, Eventsource};
 use futures::StreamExt;
@@ -8,6 +10,7 @@ use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Error as ReqwestError, Response};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
+use tracing::Instrument;
 
 type MessageStream = BoxStream<'static, Result<SseMessage, EventStreamError<ReqwestError>>>;
 
@@ -42,49 +45,110 @@ impl ProviderClient {
         let headers = self.config.headers.clone();
         let request = request.normalized_for_send();
         let (tx, rx) = mpsc::channel(32);
+        let provider = format!("{:?}", dialect);
+        let model_name = request.model.clone();
+        let span = tracing::Span::current();
 
-        let producer = tokio::spawn(async move {
-            let response = match http
-                .post(url)
-                .header(reqwest::header::AUTHORIZATION, format!("Bearer {api_key}"))
-                .header(reqwest::header::CONTENT_TYPE, "application/json")
-                .header(reqwest::header::ACCEPT, "text/event-stream")
-                .headers(to_header_map(&headers))
-                .json(&request)
-                .send()
-                .await
-            {
-                Ok(response) => response,
-                Err(err) => {
-                    send_terminal_error(
-                        &tx,
-                        &mut ResponseContract::new(),
-                        StreamError {
-                            kind: ErrorKind::Transport,
-                            message: err.to_string(),
-                        },
-                    )
-                    .await;
-                    return;
-                }
-            };
+        let producer = tokio::spawn(
+            async move {
+                // Emit llm_request event at the start
+                tracing::info!(
+                    event_name = "llm_request",
+                    provider = provider.as_str(),
+                    model_name = model_name.as_str(),
+                );
 
-            let mut contract = ResponseContract::new();
-            let mut sse = match into_sse_message_stream(response).await {
-                Ok(sse) => sse,
-                Err(err) => {
-                    send_terminal_error(&tx, &mut contract, err).await;
-                    return;
-                }
-            };
-            let mut mapper = Mapper::new(dialect);
+                let response = match http
+                    .post(url)
+                    .header(reqwest::header::AUTHORIZATION, format!("Bearer {api_key}"))
+                    .header(reqwest::header::CONTENT_TYPE, "application/json")
+                    .header(reqwest::header::ACCEPT, "text/event-stream")
+                    .headers(to_header_map(&headers))
+                    .json(&request)
+                    .send()
+                    .await
+                {
+                    Ok(response) => response,
+                    Err(err) => {
+                        send_terminal_error(
+                            &tx,
+                            &mut ResponseContract::new(),
+                            StreamError {
+                                kind: ErrorKind::Transport,
+                                message: err.to_string(),
+                            },
+                        )
+                        .await;
+                        return;
+                    }
+                };
 
-            while let Some(item) = sse.next().await {
-                match item {
-                    Ok(message) => {
-                        if message.data == "[DONE]" {
-                            match mapper.on_done() {
+                let mut contract = ResponseContract::new();
+                let mut sse = match into_sse_message_stream(response).await {
+                    Ok(sse) => sse,
+                    Err(err) => {
+                        send_terminal_error(&tx, &mut contract, err).await;
+                        return;
+                    }
+                };
+                let mut mapper = Mapper::new(dialect);
+                let mut final_usage: Option<Usage> = None;
+                let mut response_meta: Option<Meta> = None;
+
+                while let Some(item) = sse.next().await {
+                    match item {
+                        Ok(message) => {
+                            if message.data == "[DONE]" {
+                                match mapper.on_done() {
+                                    Ok(events) => {
+                                        // Extract usage from Done event
+                                        for event in &events {
+                                            if let ResponseEvent::Created(meta) = event {
+                                                response_meta = Some(meta.clone());
+                                            }
+                                            if let ResponseEvent::Done { usage, .. } = event {
+                                                final_usage = usage.clone();
+                                            }
+                                        }
+
+                                        // Emit llm_response_completed event
+                                        emit_completion_event(
+                                            provider.as_str(),
+                                            response_meta.as_ref(),
+                                            &final_usage,
+                                        );
+
+                                        if emit_events(&tx, &mut contract, events).await.is_err() {
+                                            return;
+                                        }
+                                    }
+                                    Err(err) => {
+                                        send_terminal_error(
+                                            &tx,
+                                            &mut contract,
+                                            StreamError {
+                                                kind: classify_mapper_error(&err),
+                                                message: err.to_string(),
+                                            },
+                                        )
+                                        .await;
+                                    }
+                                }
+                                return;
+                            }
+
+                            match mapper.feed(&message.data) {
                                 Ok(events) => {
+                                    // Track usage from streaming events
+                                    for event in &events {
+                                        if let ResponseEvent::Created(meta) = event {
+                                            response_meta = Some(meta.clone());
+                                        }
+                                        if let ResponseEvent::Done { usage, .. } = event {
+                                            final_usage = usage.clone();
+                                        }
+                                    }
+
                                     if emit_events(&tx, &mut contract, events).await.is_err() {
                                         return;
                                     }
@@ -99,56 +163,37 @@ impl ProviderClient {
                                         },
                                     )
                                     .await;
-                                }
-                            }
-                            return;
-                        }
-
-                        match mapper.feed(&message.data) {
-                            Ok(events) => {
-                                if emit_events(&tx, &mut contract, events).await.is_err() {
                                     return;
                                 }
                             }
-                            Err(err) => {
-                                send_terminal_error(
-                                    &tx,
-                                    &mut contract,
-                                    StreamError {
-                                        kind: classify_mapper_error(&err),
-                                        message: err.to_string(),
-                                    },
-                                )
-                                .await;
-                                return;
-                            }
+                        }
+                        Err(err) => {
+                            send_terminal_error(
+                                &tx,
+                                &mut contract,
+                                StreamError {
+                                    kind: classify_eventsource_error(&err),
+                                    message: err.to_string(),
+                                },
+                            )
+                            .await;
+                            return;
                         }
                     }
-                    Err(err) => {
-                        send_terminal_error(
-                            &tx,
-                            &mut contract,
-                            StreamError {
-                                kind: classify_eventsource_error(&err),
-                                message: err.to_string(),
-                            },
-                        )
-                        .await;
-                        return;
-                    }
                 }
-            }
 
-            send_terminal_error(
-                &tx,
-                &mut contract,
-                StreamError {
-                    kind: ErrorKind::Protocol,
-                    message: "stream ended before [DONE]".into(),
-                },
-            )
-            .await;
-        });
+                send_terminal_error(
+                    &tx,
+                    &mut contract,
+                    StreamError {
+                        kind: ErrorKind::Protocol,
+                        message: "stream ended before [DONE]".into(),
+                    },
+                )
+                .await;
+            }
+            .instrument(span),
+        );
 
         Ok(ResponseStream::from_parts(rx, producer.abort_handle()))
     }
@@ -273,4 +318,50 @@ fn classify_mapper_error(err: &Error) -> ErrorKind {
         | Error::Zai(crate::dialect::zai::mapper::Error::Protocol(_)) => ErrorKind::Protocol,
         Error::Config(_) => ErrorKind::Protocol,
     }
+}
+
+fn emit_completion_event(provider: &str, meta: Option<&Meta>, usage: &Option<Usage>) {
+    let billing_key = billing_dedupe_key(provider, meta, usage);
+    let model_name = meta.map(|value| value.model.as_str());
+    let response_id = meta.map(|value| value.id.as_str());
+    match usage {
+        Some(u) => {
+            tracing::info!(
+                event_name = "llm_response_completed",
+                event_priority = "high",
+                provider = provider,
+                model_name = model_name.unwrap_or(""),
+                response_id = response_id.unwrap_or(""),
+                input_tokens = u.input_tokens,
+                output_tokens = u.output_tokens,
+                total_tokens = u.total_tokens,
+                billing_dedupe_key = billing_key.as_str()
+            );
+        }
+        None => {
+            tracing::info!(
+                event_name = "llm_response_completed",
+                event_priority = "high",
+                provider = provider,
+                model_name = model_name.unwrap_or(""),
+                response_id = response_id.unwrap_or(""),
+                billing_dedupe_key = billing_key.as_str()
+            );
+        }
+    }
+}
+
+fn billing_dedupe_key(provider: &str, meta: Option<&Meta>, usage: &Option<Usage>) -> String {
+    let response_id = meta.map(|value| value.id.as_str()).unwrap_or("unknown");
+    let model_name = meta.map(|value| value.model.as_str()).unwrap_or("unknown");
+    let usage = usage.unwrap_or(Usage {
+        input_tokens: 0,
+        output_tokens: 0,
+        total_tokens: 0,
+    });
+
+    format!(
+        "provider:{provider}|response:{response_id}|model:{model_name}|tokens:{}:{}:{}",
+        usage.input_tokens, usage.output_tokens, usage.total_tokens
+    )
 }

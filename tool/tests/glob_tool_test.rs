@@ -1,6 +1,6 @@
-use tool::{GlobTool, Tool, ToolContext};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
+use tool::{GlobTool, Tool, ToolContext};
 
 fn test_context() -> ToolContext {
     ToolContext::new("test", "test", CancellationToken::new())
@@ -60,11 +60,13 @@ async fn glob_honors_max_depth_and_max_results() {
 
     assert!(!result.is_error);
     // Only root.txt should be found
-    assert!(result.output["results"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|r| { r["path"].as_str().unwrap().contains("root.txt") }));
+    assert!(
+        result.output["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| { r["path"].as_str().unwrap().contains("root.txt") })
+    );
 
     // Test max_results
     let result = tool
@@ -112,10 +114,12 @@ async fn glob_honors_min_max_bytes_filters() {
 
     assert!(!result.is_error);
     assert_eq!(result.output["count"].as_i64().unwrap(), 1);
-    assert!(result.output["results"].as_array().unwrap()[0]["path"]
-        .as_str()
-        .unwrap()
-        .contains("large.txt"));
+    assert!(
+        result.output["results"].as_array().unwrap()[0]["path"]
+            .as_str()
+            .unwrap()
+            .contains("large.txt")
+    );
 
     // Test max_size
     let result = tool
@@ -132,10 +136,12 @@ async fn glob_honors_min_max_bytes_filters() {
 
     assert!(!result.is_error);
     assert_eq!(result.output["count"].as_i64().unwrap(), 1);
-    assert!(result.output["results"].as_array().unwrap()[0]["path"]
-        .as_str()
-        .unwrap()
-        .contains("small.txt"));
+    assert!(
+        result.output["results"].as_array().unwrap()[0]["path"]
+            .as_str()
+            .unwrap()
+            .contains("small.txt")
+    );
 }
 
 #[tokio::test]

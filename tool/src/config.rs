@@ -51,7 +51,12 @@ impl AgentToolConfig {
 
     pub fn effective_builtin_policy(&self, builtin: Builtin) -> Option<EffectiveToolPolicy> {
         let name = builtin.canonical_name();
-        if !self.tools.builtin_tools.iter().any(|enabled| enabled == name) {
+        if !self
+            .tools
+            .builtin_tools
+            .iter()
+            .any(|enabled| enabled == name)
+        {
             return None;
         }
 
@@ -222,7 +227,10 @@ fn resolve_mcp_policy(
         .allow_parallel
         .or(defaults.allow_parallel)
         .unwrap_or(true);
-    let max_concurrency = server.max_concurrency.or(defaults.max_concurrency).unwrap_or(1);
+    let max_concurrency = server
+        .max_concurrency
+        .or(defaults.max_concurrency)
+        .unwrap_or(1);
 
     EffectiveToolPolicy {
         allow_parallel,

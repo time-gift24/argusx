@@ -1,6 +1,6 @@
 use crate::dialect::zai::parser::parse_payload;
 use crate::dialect::zai::schema::stream::{ZaiDeltaToolCall, ZaiStreamChunk, ZaiStreamEvent};
-use crate::normalize::tool_calls::{classify_tool_call, parse_zai_mcp_json, ToolCallKind};
+use crate::normalize::tool_calls::{ToolCallKind, classify_tool_call, parse_zai_mcp_json};
 use argus_core::{BuiltinToolCall, FinishReason, McpCall, Meta, ResponseEvent, ToolCall, Usage};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -249,13 +249,15 @@ impl Mapper {
 
             match classify_tool_call(tc.call_type.as_deref(), Some(name.as_str())) {
                 ToolCallKind::Mcp => {
-                    let payload =
-                        parse_zai_mcp_json(&tc.arguments_json, name.strip_prefix("__mcp__"))
-                            .map_err(|err| {
-                                Error::Protocol(format!(
-                                    "invalid mcp payload for call '{call_id}' (sequence {sequence}): {err}"
-                                ))
-                            })?;
+                    let payload = parse_zai_mcp_json(
+                        &tc.arguments_json,
+                        name.strip_prefix("__mcp__"),
+                    )
+                    .map_err(|err| {
+                        Error::Protocol(format!(
+                            "invalid mcp payload for call '{call_id}' (sequence {sequence}): {err}"
+                        ))
+                    })?;
 
                     events.push(ResponseEvent::ToolDone(ToolCall::Mcp(McpCall {
                         sequence,
@@ -270,12 +272,14 @@ impl Mapper {
                     })));
                 }
                 ToolCallKind::Builtin(builtin) => {
-                    events.push(ResponseEvent::ToolDone(ToolCall::Builtin(BuiltinToolCall {
-                        sequence,
-                        call_id,
-                        builtin,
-                        arguments_json: tc.arguments_json,
-                    })));
+                    events.push(ResponseEvent::ToolDone(ToolCall::Builtin(
+                        BuiltinToolCall {
+                            sequence,
+                            call_id,
+                            builtin,
+                            arguments_json: tc.arguments_json,
+                        },
+                    )));
                 }
                 ToolCallKind::Function => {
                     events.push(ResponseEvent::ToolDone(ToolCall::FunctionCall {

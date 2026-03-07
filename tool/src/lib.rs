@@ -1,6 +1,6 @@
-pub mod config;
-pub mod catalog;
 pub mod builtin;
+pub mod catalog;
+pub mod config;
 pub mod context;
 pub mod error;
 pub mod mcp;

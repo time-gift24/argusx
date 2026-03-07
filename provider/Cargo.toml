@@ -14,6 +14,8 @@ tokio = { workspace = true, features = ["sync", "rt-multi-thread", "macros"] }
 eventsource_stream = { package = "eventsource-stream", path = "../vendor/eventsource_stream" }
 argus_core = { package = "core", path = "../core" }
 rpassword = "7"
+tracing = { workspace = true }
+uuid = { workspace = true }
 
 [[bin]]
 name = "provider_cli"
@@ -22,3 +24,5 @@ path = "src/bin/provider_cli.rs"
 [dev-dependencies]
 tokio = { workspace = true, features = ["sync", "time"] }
 wiremock = { workspace = true }
+telemetry = { path = "../telemetry" }
+tracing-subscriber = { workspace = true }
