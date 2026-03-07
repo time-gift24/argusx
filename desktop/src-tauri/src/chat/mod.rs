@@ -8,6 +8,7 @@ pub mod events;
 pub mod manager;
 pub mod model;
 pub mod observer;
+pub mod plan;
 pub mod tools;
 
 pub use authorizer::AllowListedToolAuthorizer;

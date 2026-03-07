@@ -1,20 +1,25 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
+use std::{
+    collections::HashMap,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use argus_core::ToolCall;
 use async_trait::async_trait;
 use serde_json::json;
 use tauri::Emitter;
+use tokio::sync::Mutex;
 use turn::{StepFinishReason, ToolOutcome, TurnError, TurnEvent, TurnFinishReason, TurnObserver};
 
 use crate::chat::{DesktopTurnEvent, TurnTargetKind};
+
+use super::plan::snapshot_from_tool_outcome;
 
 pub struct TauriTurnObserver {
     app: tauri::AppHandle,
     turn_id: String,
     target_kind: TurnTargetKind,
     target_id: String,
+    prepared_tool_names: Mutex<HashMap<String, String>>,
     saw_failed_finish: AtomicBool,
 }
 
@@ -30,6 +35,7 @@ impl TauriTurnObserver {
             turn_id,
             target_kind,
             target_id,
+            prepared_tool_names: Mutex::new(HashMap::new()),
             saw_failed_finish: AtomicBool::new(false),
         }
     }
@@ -42,6 +48,29 @@ impl TauriTurnObserver {
 #[async_trait]
 impl TurnObserver for TauriTurnObserver {
     async fn on_event(&self, event: &TurnEvent) -> Result<(), TurnError> {
+        let extra_plan_event = match event {
+            TurnEvent::ToolCallPrepared { call } => {
+                self.prepared_tool_names
+                    .lock()
+                    .await
+                    .insert(
+                        tool_call_id(call.as_ref()).to_string(),
+                        tool_name(call.as_ref()).to_string(),
+                    );
+                None
+            }
+            TurnEvent::ToolCallCompleted { call_id, result } => {
+                let prepared_tool_name = self.prepared_tool_names.lock().await.remove(call_id.as_ref());
+
+                if prepared_tool_name.as_deref() == Some("update_plan") {
+                    plan_updated_event(&self.turn_id, call_id.as_ref(), result)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+
         if matches!(
             event,
             TurnEvent::TurnFinished {
@@ -57,6 +86,12 @@ impl TurnObserver for TauriTurnObserver {
             &self.target_id,
             event,
         ) {
+            self.app
+                .emit("turn-event", payload)
+                .map_err(|err| TurnError::Runtime(err.to_string()))?;
+        }
+
+        if let Some(payload) = extra_plan_event {
             self.app
                 .emit("turn-event", payload)
                 .map_err(|err| TurnError::Runtime(err.to_string()))?;
@@ -156,6 +191,20 @@ pub fn turn_failed_event(turn_id: &str, message: &str) -> DesktopTurnEvent {
         event_type: "turn-failed".to_string(),
         data: json!({ "message": message }),
     }
+}
+
+pub fn plan_updated_event(
+    turn_id: &str,
+    call_id: &str,
+    result: &ToolOutcome,
+) -> Option<DesktopTurnEvent> {
+    let snapshot = snapshot_from_tool_outcome(call_id, result)?;
+
+    Some(DesktopTurnEvent {
+        turn_id: turn_id.to_string(),
+        event_type: "plan-updated".to_string(),
+        data: serde_json::to_value(snapshot).ok()?,
+    })
 }
 
 fn tool_call_id(call: &ToolCall) -> &str {
