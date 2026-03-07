@@ -1,3 +1,4 @@
+pub mod browser;
 pub mod domain_cookies;
 pub mod file;
 pub mod fs;
