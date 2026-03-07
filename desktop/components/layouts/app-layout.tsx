@@ -149,7 +149,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             data-slot="main-scroll-region"
             className={cn(
               "min-h-0 flex-1",
-              isChatRoute ? "overflow-hidden" : "overflow-y-auto"
+              isChatRoute ? "flex flex-col overflow-hidden" : "overflow-y-auto"
             )}
           >
             <div

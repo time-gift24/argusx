@@ -182,7 +182,12 @@ describe("ChatPage", () => {
       .closest('[data-slot="chat-turn-assistant"]');
 
     expect(composerShell).toHaveClass("absolute");
-    expect(composerShell).toHaveClass("backdrop-blur-sm");
+    expect(composerShell).toHaveClass("bottom-4");
+    expect(composerShell).toHaveClass("left-1/2");
+    expect(composerShell).toHaveClass("w-full");
+    expect(composerShell).toHaveClass("max-w-3xl");
+    expect(composerShell).toHaveClass("-translate-x-1/2");
+    expect(composerShell).not.toHaveClass("inset-x-0");
     expect(scrollContent).toHaveStyle({ paddingBottom: "220px" });
     expect(userBubble).toHaveClass("ml-auto");
     expect(userBubble).toHaveClass("bg-muted");

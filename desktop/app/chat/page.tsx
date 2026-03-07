@@ -300,11 +300,11 @@ export default function ChatPage() {
           </div>
         </div>
         <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-10 backdrop-blur-sm"
+          className="pointer-events-none absolute bottom-4 left-1/2 z-10 w-full max-w-3xl -translate-x-1/2 px-4 lg:px-0"
           data-slot="chat-composer-shell"
           ref={composerShellRef}
         >
-          <div className="pointer-events-auto bg-gradient-to-t from-background/95 via-background/75 to-transparent px-1 pb-1 pt-10">
+          <div className="pointer-events-auto">
             <PromptComposer
               agents={[...AGENTS]}
               onSubmit={handleSubmit}

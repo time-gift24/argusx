@@ -29,7 +29,7 @@ describe("AppLayout", () => {
     expect(screen.getByRole("button", { name: "Provider 配置" })).toBeInTheDocument();
     expect(
       container.querySelector('[data-slot="main-scroll-region"]')
-    ).toHaveClass("overflow-hidden");
+    ).toHaveClass("flex", "flex-col", "overflow-hidden");
   });
 
   it("keeps the right module trigger on non-chat routes and shows breadcrumb in the header", () => {
