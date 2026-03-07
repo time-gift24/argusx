@@ -24,6 +24,7 @@
   animation: stream-item-shimmer 1.8s ease-in-out infinite;
 }
 
+/* Deprecated: legacy Streamdown customization reference. Runtime callsites now use default Streamdown rendering. */
 .ai-streamdown {
   color: var(--foreground);
   font-size: 14px;

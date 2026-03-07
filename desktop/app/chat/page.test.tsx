@@ -188,6 +188,7 @@ describe("ChatPage", () => {
     expect(userBubble).toHaveClass("bg-muted");
     expect(assistantBody).not.toHaveClass("border");
     expect(assistantBody).not.toHaveClass("bg-card");
+    expect(container.querySelector(".ai-streamdown")).not.toBeInTheDocument();
   });
 
   it("marks the pending turn as failed when cancelling the previous running turn rejects", async () => {

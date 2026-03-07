@@ -17,17 +17,7 @@ import {
   type PromptComposerSubmitPayload,
 } from "@/components/ai";
 import { Checkpoint } from "@/components/ai-elements/checkpoint";
-import {
-  sharedStreamdownClassName,
-  sharedStreamdownComponents,
-  sharedStreamdownControls,
-  sharedStreamdownIcons,
-  sharedStreamdownPlugins,
-  sharedStreamdownShikiTheme,
-  sharedStreamdownTranslations,
-} from "@/components/ai/streamdown";
 import { Separator } from "@/components/ui/separator";
-import { cn } from "@/lib/utils";
 import { useTurn, type DesktopTurnEvent } from "@/lib/chat";
 
 const AGENTS = [
@@ -261,16 +251,7 @@ export default function ChatPage() {
                       data-slot="chat-turn-assistant"
                     >
                       {turn.assistantText ? (
-                        <Streamdown
-                          className={cn(sharedStreamdownClassName, "text-sm")}
-                          components={sharedStreamdownComponents}
-                          controls={sharedStreamdownControls}
-                          icons={sharedStreamdownIcons}
-                          isAnimating={turn.status === "running"}
-                          plugins={sharedStreamdownPlugins}
-                          shikiTheme={sharedStreamdownShikiTheme}
-                          translations={sharedStreamdownTranslations}
-                        >
+                        <Streamdown isAnimating={turn.status === "running"}>
                           {turn.assistantText}
                         </Streamdown>
                       ) : turn.status === "running" ? (
