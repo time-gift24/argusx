@@ -1,4 +1,4 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct TelemetryConfig {
     pub enabled: bool,
     pub clickhouse_url: String,
