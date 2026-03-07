@@ -72,7 +72,7 @@ impl ToolScheduler {
     pub async fn execute(&self, call: ToolCall, ctx: ToolContext) -> Result<ToolResult, ToolError> {
         match call {
             ToolCall::Builtin(call) => self.execute_builtin(call, ctx).await,
-            ToolCall::Mcp(call) => self.execute_mcp(call).await,
+            ToolCall::Mcp(call) => self.execute_mcp(call, ctx).await,
             ToolCall::FunctionCall { name, .. } => Err(ToolError::Unsupported(format!(
                 "function call execution is not implemented for `{name}`"
             ))),
@@ -86,13 +86,17 @@ impl ToolScheduler {
     ) -> Result<ToolResult, ToolError> {
         let builtin_name = call.builtin.canonical_name().to_string();
         let start = std::time::Instant::now();
+        let sequence_no = call.sequence;
+        let session_id = ctx.session_id.clone();
+        let turn_id = ctx.turn_id.clone();
 
         // Emit tool_started event
         tracing::info!(
             event_name = "tool_started",
             tool_name = builtin_name.as_str(),
-            session_id = ctx.session_id.as_str(),
-            turn_id = ctx.turn_id.as_str()
+            session_id = session_id.as_str(),
+            turn_id = turn_id.as_str(),
+            sequence_no = u64::from(sequence_no)
         );
 
         let result = self.execute_builtin_inner(call, ctx).await;
@@ -103,6 +107,9 @@ impl ToolScheduler {
         tracing::info!(
             event_name = "tool_completed",
             tool_name = builtin_name.as_str(),
+            session_id = session_id.as_str(),
+            turn_id = turn_id.as_str(),
+            sequence_no = u64::from(sequence_no),
             tool_outcome = outcome,
             tool_duration_ms = duration_ms
         );
@@ -138,20 +145,30 @@ impl ToolScheduler {
         tool.execute(ctx, args).await
     }
 
-    pub async fn execute_mcp(&self, call: McpCall) -> Result<ToolResult, ToolError> {
+    pub async fn execute_mcp(
+        &self,
+        call: McpCall,
+        ctx: ToolContext,
+    ) -> Result<ToolResult, ToolError> {
         let server_label = call
             .server_label
             .clone()
             .ok_or_else(|| ToolError::InvalidArgs("missing MCP server label".to_string()))?;
         let tool_name = call.name.clone().unwrap_or_default();
         let start = std::time::Instant::now();
+        let sequence_no = call.sequence;
+        let session_id = ctx.session_id.clone();
+        let turn_id = ctx.turn_id.clone();
 
         // Emit tool_started event for MCP
         tracing::info!(
             event_name = "tool_started",
             tool_name = tool_name.as_str(),
             tool_type = "mcp",
-            server_label = server_label.as_str()
+            server_label = server_label.as_str(),
+            session_id = session_id.as_str(),
+            turn_id = turn_id.as_str(),
+            sequence_no = u64::from(sequence_no)
         );
 
         let result = self.execute_mcp_inner(call).await;
@@ -163,6 +180,9 @@ impl ToolScheduler {
             event_name = "tool_completed",
             tool_name = tool_name.as_str(),
             tool_type = "mcp",
+            session_id = session_id.as_str(),
+            turn_id = turn_id.as_str(),
+            sequence_no = u64::from(sequence_no),
             tool_outcome = outcome,
             tool_duration_ms = duration_ms
         );

@@ -14,6 +14,14 @@ pub struct TelemetryConfig {
     pub delta_events: bool,
 }
 
+impl TelemetryConfig {
+    pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self, crate::TelemetryError> {
+        let raw = std::fs::read_to_string(path)
+            .map_err(|err| crate::TelemetryError::Initialization(err.to_string()))?;
+        toml::from_str(&raw).map_err(|err| crate::TelemetryError::Initialization(err.to_string()))
+    }
+}
+
 impl Default for TelemetryConfig {
     fn default() -> Self {
         Self {

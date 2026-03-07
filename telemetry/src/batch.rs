@@ -5,6 +5,7 @@ pub enum BatchEnqueueResult {
     Queued,
     FlushRequired,
     DroppedLowPriority,
+    DroppedHighPriority,
 }
 
 pub struct BatchQueue {
@@ -30,6 +31,8 @@ impl BatchQueue {
                 // If queue is full, drop low priority to make room for high priority
                 if total >= self.config.max_in_memory_events && !self.low.is_empty() {
                     self.low.pop();
+                } else if total >= self.config.max_in_memory_events {
+                    return BatchEnqueueResult::DroppedHighPriority;
                 }
 
                 self.high.push(record);
@@ -50,6 +53,10 @@ impl BatchQueue {
                 }
             }
         }
+    }
+
+    pub fn total_len(&self) -> usize {
+        self.high.len() + self.low.len()
     }
 
     pub fn drain_high(&mut self) -> Vec<TelemetryRecord> {
