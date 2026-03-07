@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -274,5 +274,81 @@ describe("ChatPage", () => {
         title: "Implement minimal fix",
       },
     ]);
+  });
+
+  it("renders the queue before assistant markdown and hides update_plan tool rows", async () => {
+    const user = userEvent.setup();
+    render(<ChatPage />);
+
+    await user.type(
+      screen.getByRole("textbox", { name: /prompt/i }),
+      "Review this plan"
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await act(async () => {
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-prepared",
+        data: {
+          argumentsJson: '{"plan":[{"step":"Write failing test","status":"completed"}]}',
+          callId: "call-update-plan",
+          name: "update_plan",
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-completed",
+        data: {
+          callId: "call-update-plan",
+          result: {
+            output: {
+              plan: {
+                description: "Starting execution",
+                isStreaming: false,
+                tasks: [
+                  { id: "task-1", status: "completed", title: "Write failing test" },
+                ],
+                title: "Execution Plan",
+              },
+            },
+            status: "success",
+          },
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "plan-updated",
+        data: {
+          description: "Starting execution",
+          isStreaming: false,
+          sourceCallId: "call-update-plan",
+          tasks: [
+            { id: "task-1", status: "completed", title: "Write failing test" },
+          ],
+          title: "Execution Plan",
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "llm-text-delta",
+        data: { text: "Assistant answer" },
+      });
+    });
+
+    const assistantSection = screen
+      .getByText("Assistant answer")
+      .closest('[data-slot="chat-turn-assistant"]') as HTMLElement | null;
+    const planQueue = within(assistantSection!).getByText("Execution Plan").closest(
+      '[data-slot="plan-queue"]'
+    ) as HTMLElement | null;
+    const assistantText = within(assistantSection!).getByText("Assistant answer");
+
+    expect(planQueue).toBeInTheDocument();
+    expect(within(assistantSection!).getByText("Write failing test")).toBeInTheDocument();
+    expect(within(assistantSection!).queryByText("update_plan")).not.toBeInTheDocument();
+    expect(planQueue?.compareDocumentPosition(assistantText)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
   });
 });
