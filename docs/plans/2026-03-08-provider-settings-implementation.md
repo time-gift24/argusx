@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** 为桌面应用增加右上角 provider 配置入口，支持将多个 `OpenAI-compatible` profile 保存到 SQLite，并以密文形式存储 API key，同时让 chat 运行时读取全局默认 profile。
+**Goal:** 为桌面应用增加右上角 provider 配置入口，支持将一个 `Z.ai` 配置和多个 `OpenAI-compatible` profile 保存到 SQLite，并以密文形式存储 API key，同时让 chat 运行时读取全局默认 profile。
 
 **Architecture:** 在 Tauri 侧新增 provider settings 存储、加密与命令层，前端新增全局 settings dialog 管理 profile。聊天运行时优先从 SQLite 读取默认 profile，不存在时回退到现有环境变量。
 
@@ -61,6 +61,7 @@ Include:
 - `provider_profiles` table
 - partial unique index for `is_default = 1`
 - request/record structs for create, update, summary
+- `provider_kind` enum with `zai` and `openai_compatible`
 
 **Step 4: Run test to verify it passes**
 
@@ -174,6 +175,7 @@ pub async fn save_provider_profile(
 Implement:
 - list/save/delete/set_default/test_connection commands
 - business errors for default deletion and decryption failures
+- singleton constraint for `Z.ai`
 - service glue between store and vault
 
 **Step 4: Run test to verify it passes**
@@ -239,6 +241,7 @@ impl ProviderModelRunner {
 
 Implement:
 - runtime config resolver
+- `provider_kind -> Dialect` mapping for `Z.ai` and `OpenAI-compatible`
 - explicit error when no sqlite default and no env fallback exist
 - no behavior change for replay mode tests
 
@@ -295,6 +298,7 @@ export async function listProviderProfiles(): Promise<ProviderProfileSummary[]> 
 Implement:
 - IPC helpers for list/save/delete/set_default/test_connection
 - dialog shell and list rendering
+- explicit `Z.ai` entry plus `OpenAI-compatible` create flow
 - create/edit form
 - default toggle
 - error toast / inline error handling

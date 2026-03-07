@@ -32,7 +32,12 @@ impl ProviderModelRunner {
                 .load_default_runtime_config()
                 .map_err(map_settings_error)?
             {
-                return Self::from_runtime_config(runtime.model, runtime.base_url, runtime.api_key);
+                return Self::from_runtime_config(
+                    runtime.provider_kind,
+                    runtime.model,
+                    runtime.base_url,
+                    runtime.api_key,
+                );
             }
         }
 
@@ -62,13 +67,14 @@ impl ProviderModelRunner {
     }
 
     pub fn from_runtime_config(
+        provider_kind: crate::provider_settings::ProviderKind,
         model: String,
         base_url: String,
         api_key: String,
     ) -> Result<Self, TurnError> {
         Self::new(
             model,
-            ProviderConfig::new(Dialect::Openai, base_url, api_key),
+            ProviderConfig::new(provider_kind.dialect(), base_url, api_key),
         )
     }
 

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type ProviderKind = "openai_compatible";
+export type ProviderKind = "openai_compatible" | "zai";
 
 export interface ProviderProfileSummary {
   id: string;
@@ -13,6 +13,7 @@ export interface ProviderProfileSummary {
 
 export interface SaveProviderProfileInput {
   id?: string;
+  providerKind: ProviderKind;
   name: string;
   baseUrl: string;
   model: string;
@@ -21,6 +22,7 @@ export interface SaveProviderProfileInput {
 }
 
 export interface TestProviderProfileInput {
+  providerKind: ProviderKind;
   baseUrl: string;
   model: string;
   apiKey: string;

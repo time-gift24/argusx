@@ -23,6 +23,7 @@ describe("provider settings client", () => {
       isDefault: true,
       model: "openai/gpt-4.1-mini",
       name: "OpenRouter",
+      providerKind: "openai_compatible",
     });
 
     expect(out.id).toBe("profile-1");
@@ -33,6 +34,7 @@ describe("provider settings client", () => {
         isDefault: true,
         model: "openai/gpt-4.1-mini",
         name: "OpenRouter",
+        providerKind: "openai_compatible",
       },
     });
   });
