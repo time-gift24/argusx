@@ -235,8 +235,8 @@ describe("Reasoning", () => {
     expect(globalsCss).toMatch(/\.ai-streamdown p \{\s*margin-block: 6px;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="unordered-list"\],\s*\.ai-streamdown \[data-streamdown="ordered-list"\] \{\s*margin-block: 6px;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="list-item"\] \{\s*padding-block: 2px;/s);
-    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="inline-code"\] \{[\s\S]*font-size: 10px;/s);
-    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-body"\] pre,\s*\.ai-streamdown \[data-streamdown="code-block-body"\] code \{[\s\S]*font-size: 10px;/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="inline-code"\] \{[\s\S]*font-size: 12px;[\s\S]*line-height: 14px;/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-body"\] pre,\s*\.ai-streamdown \[data-streamdown="code-block-body"\] code \{[\s\S]*font-size: 12px;[\s\S]*line-height: 14px;/s);
   });
 
   it("removes streamdown block borders and left-aligns code and mermaid content", () => {
@@ -248,8 +248,8 @@ describe("Reasoning", () => {
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-body"\] pre \{\s*margin: 0;\s*padding: 0 !important;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-body"\] pre > code,\s*\.ai-streamdown \[data-streamdown="code-block-body"\] code \{\s*padding: 0 !important;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-body"\] pre > code > span::before,\s*\.ai-streamdown \[data-streamdown="code-block-body"\] code > span::before \{/s);
-    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-body"\] pre > code > span::before,\s*\.ai-streamdown \[data-streamdown="code-block-body"\] code > span::before \{[\s\S]*font-size: 10px !important;/s);
-    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-body"\] pre > code > span::before,\s*\.ai-streamdown \[data-streamdown="code-block-body"\] code > span::before \{[\s\S]*line-height: 12px !important;/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-body"\] pre > code > span::before,\s*\.ai-streamdown \[data-streamdown="code-block-body"\] code > span::before \{[\s\S]*font-size: 12px !important;/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-body"\] pre > code > span::before,\s*\.ai-streamdown \[data-streamdown="code-block-body"\] code > span::before \{[\s\S]*line-height: 14px !important;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-body"\] pre > code > span::before,\s*\.ai-streamdown \[data-streamdown="code-block-body"\] code > span::before \{[\s\S]*width: 1\.25rem !important;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-body"\] pre > code > span::before,\s*\.ai-streamdown \[data-streamdown="code-block-body"\] code > span::before \{[\s\S]*margin-right: 0\.5rem !important;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-body"\] pre > code > span::before,\s*\.ai-streamdown \[data-streamdown="code-block-body"\] code > span::before \{[\s\S]*text-align: left !important;/s);
@@ -265,10 +265,11 @@ describe("Reasoning", () => {
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*background: color-mix\(in srgb, var\(--muted\) 72%, var\(--background\)\) !important;/s);
     expect(globalsCss).toMatch(/\.dark \.ai-streamdown \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*background: color-mix\(in srgb, var\(--muted\) 58%, var\(--background\)\) !important;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*padding: 0\.375rem 2rem 0\.375rem 0\.375rem !important;/s);
-    expect(globalsCss).toMatch(/\.ai-streamdown \[data-slot="stream-item-viewport"\]\[data-state="closed"\] \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*max-height: calc\(\(12px \* 6\) \+ 0\.75rem\);/s);
-    expect(globalsCss).toMatch(/\.ai-streamdown \[data-slot="stream-item-viewport"\]\[data-state="open"\] \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*max-height: calc\(\(12px \* 30\) \+ 0\.75rem\);/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-slot="stream-item-viewport"\]\[data-state="closed"\] \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*max-height: calc\(\(14px \* 6\) \+ 0\.75rem\);/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-slot="stream-item-viewport"\]\[data-state="open"\] \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*max-height: calc\(\(14px \* 30\) \+ 0\.75rem\);/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \[data-streamdown="code-block-actions"\] \{[\s\S]*position: absolute;[\s\S]*top: 0\.375rem;[\s\S]*right: 0\.5rem;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-actions"\],\s*\.ai-streamdown \[data-streamdown="mermaid-block-actions"\] \{[\s\S]*gap: 0\.375rem;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-expand-hint"\] \{[\s\S]*position: absolute;[\s\S]*left: 50%;[\s\S]*transform: translateX\(-50%\);/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-expand-button"\] \{[\s\S]*font-size: 12px;[\s\S]*line-height: 14px;/s);
   });
 });
