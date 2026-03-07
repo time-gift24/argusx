@@ -2,6 +2,7 @@ use super::error::GitError;
 use super::types::GitArgs;
 use super::guard::GitGuard;
 use crate::context::ToolResult;
+use git2::{Repository, StatusOptions, BranchType, ErrorCode};
 use serde_json::json;
 
 pub async fn execute(
@@ -51,24 +52,239 @@ pub async fn execute(
     }
 }
 
+// ============================================================================
+// Status Action
+// ============================================================================
+
 async fn status(
     guard: &GitGuard,
     repo_path: &str,
-    _include_untracked: bool,
+    include_untracked: bool,
 ) -> Result<ToolResult, GitError> {
-    let (path, _repo) = guard.authorize_repo(repo_path).await?;
-    // Placeholder - actual implementation in Task 5
+    let (path, repo) = guard.authorize_repo(repo_path).await?;
+
+    let mut options = StatusOptions::new();
+    options
+        .include_untracked(include_untracked)
+        .include_ignored(false)
+        .recurse_untracked_dirs(true)
+        .show(git2::StatusShow::Workdir);
+
+    let statuses = repo.statuses(Some(&mut options))?;
+
+    let mut files = Vec::new();
+    for entry in statuses.iter() {
+        let status = entry.status();
+        let path_str = entry.path().unwrap_or("unknown").to_string();
+
+        // CURRENT has value 0, so we check if status is empty
+        let status_type = if status.is_empty() {
+            continue;
+        } else if status.contains(git2::Status::INDEX_NEW) {
+            "added"
+        } else if status.contains(git2::Status::INDEX_MODIFIED) {
+            "staged"
+        } else if status.contains(git2::Status::INDEX_DELETED) {
+            "staged_deleted"
+        } else if status.contains(git2::Status::WT_NEW) {
+            "untracked"
+        } else if status.contains(git2::Status::WT_MODIFIED) {
+            "modified"
+        } else if status.contains(git2::Status::WT_DELETED) {
+            "deleted"
+        } else if status.contains(git2::Status::CONFLICTED) {
+            "conflicted"
+        } else {
+            "other"
+        };
+
+        files.push(json!({
+            "path": path_str,
+            "status": status_type
+        }));
+    }
+
+    let is_clean = files.is_empty();
+    let current_branch = get_current_branch(&repo)?;
+
     Ok(ToolResult::ok(json!({
         "action": "status",
         "repo_path": path.to_string_lossy(),
         "data": {
-            "files": [],
-            "current_branch": null,
-            "is_clean": true
+            "files": files,
+            "current_branch": current_branch,
+            "is_clean": is_clean
         },
         "warnings": []
     })))
 }
+
+// ============================================================================
+// Branch List Action
+// ============================================================================
+
+async fn branch_list(
+    guard: &GitGuard,
+    repo_path: &str,
+) -> Result<ToolResult, GitError> {
+    let (path, repo) = guard.authorize_repo(repo_path).await?;
+
+    let mut branches = Vec::new();
+    let head = get_current_branch(&repo)?;
+
+    for branch_result in repo.branches(Some(BranchType::Local))? {
+        let (branch, branch_type) = branch_result?;
+        if branch_type != BranchType::Local {
+            continue;
+        }
+
+        let name = branch.name()?.unwrap_or("unknown").to_string();
+        let is_head = branch.is_head();
+
+        // Get commit info
+        let (commit_id, summary) = if let Ok(commit) = branch.get().peel_to_commit() {
+            let id = commit.id().to_string();
+            let summary = commit.summary().unwrap_or("").to_string();
+            (Some(id), Some(summary))
+        } else {
+            (None, None)
+        };
+
+        branches.push(json!({
+            "name": name,
+            "is_head": is_head,
+            "commit_id": commit_id,
+            "summary": summary
+        }));
+    }
+
+    Ok(ToolResult::ok(json!({
+        "action": "branch_list",
+        "repo_path": path.to_string_lossy(),
+        "data": {
+            "branches": branches,
+            "head": head
+        },
+        "warnings": []
+    })))
+}
+
+// ============================================================================
+// Remote List Action
+// ============================================================================
+
+async fn remote_list(
+    guard: &GitGuard,
+    repo_path: &str,
+) -> Result<ToolResult, GitError> {
+    let (path, repo) = guard.authorize_repo(repo_path).await?;
+
+    let mut remotes = Vec::new();
+
+    for remote_name in repo.remotes()?.iter() {
+        if let Some(name) = remote_name {
+            let url = repo.find_remote(name)?
+                .url()
+                .map(|s| s.to_string());
+
+            remotes.push(json!({
+                "name": name,
+                "url": url
+            }));
+        }
+    }
+
+    Ok(ToolResult::ok(json!({
+        "action": "remote_list",
+        "repo_path": path.to_string_lossy(),
+        "data": {
+            "remotes": remotes
+        },
+        "warnings": []
+    })))
+}
+
+// ============================================================================
+// Worktree List Action
+// ============================================================================
+
+async fn worktree_list(
+    guard: &GitGuard,
+    repo_path: &str,
+) -> Result<ToolResult, GitError> {
+    let (path, repo) = guard.authorize_repo(repo_path).await?;
+
+    let mut worktrees = Vec::new();
+
+    // For non-bare repos, the main worktree is the repo path itself
+    if !repo.is_bare() {
+        let head = get_current_branch(&repo)?;
+        worktrees.push(json!({
+            "path": path.to_string_lossy(),
+            "is_main": true,
+            "head": head,
+            "branch": head
+        }));
+    }
+
+    // List linked worktrees
+    match repo.worktrees() {
+        Ok(wts) => {
+            for wt_name in wts.iter() {
+                if let Some(name) = wt_name {
+                    if let Ok(wt) = repo.find_worktree(name) {
+                        let wt_path = wt.path().to_string_lossy().to_string();
+                        worktrees.push(json!({
+                            "path": wt_path,
+                            "is_main": false,
+                            "head": name,
+                            "branch": name
+                        }));
+                    }
+                }
+            }
+        }
+        Err(e) if e.code() == ErrorCode::BareRepo => {
+            // Bare repos don't have worktrees in the traditional sense
+        }
+        Err(e) => return Err(GitError::OperationFailed(e.to_string())),
+    }
+
+    Ok(ToolResult::ok(json!({
+        "action": "worktree_list",
+        "repo_path": path.to_string_lossy(),
+        "data": {
+            "worktrees": worktrees
+        },
+        "warnings": []
+    })))
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+fn get_current_branch(repo: &Repository) -> Result<Option<String>, GitError> {
+    let head = repo.head().ok();
+
+    if let Some(head_ref) = head {
+        let is_detached = head_ref.target().is_some() && head_ref.shorthand().is_none();
+
+        if is_detached {
+            if let Some(target) = head_ref.target() {
+                return Ok(Some(format!("detached at {}", target)));
+            }
+        }
+
+        Ok(head_ref.shorthand().map(|s| s.to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
+// ============================================================================
+// Placeholder Actions (implemented in later tasks)
+// ============================================================================
 
 async fn diff(
     guard: &GitGuard,
@@ -127,55 +343,6 @@ async fn show(
             "object": null,
             "patch": "",
             "truncated": false
-        },
-        "warnings": []
-    })))
-}
-
-async fn branch_list(
-    guard: &GitGuard,
-    repo_path: &str,
-) -> Result<ToolResult, GitError> {
-    let (path, _repo) = guard.authorize_repo(repo_path).await?;
-    // Placeholder - actual implementation in Task 5
-    Ok(ToolResult::ok(json!({
-        "action": "branch_list",
-        "repo_path": path.to_string_lossy(),
-        "data": {
-            "branches": [],
-            "head": null
-        },
-        "warnings": []
-    })))
-}
-
-async fn remote_list(
-    guard: &GitGuard,
-    repo_path: &str,
-) -> Result<ToolResult, GitError> {
-    let (path, _repo) = guard.authorize_repo(repo_path).await?;
-    // Placeholder - actual implementation in Task 5
-    Ok(ToolResult::ok(json!({
-        "action": "remote_list",
-        "repo_path": path.to_string_lossy(),
-        "data": {
-            "remotes": []
-        },
-        "warnings": []
-    })))
-}
-
-async fn worktree_list(
-    guard: &GitGuard,
-    repo_path: &str,
-) -> Result<ToolResult, GitError> {
-    let (path, _repo) = guard.authorize_repo(repo_path).await?;
-    // Placeholder - actual implementation in Task 5
-    Ok(ToolResult::ok(json!({
-        "action": "worktree_list",
-        "repo_path": path.to_string_lossy(),
-        "data": {
-            "worktrees": []
         },
         "warnings": []
     })))
