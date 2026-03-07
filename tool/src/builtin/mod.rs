@@ -1,6 +1,7 @@
 pub mod domain_cookies;
 pub mod file;
 pub mod fs;
+pub mod git;
 pub mod glob;
 pub mod grep;
 pub mod read;
@@ -9,6 +10,7 @@ pub mod update_plan;
 
 pub use domain_cookies::DomainCookiesTool;
 pub use file::ReadFileTool;
+pub use git::GitTool;
 pub use glob::GlobTool;
 pub use grep::GrepTool;
 pub use read::ReadTool;

@@ -10,3 +10,10 @@ fn tool_crate_exports_runtime_primitives() {
 
     assert_tool::<tool::builtin::read::ReadTool>();
 }
+
+#[test]
+fn git_tool_satisfies_tool_trait() {
+    fn assert_tool<T: Tool>() {}
+
+    assert_tool::<tool::builtin::git::GitTool>();
+}

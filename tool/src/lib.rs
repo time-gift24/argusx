@@ -9,7 +9,7 @@ pub mod spec;
 pub mod trait_def;
 
 pub use builtin::{
-    DomainCookiesTool, GlobTool, GrepTool, ReadFileTool, ReadTool, ShellTool, UpdatePlanTool,
+    DomainCookiesTool, GitTool, GlobTool, GrepTool, ReadFileTool, ReadTool, ShellTool, UpdatePlanTool,
 };
 pub use context::{ToolContext, ToolResult};
 pub use error::ToolError;

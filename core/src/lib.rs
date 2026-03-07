@@ -42,6 +42,7 @@ pub enum Builtin {
     UpdatePlan,
     Shell,
     DomainCookies,
+    Git,
     Unknown(String),
 }
 
@@ -54,6 +55,7 @@ impl Builtin {
             Self::UpdatePlan => "update_plan",
             Self::Shell => "shell",
             Self::DomainCookies => "domain_cookies",
+            Self::Git => "git",
             Self::Unknown(name) => name.as_str(),
         }
     }
@@ -66,6 +68,7 @@ impl Builtin {
             "update_plan" => Self::UpdatePlan,
             "shell" => Self::Shell,
             "domain_cookies" => Self::DomainCookies,
+            "git" => Self::Git,
             _ => return None,
         })
     }

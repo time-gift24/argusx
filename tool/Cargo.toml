@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 argus_core = { package = "core", path = "../core" }
 async-trait = { workspace = true }
+git2 = "0.19"
 globset = "0.4"
 grep = "0.2"
 ignore = "0.4"
