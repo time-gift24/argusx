@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -32,6 +35,8 @@ vi.mock("@/components/ai/streamdown-plugins", async (importOriginal) => {
 });
 
 import { Reasoning } from "@/components/ai/reasoning";
+
+const globalsCssPath = resolve(process.cwd(), "app/globals.css");
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -143,5 +148,16 @@ describe("Reasoning", () => {
     );
 
     expect(container.querySelector(".ai-streamdown")).toBeInTheDocument();
+  });
+
+  it("tunes global streamdown spacing and code scale for compact content", () => {
+    const globalsCss = readFileSync(globalsCssPath, "utf8");
+
+    expect(globalsCss).toMatch(/\.ai-streamdown > :not\(\[hidden\]\) ~ :not\(\[hidden\]\) \{\s*margin-block-start: 6px;/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown p \{\s*margin-block: 6px;/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="unordered-list"\],\s*\.ai-streamdown \[data-streamdown="ordered-list"\] \{\s*margin-block: 6px;/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="list-item"\] \{\s*padding-block: 2px;/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="inline-code"\] \{[\s\S]*font-size: 10px;/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-body"\] pre,\s*\.ai-streamdown \[data-streamdown="code-block-body"\] code \{[\s\S]*font-size: 10px;/s);
   });
 });
