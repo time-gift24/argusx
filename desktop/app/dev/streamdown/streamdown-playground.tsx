@@ -9,6 +9,7 @@ import {
   sharedStreamdownControls,
   sharedStreamdownIcons,
   sharedStreamdownPlugins,
+  sharedStreamdownShikiTheme,
   sharedStreamdownTranslations,
 } from "@/components/ai/streamdown";
 import { Button } from "@/components/ui/button";
@@ -204,6 +205,7 @@ function MarkdownPreview({
       icons={sharedStreamdownIcons}
       isAnimating={isAnimating}
       plugins={sharedStreamdownPlugins}
+      shikiTheme={sharedStreamdownShikiTheme}
       translations={sharedStreamdownTranslations}
     >
       {content}
@@ -321,7 +323,7 @@ function StreamingDemo() {
           <MarkdownPreview content={displayText} isAnimating={isStreaming && !isPaused} />
         ) : (
           <div className="flex h-32 items-center justify-center text-[12px] leading-[14px] text-muted-foreground">
-            Click "Start" to stream the current sample.
+            Click &quot;Start&quot; to stream the current sample.
           </div>
         )}
       </div>
