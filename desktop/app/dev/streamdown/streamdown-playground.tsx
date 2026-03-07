@@ -5,6 +5,7 @@ import { Streamdown } from "streamdown";
 
 import {
   sharedStreamdownClassName,
+  sharedStreamdownComponents,
   sharedStreamdownControls,
   sharedStreamdownIcons,
   sharedStreamdownPlugins,
@@ -161,12 +162,20 @@ function DemoCard({
   );
 }
 
-function MarkdownPreview({ content }: { content: string }) {
+function MarkdownPreview({
+  content,
+  isAnimating = false,
+}: {
+  content: string;
+  isAnimating?: boolean;
+}) {
   return (
     <Streamdown
       className={proseClassName}
+      components={sharedStreamdownComponents}
       controls={sharedStreamdownControls}
       icons={sharedStreamdownIcons}
+      isAnimating={isAnimating}
       plugins={sharedStreamdownPlugins}
       translations={sharedStreamdownTranslations}
     >
@@ -282,7 +291,7 @@ function StreamingDemo() {
       </div>
       <div className="min-h-[400px] overflow-y-auto rounded-xl border border-border/50 bg-background p-4">
         {displayText ? (
-          <MarkdownPreview content={displayText} />
+          <MarkdownPreview content={displayText} isAnimating={isStreaming && !isPaused} />
         ) : (
           <div className="flex h-32 items-center justify-center text-[12px] leading-[14px] text-muted-foreground">
             Click "Start" to stream the current sample.

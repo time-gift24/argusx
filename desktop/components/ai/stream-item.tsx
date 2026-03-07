@@ -231,14 +231,14 @@ export const StreamItemTrigger = memo(
               data-slot="stream-item-shimmer"
             />
           ) : null}
-          {icon ? <span className="shrink-0">{icon}</span> : null}
+          {icon ? <span className="shrink-0 [&_svg]:size-[10px]">{icon}</span> : null}
           <span className="truncate">{label}</span>
         </span>
         {status ? (
           <span
             className={cn(
               "ml-auto shrink-0 text-muted-foreground",
-              AI_RUNTIME_DENSITY.bodyText
+              AI_RUNTIME_DENSITY.triggerText
             )}
           >
             {status}
@@ -246,7 +246,7 @@ export const StreamItemTrigger = memo(
         ) : null}
         <ChevronDownIcon
           className={cn(
-            "size-4 shrink-0 transition-transform",
+            "size-[10px] shrink-0 transition-transform",
             isOpen ? "rotate-180" : "rotate-0"
           )}
         />
@@ -280,6 +280,27 @@ export function StreamItemContent({
       )}
       data-slot="stream-item-content"
       data-state="open"
+      {...props}
+    >
+      {children}
+    </div>
+  );
+}
+
+export type StreamItemViewportProps = ComponentProps<"div">;
+
+export function StreamItemViewport({
+  children,
+  className,
+  ...props
+}: StreamItemViewportProps) {
+  const { isOpen } = useStreamItemContext();
+
+  return (
+    <div
+      className={className}
+      data-slot="stream-item-viewport"
+      data-state={isOpen ? "open" : "closed"}
       {...props}
     >
       {children}

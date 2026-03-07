@@ -7,7 +7,7 @@ export const AI_RUNTIME_DENSITY = {
     "rounded-sm border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[12px] leading-[14px] text-foreground",
   mutedText: "text-[12px] leading-[14px] text-muted-foreground",
   sectionGap: "gap-1.5",
-  triggerText: "text-[12px] leading-[14px]",
+  triggerText: "text-[10px] leading-[12px]",
 } as const;
 
 export const AI_STREAMDOWN_CLASSNAME = "ai-streamdown";

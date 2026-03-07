@@ -55,10 +55,10 @@ describe("Reasoning", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("First line")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /reasoning/i }).className).toContain(
-      "text-[12px]"
+      "text-[10px]"
     );
     expect(screen.getByRole("button", { name: /reasoning/i }).className).toContain(
-      "leading-[14px]"
+      "leading-[12px]"
     );
     expect(container.querySelector(".ai-streamdown")).toBeInTheDocument();
   });
@@ -72,12 +72,37 @@ describe("Reasoning", () => {
 
     await waitFor(() => {
       expect(
-        container.querySelector('[data-streamdown="code-block"]')
+        container.querySelector('[data-streamdown="custom-code-panel"]')
       ).toBeInTheDocument();
     });
 
+    const viewport = container.querySelector(
+      '[data-slot="stream-item-viewport"]'
+    );
+    const languageLabel = screen.getByText("TypeScript");
+
+    expect(languageLabel).toBeInTheDocument();
+    expect(languageLabel.className).not.toContain("uppercase");
+    expect(screen.getByText("Ready")).toBeInTheDocument();
+    expect(viewport).toHaveAttribute("data-state", "closed");
+    expect(
+      container.querySelector('[data-streamdown="code-language-icon"][data-language="ts"]')
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(
+        '[data-streamdown="custom-code-panel"] [data-streamdown="code-block-header"]'
+      )
+    ).not.toBeInTheDocument();
+    expect(
+      container.querySelector('[data-streamdown="code-block"]')
+    ).toBeInTheDocument();
     expect(
       container.querySelector('[data-streamdown="code-block-actions"]')
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(
+        '[data-streamdown="custom-code-panel"] [data-streamdown="code-block-body"] [data-streamdown="code-block-actions"]'
+      )
     ).toBeInTheDocument();
     expect(
       container.querySelector('[data-streamdown="code-block-copy-button"]')
@@ -88,6 +113,26 @@ describe("Reasoning", () => {
     expect(
       container.querySelector('[data-slot="runtime-code-surface"]')
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps incomplete code fences in a running stream-item shell", async () => {
+    const { container } = render(
+      <Reasoning isRunning runKey={1}>
+        {"```ts\nconst value = 1;"}
+      </Reasoning>
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-streamdown="custom-code-panel"]')
+      ).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("TypeScript")).toBeInTheDocument();
+    expect(screen.getByText("Running")).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-slot="stream-item-shimmer"]')
+    ).toBeInTheDocument();
   });
 
   it("keeps unsupported fenced languages on the official code block path", async () => {
@@ -179,5 +224,17 @@ describe("Reasoning", () => {
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="mermaid-block"\] > div:first-child > span \{\s*margin-left: 0;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="mermaid-block"\] > div:last-child \{[\s\S]*border: 0;[\s\S]*background: transparent;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="mermaid"\] \[role="img"\] \{\s*justify-content: flex-start;/s);
+  });
+
+  it("styles the custom code shell with muted backgrounds and viewport limits", () => {
+    const globalsCss = readFileSync(globalsCssPath, "utf8");
+
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*background: color-mix\(in srgb, var\(--muted\) 72%, var\(--background\)\) !important;/s);
+    expect(globalsCss).toMatch(/\.dark \.ai-streamdown \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*background: color-mix\(in srgb, var\(--muted\) 58%, var\(--background\)\) !important;/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*padding: 0\.375rem 2rem 0\.375rem 0\.375rem !important;/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-slot="stream-item-viewport"\]\[data-state="closed"\] \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*max-height: calc\(\(12px \* 3\) \+ 0\.75rem\);/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-slot="stream-item-viewport"\]\[data-state="open"\] \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*max-height: calc\(\(12px \* 20\) \+ 0\.75rem\);/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \[data-streamdown="code-block-actions"\] \{[\s\S]*position: absolute;[\s\S]*top: 0\.375rem;[\s\S]*right: 0\.5rem;/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-actions"\],\s*\.ai-streamdown \[data-streamdown="mermaid-block-actions"\] \{[\s\S]*gap: 0\.375rem;/s);
   });
 });

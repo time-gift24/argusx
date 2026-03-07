@@ -11,6 +11,7 @@ import {
 } from "@/components/ai/stream-item";
 import {
   sharedStreamdownClassName,
+  sharedStreamdownComponents,
   sharedStreamdownControls,
   sharedStreamdownIcons,
   sharedStreamdownPlugins,
@@ -34,7 +35,7 @@ export function Reasoning({
   return (
     <StreamItem className={className} isRunning={isRunning} {...props}>
       <StreamItemTrigger
-        icon={<BrainIcon className="size-4" />}
+        icon={<BrainIcon className="size-[10px]" />}
         label="Reasoning"
         status={isRunning ? "Thinking" : "Thought"}
       />
@@ -46,8 +47,10 @@ export function Reasoning({
       >
         <Streamdown
           className={sharedStreamdownClassName}
+          components={sharedStreamdownComponents}
           controls={sharedStreamdownControls}
           icons={sharedStreamdownIcons}
+          isAnimating={isRunning}
           plugins={sharedStreamdownPlugins}
           translations={sharedStreamdownTranslations}
         >

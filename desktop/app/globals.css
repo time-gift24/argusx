@@ -148,9 +148,36 @@
   background-color: transparent !important;
 }
 
+.ai-streamdown [data-streamdown="custom-code-panel"] [data-streamdown="code-block"] {
+  margin-block: 0;
+}
+
+.ai-streamdown [data-streamdown="custom-code-panel"] [data-streamdown="code-block-body"] {
+  background: color-mix(in srgb, var(--muted) 72%, var(--background)) !important;
+  border: 0;
+  border-radius: 0;
+  padding: 0.375rem 2rem 0.375rem 0.375rem !important;
+  overflow: auto;
+  position: relative;
+}
+
+.dark .ai-streamdown [data-streamdown="custom-code-panel"] [data-streamdown="code-block-body"] {
+  background: color-mix(in srgb, var(--muted) 58%, var(--background)) !important;
+}
+
+.ai-streamdown [data-slot="stream-item-viewport"][data-state="closed"] [data-streamdown="custom-code-panel"] [data-streamdown="code-block-body"] {
+  max-height: calc((12px * 3) + 0.75rem);
+}
+
+.ai-streamdown [data-slot="stream-item-viewport"][data-state="open"] [data-streamdown="custom-code-panel"] [data-streamdown="code-block-body"] {
+  max-height: calc((12px * 20) + 0.75rem);
+}
+
 .ai-streamdown [data-streamdown="code-block-actions"],
 .ai-streamdown [data-streamdown="mermaid-block-actions"] {
-  gap: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
   border: 0;
   background: transparent;
   padding: 0;
@@ -183,6 +210,13 @@
 .ai-streamdown [data-streamdown="mermaid-block-actions"] > div > button svg {
   width: 12px;
   height: 12px;
+}
+
+.ai-streamdown [data-streamdown="custom-code-panel"] [data-streamdown="code-block-body"] [data-streamdown="code-block-actions"] {
+  position: absolute;
+  top: 0.375rem;
+  right: 0.5rem;
+  z-index: 10;
 }
 
 .ai-streamdown [data-streamdown="mermaid"] {

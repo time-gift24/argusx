@@ -66,8 +66,29 @@ describe("StreamdownPage", () => {
       document.querySelector('[data-streamdown="mermaid-block-actions"]')
     ).toBeInTheDocument();
     expect(
-      document.querySelector('[data-streamdown="code-block"]')
+      document.querySelector('[data-streamdown="custom-code-panel"]')
     ).toBeInTheDocument();
+    expect(
+      document
+        .querySelector('[data-streamdown="custom-code-panel"]')
+        ?.closest('[data-slot="stream-item"]')
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector(
+        '[data-streamdown="code-language-icon"][data-language="javascript"]'
+      )
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector(
+        '[data-streamdown="custom-code-panel"] [data-streamdown="code-block-header"]'
+      )
+    ).not.toBeInTheDocument();
+    expect(
+      document.querySelector(
+        '[data-streamdown="custom-code-panel"] [data-streamdown="code-block-body"] [data-streamdown="code-block-actions"]'
+      )
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
     expect(
       document.querySelector('[data-slot="runtime-mermaid-surface"]')
     ).not.toBeInTheDocument();
