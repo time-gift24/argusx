@@ -5,6 +5,10 @@ import type { KeyboardEventHandler } from "react";
 import { useState } from "react";
 
 import {
+  AI_PROMPT_COMPOSER_STYLES,
+  AI_RUNTIME_DENSITY,
+} from "@/components/ai/styles";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -13,6 +17,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 
 export type PromptComposerCategory = "agent" | "workflow";
 
@@ -63,12 +69,15 @@ export function PromptComposer({
     onChange: onValueChange,
     prop: value,
   });
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "submitting">("idle");
   const currentItems = category === "agent" ? agents : workflows;
   const currentSelectionId = lastSelectionByCategory[category];
   const currentSelection =
     currentItems.find((item) => item.id === currentSelectionId) ??
     currentItems[0] ??
     null;
+  const isSubmitting = status === "submitting";
 
   const handleCategoryChange = (nextCategory: PromptComposerCategory) => {
     const nextItems = nextCategory === "agent" ? agents : workflows;
@@ -84,6 +93,10 @@ export function PromptComposer({
     nextCategory: PromptComposerCategory,
     selectionId: string
   ) => {
+    if (isSubmitting) {
+      return;
+    }
+
     setLastSelectionByCategory((previous) => ({
       ...previous,
       [nextCategory]: selectionId,
@@ -91,44 +104,109 @@ export function PromptComposer({
     setCategory(nextCategory);
   };
 
+  const submit = async () => {
+    const nextDraft = draft.trim();
+
+    if (!nextDraft || !currentSelection || isSubmitting) {
+      return;
+    }
+
+    setStatus("submitting");
+    setError(null);
+
+    try {
+      await onSubmit({
+        category,
+        draft: nextDraft,
+        selectionId: currentSelection.id,
+      });
+      setDraft("");
+    } catch {
+      setError("Unable to send prompt. Try again.");
+    } finally {
+      setStatus("idle");
+    }
+  };
+
   const handleKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (event) => {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
       return;
     }
 
-    const nextDraft = draft.trim();
-
-    if (!nextDraft || !currentSelection) {
+    if (draft.trim().length === 0 || !currentSelection || isSubmitting) {
       return;
     }
 
     event.preventDefault();
-    void onSubmit({
-      category,
-      draft: nextDraft,
-      selectionId: currentSelection.id,
-    });
+    void submit();
   };
 
   return (
-    <div data-slot="prompt-composer">
+    <div
+      className={cn(
+        AI_PROMPT_COMPOSER_STYLES.root,
+        "overflow-hidden",
+        AI_RUNTIME_DENSITY.blockGap
+      )}
+      data-slot="prompt-composer"
+    >
       <textarea
         aria-label="Prompt"
+        className={AI_PROMPT_COMPOSER_STYLES.textarea}
+        disabled={isSubmitting}
         name="prompt"
         onChange={(event) => setDraft(event.currentTarget.value)}
         onKeyDown={handleKeyDown}
+        placeholder="Tell the selected agent what to do next"
         value={draft}
       />
-      <div>
-        <button onClick={() => handleCategoryChange("agent")} type="button">
+      {error ? (
+        <p className={AI_PROMPT_COMPOSER_STYLES.errorText} role="alert">
+          {error}
+        </p>
+      ) : null}
+      <div
+        className={AI_PROMPT_COMPOSER_STYLES.modeBar}
+        data-slot="prompt-composer-mode-bar"
+      >
+        <button
+          className={cn(
+            AI_PROMPT_COMPOSER_STYLES.categoryBase,
+            AI_PROMPT_COMPOSER_STYLES.category.agent
+          )}
+          data-category="agent"
+          data-state={category === "agent" ? "active" : "inactive"}
+          disabled={isSubmitting}
+          onClick={() => handleCategoryChange("agent")}
+          type="button"
+        >
           Agents
         </button>
-        <button onClick={() => handleCategoryChange("workflow")} type="button">
+        <button
+          className={cn(
+            AI_PROMPT_COMPOSER_STYLES.categoryBase,
+            AI_PROMPT_COMPOSER_STYLES.category.workflow
+          )}
+          data-category="workflow"
+          data-state={category === "workflow" ? "active" : "inactive"}
+          disabled={isSubmitting}
+          onClick={() => handleCategoryChange("workflow")}
+          type="button"
+        >
           Workflows
         </button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button type="button">{currentSelection?.label}</button>
+            <button
+              className={cn(
+                AI_PROMPT_COMPOSER_STYLES.selectionTrigger,
+                "max-w-40 truncate"
+              )}
+              disabled={isSubmitting}
+              type="button"
+            >
+              {currentSelection?.label}
+            </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             <DropdownMenuGroup>
@@ -158,7 +236,16 @@ export function PromptComposer({
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
-        <button disabled={draft.trim().length === 0} type="submit">
+        <p className={cn(AI_PROMPT_COMPOSER_STYLES.selectionDescription, "flex-1")}>
+          {currentSelection?.description}
+        </p>
+        <button
+          className={AI_PROMPT_COMPOSER_STYLES.submitButton}
+          disabled={draft.trim().length === 0 || isSubmitting}
+          onClick={() => void submit()}
+          type="button"
+        >
+          {isSubmitting ? <Spinner className="size-3.5" /> : null}
           Send
         </button>
       </div>

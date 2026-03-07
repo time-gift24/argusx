@@ -178,4 +178,62 @@ describe("PromptComposer", () => {
         .closest("[aria-disabled='true']")
     ).toBeInTheDocument();
   });
+
+  it("locks controls while submitting and preserves the draft when submit rejects", async () => {
+    const user = userEvent.setup();
+    let rejectSubmit: ((error: Error) => void) | undefined;
+    const onSubmit = vi.fn(
+      () =>
+        new Promise<void>((_, reject) => {
+          rejectSubmit = reject;
+        })
+    );
+
+    render(
+      <PromptComposer
+        agents={agents}
+        onSubmit={onSubmit}
+        workflows={workflows}
+      />
+    );
+
+    const textarea = screen.getByRole("textbox", { name: /prompt/i });
+    await user.type(textarea, "Retry this request");
+    await user.keyboard("{Enter}");
+
+    expect(screen.getByRole("button", { name: "Agents" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Workflows" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /code reviewer/i })
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /send/i })).toBeDisabled();
+
+    rejectSubmit?.(new Error("network"));
+
+    expect(
+      await screen.findByText("Unable to send prompt. Try again.")
+    ).toBeInTheDocument();
+    expect(textarea).toHaveValue("Retry this request");
+    expect(screen.getByRole("button", { name: "Agents" })).not.toBeDisabled();
+  });
+
+  it("exposes stable data slots for the composer and category controls", () => {
+    const { container } = render(
+      <PromptComposer
+        agents={agents}
+        onSubmit={vi.fn()}
+        workflows={workflows}
+      />
+    );
+
+    expect(
+      container.querySelector('[data-slot="prompt-composer"]')
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-slot="prompt-composer-mode-bar"]')
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-category="agent"]')
+    ).toHaveAttribute("data-state", "active");
+  });
 });
