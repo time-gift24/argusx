@@ -82,6 +82,19 @@ describe("StreamItem", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("uses the 14px body scale for trigger and status text", () => {
+    render(<Harness isRunning runKey={1} />);
+
+    expect(screen.getByRole("button", { name: /reasoning/i }).className).toContain(
+      "text-[14px]"
+    );
+    expect(screen.getByRole("button", { name: /reasoning/i }).className).toContain(
+      "leading-5"
+    );
+    expect(screen.getByText("Thinking").className).toContain("text-[14px]");
+    expect(screen.getByText("Thinking").className).toContain("leading-5");
+  });
+
   it("does not auto-close after the user reopens the item during the same run", async () => {
     vi.useFakeTimers();
     const { rerender } = render(<Harness isRunning runKey={1} />);
