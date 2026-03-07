@@ -43,6 +43,7 @@ async fn slow_tool_times_out_but_turn_still_completes() {
         context,
         TurnOptions {
             tool_timeout: Duration::from_millis(10),
+            ..TurnOptions::default()
         },
         Arc::new(support::multi_step_model(vec![first_step, second_step])),
         Arc::new(support::delayed_tool_runner([(
