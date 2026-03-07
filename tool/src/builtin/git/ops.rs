@@ -526,38 +526,107 @@ fn truncate_string(input: String, max_bytes: usize) -> (String, bool) {
     (input[..end].to_string(), true)
 }
 
+// ============================================================================
+// Write Actions (Task 7)
+// ============================================================================
+
 async fn add(
     guard: &GitGuard,
     repo_path: &str,
     paths: &[String],
 ) -> Result<ToolResult, GitError> {
     let (path, repo) = guard.authorize_repo(repo_path).await?;
-    let _validated = guard.validate_repo_relative_paths(&repo, paths)?;
-    // Placeholder - actual implementation in Task 7
+    let validated_paths = guard.validate_repo_relative_paths(&repo, paths)?;
+
+    let mut index = repo.index()?;
+    let mut staged_paths = Vec::new();
+    let mut warnings = Vec::new();
+
+    for rel_path in validated_paths {
+        let rel_str = rel_path.to_string_lossy().to_string();
+        let abs_path = path.join(&rel_path);
+
+        // Check if path exists
+        if !abs_path.exists() {
+            warnings.push(format!("path does not exist: {}", rel_str));
+            continue;
+        }
+
+        // Add to index
+        match index.add_path(&rel_path) {
+            Ok(()) => staged_paths.push(rel_str),
+            Err(e) => warnings.push(format!("failed to add {}: {}", rel_path.display(), e)),
+        }
+    }
+
+    index.write()?;
+
     Ok(ToolResult::ok(json!({
         "action": "add",
         "repo_path": path.to_string_lossy(),
         "data": {
-            "staged_paths": paths
+            "staged_paths": staged_paths
         },
-        "warnings": []
+        "warnings": warnings
     })))
 }
 
 async fn commit(
     guard: &GitGuard,
     repo_path: &str,
-    _message: &str,
-    _allow_empty: bool,
+    message: &str,
+    allow_empty: bool,
 ) -> Result<ToolResult, GitError> {
-    let (path, _repo) = guard.authorize_repo(repo_path).await?;
-    // Placeholder - actual implementation in Task 7
+    let (path, repo) = guard.authorize_repo(repo_path).await?;
+
+    // Get signature
+    let sig = repo.signature()
+        .map_err(|e| GitError::IdentityMissing(e.to_string()))?;
+
+    // Get index tree
+    let mut index = repo.index()?;
+    let tree_id = index.write_tree()?;
+    let tree = repo.find_tree(tree_id)?;
+
+    // Get parent commits
+    let mut parents = Vec::new();
+    if let Ok(head) = repo.head() {
+        if let Some(oid) = head.target() {
+            if let Ok(parent) = repo.find_commit(oid) {
+                parents.push(parent);
+            }
+        }
+    }
+
+    // Check if there are changes to commit
+    if !allow_empty {
+        let head_tree = parents.get(0).map(|p| p.tree()).transpose()?;
+        let diff = repo.diff_tree_to_tree(head_tree.as_ref(), Some(&tree), None)?;
+
+        if diff.deltas().len() == 0 {
+            return Err(GitError::NothingToCommit("no changes to commit".to_string()));
+        }
+    }
+
+    // Create commit
+    let parent_refs: Vec<_> = parents.iter().collect();
+    let commit_id = repo.commit(
+        Some("HEAD"),
+        &sig,
+        &sig,
+        message,
+        &tree,
+        &parent_refs
+    )?;
+
+    let summary = message.lines().next().unwrap_or("");
+
     Ok(ToolResult::ok(json!({
         "action": "commit",
         "repo_path": path.to_string_lossy(),
         "data": {
-            "commit_id": "placeholder",
-            "summary": ""
+            "commit_id": commit_id.to_string(),
+            "summary": summary
         },
         "warnings": []
     })))
