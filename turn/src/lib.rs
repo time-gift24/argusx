@@ -11,6 +11,7 @@ pub mod permission;
 pub mod state;
 pub mod summary;
 pub mod tool_runner;
+pub mod transcript;
 pub mod vercel;
 
 pub use command::{PermissionDecision, TurnCommand};
@@ -26,3 +27,4 @@ pub use permission::{AuthorizationDecision, PermissionRequest, ToolAuthorizer};
 pub use state::TurnState;
 pub use summary::{TurnFailure, TurnSummary};
 pub use tool_runner::ToolRunner;
+pub use transcript::{TurnMessage, TurnTranscript};
