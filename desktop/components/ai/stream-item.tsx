@@ -35,6 +35,10 @@ function useStreamItemContext() {
   return context;
 }
 
+export function useStreamItemState() {
+  return useStreamItemContext();
+}
+
 export type StreamItemProps = ComponentProps<"div"> & {
   isRunning?: boolean;
   runKey?: string | number;

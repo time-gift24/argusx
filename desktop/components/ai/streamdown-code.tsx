@@ -8,6 +8,7 @@ import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import {
   BinaryIcon,
   BracesIcon,
+  ChevronDownIcon,
   Code2Icon,
   DatabaseIcon,
   FileCode2Icon,
@@ -31,6 +32,7 @@ import { sharedCodePlugin } from "@/components/ai/shared-code-highlighter";
 import {
   StreamItem,
   StreamItemTrigger,
+  useStreamItemState,
   StreamItemViewport,
 } from "@/components/ai/stream-item";
 import {
@@ -45,6 +47,7 @@ import { cn } from "@/lib/utils";
 
 const LANGUAGE_CLASSNAME_PATTERN = /language-([A-Za-z0-9_-]+)/;
 const START_LINE_PATTERN = /(?:^|\s)startLine=(\d+)(?:\s|$)/;
+const DEFAULT_COLLAPSED_CODE_LINES = 6;
 
 const DISPLAY_LANGUAGE_BY_TOKEN: Record<string, string> = {
   js: "JavaScript",
@@ -263,6 +266,28 @@ function InlineCode({
   );
 }
 
+function CodeExpandHint({ canExpand }: { canExpand: boolean }) {
+  const { isOpen, toggleFromUser } = useStreamItemState();
+
+  if (!canExpand || isOpen) {
+    return null;
+  }
+
+  return (
+    <div data-streamdown="code-expand-hint">
+      <button
+        aria-label="Expand code"
+        data-streamdown="code-expand-button"
+        onClick={toggleFromUser}
+        type="button"
+      >
+        <ChevronDownIcon aria-hidden="true" className="size-[10px] shrink-0" />
+        <span>Expand</span>
+      </button>
+    </div>
+  );
+}
+
 export function StreamdownCode({
   children,
   className,
@@ -288,6 +313,8 @@ export function StreamdownCode({
   const languageLabel = getLanguageLabel(languageToken);
   const languageIconToken = languageToken || "text";
   const LanguageIcon = getLanguageIcon(languageToken);
+  const isExpandable =
+    code === "" ? false : code.split("\n").length > DEFAULT_COLLAPSED_CODE_LINES;
   const startLine = getStartLine(node);
   const tokenized = useCodeTokens(code, languageToken);
 
@@ -369,6 +396,7 @@ export function StreamdownCode({
               </pre>
             </div>
           </CodeBlockContainer>
+          <CodeExpandHint canExpand={isExpandable} />
         </div>
       </StreamItemViewport>
     </StreamItem>

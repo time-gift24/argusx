@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import userEvent from "@testing-library/user-event";
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -135,6 +136,38 @@ describe("Reasoning", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows a centered expand button only when a code block can expand", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <Reasoning isRunning={false} open runKey={1}>
+        {
+          "```ts\nconst first = 1;\nconst second = 2;\nconst third = 3;\nconst fourth = 4;\nconst fifth = 5;\nconst sixth = 6;\nconst seventh = 7;\n```"
+        }
+      </Reasoning>
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-streamdown="custom-code-panel"]')
+      ).toBeInTheDocument();
+    });
+
+    const viewport = container.querySelector(
+      '[data-slot="stream-item-viewport"]'
+    );
+    const expandButton = screen.getByRole("button", { name: /expand code/i });
+
+    expect(viewport).toHaveAttribute("data-state", "closed");
+    expect(expandButton).toBeInTheDocument();
+
+    await user.click(expandButton);
+
+    expect(viewport).toHaveAttribute("data-state", "open");
+    expect(
+      screen.queryByRole("button", { name: /expand code/i })
+    ).not.toBeInTheDocument();
+  });
+
   it("keeps unsupported fenced languages on the official code block path", async () => {
     const { container } = render(
       <Reasoning isRunning runKey={1}>
@@ -232,9 +265,10 @@ describe("Reasoning", () => {
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*background: color-mix\(in srgb, var\(--muted\) 72%, var\(--background\)\) !important;/s);
     expect(globalsCss).toMatch(/\.dark \.ai-streamdown \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*background: color-mix\(in srgb, var\(--muted\) 58%, var\(--background\)\) !important;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*padding: 0\.375rem 2rem 0\.375rem 0\.375rem !important;/s);
-    expect(globalsCss).toMatch(/\.ai-streamdown \[data-slot="stream-item-viewport"\]\[data-state="closed"\] \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*max-height: calc\(\(12px \* 3\) \+ 0\.75rem\);/s);
-    expect(globalsCss).toMatch(/\.ai-streamdown \[data-slot="stream-item-viewport"\]\[data-state="open"\] \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*max-height: calc\(\(12px \* 20\) \+ 0\.75rem\);/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-slot="stream-item-viewport"\]\[data-state="closed"\] \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*max-height: calc\(\(12px \* 6\) \+ 0\.75rem\);/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-slot="stream-item-viewport"\]\[data-state="open"\] \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \{[\s\S]*max-height: calc\(\(12px \* 30\) \+ 0\.75rem\);/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="custom-code-panel"\] \[data-streamdown="code-block-body"\] \[data-streamdown="code-block-actions"\] \{[\s\S]*position: absolute;[\s\S]*top: 0\.375rem;[\s\S]*right: 0\.5rem;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-actions"\],\s*\.ai-streamdown \[data-streamdown="mermaid-block-actions"\] \{[\s\S]*gap: 0\.375rem;/s);
+    expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-expand-hint"\] \{[\s\S]*position: absolute;[\s\S]*left: 50%;[\s\S]*transform: translateX\(-50%\);/s);
   });
 });
