@@ -88,3 +88,108 @@ async fn commit_creates_commit_with_message() {
     assert!(!commit_id.is_empty());
     assert_eq!(result.output["data"]["summary"], "Add new file");
 }
+
+#[tokio::test]
+async fn branch_create_creates_new_branch() {
+    let (temp, _repo) = create_repo_for_writes();
+    let tool = GitTool::new(vec![temp.path().to_path_buf()]).unwrap();
+
+    let result = tool
+        .execute(
+            tool_context(),
+            json!({
+                "action": "branch_create",
+                "repo_path": temp.path().to_str().unwrap(),
+                "branch": "feature-branch"
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.is_error);
+    assert_eq!(result.output["action"], "branch_create");
+    assert_eq!(result.output["data"]["branch"], "feature-branch");
+    assert!(!result.output["data"]["checked_out"].as_bool().unwrap());
+}
+
+#[tokio::test]
+async fn branch_create_with_checkout() {
+    let (temp, _repo) = create_repo_for_writes();
+    let tool = GitTool::new(vec![temp.path().to_path_buf()]).unwrap();
+
+    let result = tool
+        .execute(
+            tool_context(),
+            json!({
+                "action": "branch_create",
+                "repo_path": temp.path().to_str().unwrap(),
+                "branch": "feature-branch",
+                "checkout": true
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.is_error);
+    assert!(result.output["data"]["checked_out"].as_bool().unwrap());
+}
+
+#[tokio::test]
+async fn checkout_switches_branch() {
+    let (temp, repo) = create_repo_for_writes();
+
+    // Create another branch
+    let head = repo.head().unwrap().target().unwrap();
+    let commit = repo.find_commit(head).unwrap();
+    repo.branch("other-branch", &commit, false).unwrap();
+
+    let tool = GitTool::new(vec![temp.path().to_path_buf()]).unwrap();
+
+    let result = tool
+        .execute(
+            tool_context(),
+            json!({
+                "action": "checkout",
+                "repo_path": temp.path().to_str().unwrap(),
+                "branch": "other-branch"
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.is_error);
+    assert_eq!(result.output["action"], "checkout");
+    assert_eq!(result.output["data"]["branch"], "other-branch");
+}
+
+#[tokio::test]
+async fn checkout_rejects_dirty_worktree() {
+    let (temp, repo) = create_repo_for_writes();
+
+    // Create another branch
+    let head = repo.head().unwrap().target().unwrap();
+    let commit = repo.find_commit(head).unwrap();
+    repo.branch("other-branch", &commit, false).unwrap();
+
+    // Make uncommitted changes
+    std::fs::write(temp.path().join("initial.txt"), b"modified\n").unwrap();
+
+    let tool = GitTool::new(vec![temp.path().to_path_buf()]).unwrap();
+
+    let result = tool
+        .execute(
+            tool_context(),
+            json!({
+                "action": "checkout",
+                "repo_path": temp.path().to_str().unwrap(),
+                "branch": "other-branch"
+            }),
+        )
+        .await;
+
+    // Should return an error (Err or Ok with is_error=true)
+    match result {
+        Ok(r) => assert!(r.is_error, "expected error for dirty worktree"),
+        Err(_) => {} // Error is also acceptable
+    }
+}

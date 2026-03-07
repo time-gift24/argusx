@@ -635,18 +635,54 @@ async fn commit(
 async fn branch_create(
     guard: &GitGuard,
     repo_path: &str,
-    _branch: &str,
-    _start_point: Option<&str>,
-    _checkout: bool,
+    branch: &str,
+    start_point: Option<&str>,
+    checkout: bool,
 ) -> Result<ToolResult, GitError> {
-    let (path, _repo) = guard.authorize_repo(repo_path).await?;
-    // Placeholder - actual implementation in Task 8
+    let (path, repo) = guard.authorize_repo(repo_path).await?;
+
+    // Check if branch already exists
+    if repo.find_branch(branch, git2::BranchType::Local).is_ok() {
+        return Err(GitError::BranchExists(branch.to_string()));
+    }
+
+    // Get commit to branch from
+    let commit = match start_point {
+        Some(sp) => {
+            let obj = repo.revparse_single(sp)?;
+            obj.peel_to_commit()?
+        }
+        None => {
+            repo.head()
+                .ok()
+                .and_then(|h| h.target())
+                .and_then(|oid| repo.find_commit(oid).ok())
+                .ok_or_else(|| GitError::OperationFailed("no HEAD commit".to_string()))?
+        }
+    };
+
+    // Create branch (force = false)
+    let _branch_ref = repo.branch(branch, &commit, false)?;
+
+    let checked_out = if checkout {
+        // Checkout the branch with force to handle existing files
+        let mut checkout_opts = git2::build::CheckoutBuilder::new();
+        checkout_opts.force();
+        let obj = commit.as_object();
+        repo.checkout_tree(obj, Some(&mut checkout_opts))?;
+        repo.set_head(&format!("refs/heads/{}", branch))?;
+        true
+    } else {
+        false
+    };
+
     Ok(ToolResult::ok(json!({
         "action": "branch_create",
         "repo_path": path.to_string_lossy(),
         "data": {
-            "branch": null,
-            "checked_out": false
+            "branch": branch,
+            "commit_id": commit.id().to_string(),
+            "checked_out": checked_out
         },
         "warnings": []
     })))
@@ -655,16 +691,44 @@ async fn branch_create(
 async fn checkout(
     guard: &GitGuard,
     repo_path: &str,
-    _branch: &str,
+    branch: &str,
 ) -> Result<ToolResult, GitError> {
-    let (path, _repo) = guard.authorize_repo(repo_path).await?;
-    // Placeholder - actual implementation in Task 8
+    let (path, repo) = guard.authorize_repo(repo_path).await?;
+
+    // Check for uncommitted changes
+    let head_tree = repo.head()
+        .ok()
+        .and_then(|h| h.target())
+        .and_then(|oid| repo.find_commit(oid).ok())
+        .and_then(|c| c.tree().ok());
+
+    let mut diff_opts = git2::DiffOptions::new();
+    let diff = repo.diff_tree_to_workdir(head_tree.as_ref(), Some(&mut diff_opts))?;
+
+    if diff.deltas().count() > 0 {
+        return Err(GitError::DirtyWorktree("uncommitted changes, please commit or stash first".to_string()));
+    }
+
+    // Find the branch
+    let branch_ref = repo.find_branch(branch, git2::BranchType::Local)?;
+    let commit = branch_ref.get().peel_to_commit()?;
+
+    // Checkout with force option
+    let mut checkout_opts = git2::build::CheckoutBuilder::new();
+    checkout_opts.force();
+    let obj = commit.as_object();
+    repo.checkout_tree(obj, Some(&mut checkout_opts))?;
+    repo.set_head(&format!("refs/heads/{}", branch))?;
+
+    let new_head = get_current_branch(&repo)?;
+
     Ok(ToolResult::ok(json!({
         "action": "checkout",
         "repo_path": path.to_string_lossy(),
         "data": {
-            "branch": null,
-            "head": null
+            "branch": branch,
+            "head": new_head,
+            "commit_id": commit.id().to_string()
         },
         "warnings": []
     })))
