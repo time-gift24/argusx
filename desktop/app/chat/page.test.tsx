@@ -1,6 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import ChatPage from "./page";
 
@@ -24,6 +24,13 @@ vi.mock("@/lib/chat", () => ({
 
 describe("ChatPage", () => {
   beforeEach(() => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class ResizeObserver {
+        observe() {}
+        disconnect() {}
+      }
+    );
     startTurn.mockReset();
     cancelTurn.mockReset();
     subscribe.mockReset();
@@ -38,10 +45,17 @@ describe("ChatPage", () => {
     });
   });
 
-  it("starts an agent turn and renders streamed updates", async () => {
-    const user = userEvent.setup();
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
-    render(<ChatPage />);
+  it("keeps multi-turn history and separates turns with numbered checkpoints", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<ChatPage />);
+
+    startTurn
+      .mockResolvedValueOnce({ turnId: "turn-1" })
+      .mockResolvedValueOnce({ turnId: "turn-2" });
 
     expect(screen.getByRole("textbox", { name: /prompt/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Agents" })).toBeInTheDocument();
@@ -102,12 +116,109 @@ describe("ChatPage", () => {
       });
     });
 
-    expect(screen.getByText("Assistant answer")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Reasoning/i }));
     expect(screen.getByText("Reasoning trace")).toBeInTheDocument();
     expect(screen.getByText("glob")).toBeInTheDocument();
+
+    await user.type(
+      screen.getByRole("textbox", { name: /prompt/i }),
+      "Plan the rollout"
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await act(async () => {
+      onTurnEvent?.({
+        turnId: "turn-2",
+        type: "llm-text-delta",
+        data: { text: "Second turn answer" },
+      });
+      onTurnEvent?.({
+        turnId: "turn-2",
+        type: "turn-finished",
+        data: { reason: "completed" },
+      });
+    });
+
+    expect(screen.getByText("第 1 轮")).toBeInTheDocument();
+    expect(screen.getByText("第 2 轮")).toBeInTheDocument();
+    expect(screen.getByText("Review this plan")).toBeInTheDocument();
+    expect(screen.getByText("Plan the rollout")).toBeInTheDocument();
+    expect(screen.getByText("Assistant answer")).toBeInTheDocument();
+    expect(screen.getByText("Second turn answer")).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Cancel" })
-    ).not.toBeInTheDocument();
+      container.querySelectorAll('[data-slot="chat-turn"]')
+    ).toHaveLength(2);
+  });
+
+  it("renders a floating composer shell, a right-aligned user bubble, and plain assistant output", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<ChatPage />);
+
+    await user.type(
+      screen.getByRole("textbox", { name: /prompt/i }),
+      "Review this plan"
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await act(async () => {
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "llm-text-delta",
+        data: { text: "Assistant answer" },
+      });
+    });
+
+    const composerShell = container.querySelector(
+      '[data-slot="chat-composer-shell"]'
+    );
+    const scrollContent = container.querySelector(
+      '[data-slot="chat-scroll-content"]'
+    );
+    const userBubble = screen
+      .getByText("Review this plan")
+      .closest('[data-slot="chat-turn-user"]');
+    const assistantBody = screen
+      .getByText("Assistant answer")
+      .closest('[data-slot="chat-turn-assistant"]');
+
+    expect(composerShell).toHaveClass("absolute");
+    expect(composerShell).toHaveClass("backdrop-blur-sm");
+    expect(scrollContent).toHaveStyle({ paddingBottom: "220px" });
+    expect(userBubble).toHaveClass("ml-auto");
+    expect(userBubble).toHaveClass("bg-muted");
+    expect(assistantBody).not.toHaveClass("border");
+    expect(assistantBody).not.toHaveClass("bg-card");
+  });
+
+  it("marks the pending turn as failed when cancelling the previous running turn rejects", async () => {
+    const user = userEvent.setup();
+
+    render(<ChatPage />);
+
+    await user.type(
+      screen.getByRole("textbox", { name: /prompt/i }),
+      "Review this plan"
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await act(async () => {
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "llm-text-delta",
+        data: { text: "Assistant answer" },
+      });
+    });
+
+    cancelTurn.mockRejectedValueOnce(new Error("cancel failed"));
+
+    await user.type(
+      screen.getByRole("textbox", { name: /prompt/i }),
+      "Plan the rollout"
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("cancel failed")).toBeInTheDocument();
+    expect(screen.getAllByText("Plan the rollout")).toHaveLength(2);
+    expect(startTurn).toHaveBeenCalledTimes(1);
   });
 });

@@ -17,7 +17,7 @@ export const AI_CODE_SURFACE_CLASSNAME =
 
 export const AI_PROMPT_COMPOSER_STYLES = {
   root:
-    "rounded-2xl border border-border/70 bg-card text-card-foreground shadow-sm",
+    "rounded-2xl border border-border/70 bg-background/80 text-card-foreground shadow-sm backdrop-blur-sm",
   textarea:
     "min-h-24 w-full resize-none border-0 bg-transparent px-4 py-4 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-70",
   modeBar:

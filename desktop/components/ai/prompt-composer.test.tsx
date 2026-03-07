@@ -259,4 +259,21 @@ describe("PromptComposer", () => {
       container.querySelector('[data-category="agent"]')
     ).toHaveAttribute("data-state", "active");
   });
+
+  it("renders the composer shell with translucent floating chrome", () => {
+    const { container } = render(
+      <PromptComposer
+        agents={agents}
+        onSubmit={vi.fn()}
+        workflows={workflows}
+      />
+    );
+
+    expect(
+      container.querySelector('[data-slot="prompt-composer"]')
+    ).toHaveClass("bg-background/80");
+    expect(
+      container.querySelector('[data-slot="prompt-composer"]')
+    ).toHaveClass("backdrop-blur-sm");
+  });
 });
