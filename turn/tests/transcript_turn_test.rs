@@ -14,7 +14,7 @@ use serde_json::json;
 use tool::ToolResult;
 use turn::{
     FinalStepPolicy, LlmStepRequest, TurnContext, TurnDriver, TurnEvent, TurnFinishReason,
-    TurnHandle, TurnMessage, TurnOptions,
+    TurnMessage, TurnOptions,
 };
 
 fn context() -> TurnContext {
