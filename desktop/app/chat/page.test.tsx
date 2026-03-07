@@ -2,7 +2,10 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import ChatPage from "./page";
+import ChatPage, {
+  createPendingTurn,
+  reduceTurnEventForTurn,
+} from "./page";
 
 const startTurn = vi.fn();
 const cancelTurn = vi.fn();
@@ -230,5 +233,46 @@ describe("ChatPage", () => {
     expect(await screen.findByText("cancel failed")).toBeInTheDocument();
     expect(screen.getAllByText("Plan the rollout")).toHaveLength(2);
     expect(startTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps only the latest plan snapshot for a turn", () => {
+    const current = createPendingTurn("client-turn-1", "Review this plan");
+
+    const first = reduceTurnEventForTurn(current, {
+      data: {
+        description: "Starting execution",
+        isStreaming: true,
+        sourceCallId: "call-1",
+        tasks: [
+          { id: "task-1", status: "completed", title: "Write failing test" },
+        ],
+        title: "Execution Plan",
+      },
+      turnId: "turn-1",
+      type: "plan-updated",
+    });
+    const second = reduceTurnEventForTurn(first, {
+      data: {
+        isStreaming: true,
+        sourceCallId: "call-2",
+        tasks: [
+          { id: "task-2", status: "in_progress", title: "Implement minimal fix" },
+        ],
+        title: "Execution Plan",
+      },
+      turnId: "turn-1",
+      type: "plan-updated",
+    });
+
+    expect(first.latestPlan?.sourceCallId).toBe("call-1");
+    expect(first.latestPlan?.tasks[0].title).toBe("Write failing test");
+    expect(second.latestPlan?.sourceCallId).toBe("call-2");
+    expect(second.latestPlan?.tasks).toEqual([
+      {
+        id: "task-2",
+        status: "in_progress",
+        title: "Implement minimal fix",
+      },
+    ]);
   });
 });
