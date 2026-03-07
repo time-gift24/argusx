@@ -3,7 +3,7 @@ use futures::StreamExt;
 use std::path::PathBuf;
 
 use provider::{
-    Dialect, Error, ProviderClient, ProviderConfig, ProviderDevOptions, ReplayTiming, Request,
+    Dialect, ProviderClient, ProviderConfig, ProviderDevOptions, ReplayTiming, Request,
 };
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -129,6 +129,14 @@ async fn recorded_replay_without_sidecar_falls_back_to_fast_mode() {
     let events: Vec<_> = stream.by_ref().collect().await;
 
     // Should still emit created and done events
-    assert!(events.iter().any(|e| matches!(e, ResponseEvent::Created(_))));
-    assert!(events.iter().any(|e| matches!(e, ResponseEvent::Done { .. })));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, ResponseEvent::Created(_)))
+    );
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, ResponseEvent::Done { .. }))
+    );
 }

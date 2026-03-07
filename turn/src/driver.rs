@@ -11,9 +11,9 @@ use tool::{ToolContext, ToolResult};
 use tracing::{Instrument, info, info_span};
 
 use crate::{
-    AuthorizationDecision, LlmRequestSnapshot, ModelRunner, PermissionDecision,
-    StepFinishReason, ToolAuthorizer, ToolOutcome, ToolRunner, TurnContext, TurnError, TurnEvent,
-    TurnFailure, TurnFinishReason, TurnHandle, TurnOptions, TurnState, TurnSummary,
+    AuthorizationDecision, LlmRequestSnapshot, ModelRunner, PermissionDecision, StepFinishReason,
+    ToolAuthorizer, ToolOutcome, ToolRunner, TurnContext, TurnError, TurnEvent, TurnFailure,
+    TurnFinishReason, TurnHandle, TurnOptions, TurnState, TurnSummary,
     state::{ActiveLlmStep, PendingPermissionCall, PermissionPause, ToolBatch},
 };
 
@@ -162,10 +162,7 @@ impl TurnDriver {
                                 self.state = TurnState::Failed(TurnFailure {
                                     message: err.message.clone(),
                                 });
-                                self.emit(TurnEvent::TurnFinished {
-                                    reason: TurnFinishReason::Failed,
-                                })
-                                .await?;
+                                self.emit_turn_finished(TurnFinishReason::Failed).await?;
                                 return Err(TurnError::Runtime(err.message));
                             }
                             ResponseEvent::Created(_)
@@ -205,11 +202,7 @@ impl TurnDriver {
                         turn_id: self.context.turn_id.clone(),
                     };
                     self.state = TurnState::Cancelled(summary);
-                    info!(reason = ?TurnFinishReason::Cancelled, "turn finished");
-                    self.emit(TurnEvent::TurnFinished {
-                        reason: TurnFinishReason::Cancelled,
-                    })
-                    .await?;
+                    self.emit_turn_finished(TurnFinishReason::Cancelled).await?;
                     return Ok(());
                 }
                 _ => {
@@ -217,11 +210,7 @@ impl TurnDriver {
                         turn_id: self.context.turn_id.clone(),
                     };
                     self.state = TurnState::Completed(summary);
-                    info!(reason = ?TurnFinishReason::Completed, "turn finished");
-                    self.emit(TurnEvent::TurnFinished {
-                        reason: TurnFinishReason::Completed,
-                    })
-                    .await?;
+                    self.emit_turn_finished(TurnFinishReason::Completed).await?;
                     return Ok(());
                 }
             }
@@ -236,8 +225,17 @@ impl TurnDriver {
             .map_err(|_| TurnError::Runtime("turn event receiver dropped".into()))
     }
 
+    async fn emit_turn_finished(&self, reason: TurnFinishReason) -> Result<(), TurnError> {
+        info!(reason = ?reason, "turn finished");
+        self.emit(TurnEvent::TurnFinished { reason }).await
+    }
+
     async fn execute_tool_batch(&mut self, batch: ToolBatch) -> Result<(), TurnError> {
-        info!(step_index = batch.step_index, tool_count = batch.calls.len(), "tool batch prepared");
+        info!(
+            step_index = batch.step_index,
+            tool_count = batch.calls.len(),
+            "tool batch prepared"
+        );
         let mut join_set = JoinSet::new();
         let mut pending_permissions = Vec::new();
         let mut cancellation_requested = false;
@@ -375,10 +373,7 @@ impl TurnDriver {
             let call_id = call_id(&call);
             let result = match tokio::time::timeout(
                 timeout,
-                tool_runner.execute(
-                    call,
-                    ToolContext::new(session_id, turn_id, cancel_token),
-                ),
+                tool_runner.execute(call, ToolContext::new(session_id, turn_id, cancel_token)),
             )
             .await
             {
@@ -393,11 +388,7 @@ impl TurnDriver {
         self.state = TurnState::Cancelled(TurnSummary {
             turn_id: self.context.turn_id.clone(),
         });
-        info!(reason = ?TurnFinishReason::Cancelled, "turn finished");
-        self.emit(TurnEvent::TurnFinished {
-            reason: TurnFinishReason::Cancelled,
-        })
-        .await
+        self.emit_turn_finished(TurnFinishReason::Cancelled).await
     }
 
     fn consume_cancel_request(&mut self) -> Result<bool, TurnError> {

@@ -10,7 +10,8 @@ use futures::{Stream, StreamExt};
 use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Error as ReqwestError, Response};
 use std::collections::HashMap;
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::{Mutex, mpsc};
 use tracing::{Instrument, info, info_span, warn};
 
 type MessageStream = BoxStream<'static, Result<SseMessage, EventStreamError<ReqwestError>>>;
@@ -79,7 +80,7 @@ impl ProviderClient {
         let producer = tokio::spawn(
             async move {
                 info!("stream started");
-                let mut recorder = match record_target {
+                let recorder = Arc::new(Mutex::new(match record_target {
                     Some(target) => {
                         match SseRecorder::create(target.file_path, target.write_timing_sidecar)
                             .await
@@ -92,7 +93,7 @@ impl ProviderClient {
                         }
                     }
                     None => None,
-                };
+                }));
                 let response = match http
                     .post(url)
                     .header(reqwest::header::AUTHORIZATION, format!("Bearer {api_key}"))
@@ -113,7 +114,6 @@ impl ProviderClient {
                             },
                         )
                         .await;
-                        finish_recorder(&mut recorder).await;
                         return;
                     }
                 };
@@ -126,14 +126,28 @@ impl ProviderClient {
                     }
                 };
                 let mut payloads = sse
-                    .map(|item| {
-                        item.map(|message| message.data).map_err(|err| StreamError {
-                            kind: classify_eventsource_error(&err),
-                            message: err.to_string(),
-                        })
+                    .then({
+                        let recorder = Arc::clone(&recorder);
+                        move |item| {
+                            let recorder = Arc::clone(&recorder);
+                            async move {
+                                match item {
+                                    Ok(message) => {
+                                        write_raw_frame_to_recorder(&recorder, &message.raw).await;
+                                        Ok(message.data)
+                                    }
+                                    Err(err) => Err(StreamError {
+                                        kind: classify_eventsource_error(&err),
+                                        message: err.to_string(),
+                                    }),
+                                }
+                            }
+                        }
                     })
                     .boxed();
-                drive_payload_stream(&tx, dialect, &mut payloads, &mut recorder).await;
+                drive_payload_stream(&tx, dialect, &mut payloads).await;
+                drop(payloads);
+                finish_recorder(recorder).await;
             }
             .instrument(span),
         );
@@ -163,10 +177,14 @@ impl ProviderClient {
                 info!("stream started");
                 let replay = ReplayReader::from_prepared(prepared);
                 let mut payloads = replay
-                    .map(|item| item.and_then(|frame| parse_replay_frame(&frame)))
+                    .map(|item| item.map(Bytes::from))
+                    .eventsource()
+                    .map(|item| {
+                        item.map(|message| message.data)
+                            .map_err(map_replay_eventsource_error)
+                    })
                     .boxed();
-                let mut recorder = None;
-                drive_payload_stream(&tx, dialect, &mut payloads, &mut recorder).await;
+                drive_payload_stream(&tx, dialect, &mut payloads).await;
             }
             .instrument(span),
         );
@@ -209,7 +227,6 @@ async fn drive_payload_stream<S>(
     tx: &mpsc::Sender<ResponseEvent>,
     dialect: Dialect,
     payloads: &mut S,
-    recorder: &mut Option<SseRecorder>,
 ) where
     S: Stream<Item = Result<String, StreamError>> + Unpin,
 {
@@ -219,12 +236,10 @@ async fn drive_payload_stream<S>(
     while let Some(item) = payloads.next().await {
         match item {
             Ok(payload) => {
-                write_payload_to_recorder(recorder, &payload).await;
                 if payload == "[DONE]" {
                     match mapper.on_done() {
                         Ok(events) => {
                             if emit_events(tx, &mut contract, events).await.is_err() {
-                                finish_recorder(recorder).await;
                                 return;
                             }
                         }
@@ -238,19 +253,16 @@ async fn drive_payload_stream<S>(
                                 },
                             )
                             .await;
-                            finish_recorder(recorder).await;
                             return;
                         }
                     }
                     info!("stream completed");
-                    finish_recorder(recorder).await;
                     return;
                 }
 
                 match mapper.feed(&payload) {
                     Ok(events) => {
                         if emit_events(tx, &mut contract, events).await.is_err() {
-                            finish_recorder(recorder).await;
                             return;
                         }
                     }
@@ -263,14 +275,12 @@ async fn drive_payload_stream<S>(
                             },
                         )
                         .await;
-                        finish_recorder(recorder).await;
                         return;
                     }
                 }
             }
             Err(err) => {
                 send_terminal_error(tx, err).await;
-                finish_recorder(recorder).await;
                 return;
             }
         }
@@ -284,7 +294,6 @@ async fn drive_payload_stream<S>(
         },
     )
     .await;
-    finish_recorder(recorder).await;
 }
 
 fn to_header_map(headers: &HashMap<String, String>) -> reqwest::header::HeaderMap {
@@ -375,50 +384,39 @@ fn classify_mapper_error(err: &Error) -> ErrorKind {
     }
 }
 
-fn parse_replay_frame(frame: &str) -> Result<String, StreamError> {
-    let data_lines: Vec<&str> = frame
-        .lines()
-        .filter_map(|line| {
-            line.strip_prefix("data:")
-                .map(|payload| payload.strip_prefix(' ').unwrap_or(payload))
-        })
-        .collect();
-
-    if data_lines.is_empty() {
-        return Err(StreamError {
+fn map_replay_eventsource_error(err: EventStreamError<StreamError>) -> StreamError {
+    match err {
+        EventStreamError::Utf8(err) => StreamError {
             kind: ErrorKind::Parse,
-            message: "replay frame missing data field".into(),
-        });
+            message: format!("UTF8 error: {err}"),
+        },
+        EventStreamError::Parser(err) => StreamError {
+            kind: ErrorKind::Parse,
+            message: format!("Parse error: {err}"),
+        },
+        EventStreamError::Transport(err) => err,
     }
-
-    Ok(data_lines.join("\n"))
 }
 
-async fn write_payload_to_recorder(recorder: &mut Option<SseRecorder>, payload: &str) {
+async fn write_raw_frame_to_recorder(recorder: &Arc<Mutex<Option<SseRecorder>>>, raw_frame: &str) {
+    let mut recorder = recorder.lock().await;
     if let Some(active) = recorder.as_mut() {
-        let frame = format_payload_as_sse_frame(payload);
-        if let Err(err) = active.write_frame(&frame).await {
+        if let Err(err) = active.write_frame(raw_frame).await {
             warn!(error = %err, "failed to write recorder frame");
-            *recorder = None;
+            recorder.take();
         }
     }
 }
 
-async fn finish_recorder(recorder: &mut Option<SseRecorder>) {
-    if let Some(mut active) = recorder.take() {
+async fn finish_recorder(recorder: Arc<Mutex<Option<SseRecorder>>>) {
+    let active = {
+        let mut recorder = recorder.lock().await;
+        recorder.take()
+    };
+
+    if let Some(mut active) = active {
         if let Err(err) = active.finish().await {
             warn!(error = %err, "failed to finalize recorder");
         }
     }
-}
-
-fn format_payload_as_sse_frame(payload: &str) -> String {
-    let mut frame = String::new();
-    for line in payload.split('\n') {
-        frame.push_str("data: ");
-        frame.push_str(line);
-        frame.push('\n');
-    }
-    frame.push('\n');
-    frame
 }

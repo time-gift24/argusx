@@ -8,7 +8,10 @@ async fn recorder_writes_canonical_sse_and_sidecar() {
     let file = dir.path().join("capture.sse");
     let mut recorder = SseRecorder::create(file.clone(), true).await.unwrap();
 
-    recorder.write_frame("data: {\"id\":\"1\"}\n\n").await.unwrap();
+    recorder
+        .write_frame("data: {\"id\":\"1\"}\n\n")
+        .await
+        .unwrap();
     recorder.write_frame("data: [DONE]\n\n").await.unwrap();
     recorder.finish().await.unwrap();
 
