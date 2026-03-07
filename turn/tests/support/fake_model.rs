@@ -4,23 +4,30 @@ use argus_core::{FinishReason, ResponseEvent, ResponseStream, Usage};
 use async_trait::async_trait;
 use tokio::sync::{Mutex, mpsc};
 use tokio::task;
-use turn::{LlmRequestSnapshot, ModelRunner, TurnError};
+use turn::{LlmStepRequest, ModelRunner, TurnError};
 
 pub struct FakeModelRunner {
     invocations: Arc<Mutex<VecDeque<Vec<ResponseEvent>>>>,
+    received: Arc<Mutex<Vec<LlmStepRequest>>>,
 }
 
 impl FakeModelRunner {
     pub fn new(invocations: Vec<Vec<ResponseEvent>>) -> Self {
         Self {
             invocations: Arc::new(Mutex::new(invocations.into())),
+            received: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    pub async fn received_requests(&self) -> Vec<LlmStepRequest> {
+        self.received.lock().await.clone()
     }
 }
 
 #[async_trait]
 impl ModelRunner for FakeModelRunner {
-    async fn start(&self, _request: LlmRequestSnapshot) -> Result<ResponseStream, TurnError> {
+    async fn start(&self, request: LlmStepRequest) -> Result<ResponseStream, TurnError> {
+        self.received.lock().await.push(request);
         let (tx, rx) = mpsc::channel(4);
         let events = self
             .invocations
@@ -33,7 +40,6 @@ impl ModelRunner for FakeModelRunner {
                 tx.send(event).await.unwrap();
             }
         });
-
         Ok(ResponseStream::from_parts(rx, producer.abort_handle()))
     }
 }

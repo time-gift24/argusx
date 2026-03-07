@@ -12,7 +12,7 @@ use tokio::{
 };
 use tool::{ToolContext, ToolResult};
 use turn::{
-    LlmRequestSnapshot, ModelRunner, ToolOutcome, ToolRunner, TurnContext, TurnController,
+    LlmStepRequest, ModelRunner, ToolOutcome, ToolRunner, TurnContext, TurnController,
     TurnDriver, TurnError, TurnEvent, TurnFinishReason, TurnObserver,
 };
 
@@ -185,7 +185,7 @@ impl BlockingStartModelRunner {
 impl ModelRunner for BlockingStartModelRunner {
     async fn start(
         &self,
-        _request: LlmRequestSnapshot,
+        _request: LlmStepRequest,
     ) -> Result<argus_core::ResponseStream, TurnError> {
         self.release.notified().await;
 

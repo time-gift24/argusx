@@ -10,9 +10,9 @@ use tokio_util::sync::CancellationToken;
 use tool::{ToolContext, ToolResult};
 
 use crate::{
-    AuthorizationDecision, LlmRequestSnapshot, ModelRunner, PermissionDecision, StepFinishReason,
+    AuthorizationDecision, LlmStepRequest, ModelRunner, PermissionDecision, StepFinishReason,
     ToolAuthorizer, ToolOutcome, ToolRunner, TurnContext, TurnError, TurnEvent, TurnFailure,
-    TurnFinishReason, TurnHandle, TurnOptions, TurnState, TurnSummary,
+    TurnFinishReason, TurnHandle, TurnMessage, TurnOptions, TurnState, TurnSummary,
     state::{ActiveLlmStep, PendingPermissionCall, PermissionPause, ToolBatch},
 };
 
@@ -91,10 +91,14 @@ impl TurnDriver {
                 return Ok(());
             }
 
-            let request = LlmRequestSnapshot {
+            let request = LlmStepRequest {
                 session_id: self.context.session_id.clone(),
                 turn_id: self.context.turn_id.clone(),
-                input_text: self.context.user_message.clone(),
+                step_index,
+                messages: vec![TurnMessage::User {
+                    content: self.context.user_message.clone(),
+                }],
+                allow_tools: true,
             };
 
             let mut active_step = ActiveLlmStep {
