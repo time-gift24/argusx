@@ -171,6 +171,9 @@ describe("ChatPage", () => {
     const composerShell = container.querySelector(
       '[data-slot="chat-composer-shell"]'
     );
+    const scrollViewport = container.querySelector(
+      '[data-slot="chat-scroll-viewport"]'
+    );
     const scrollContent = container.querySelector(
       '[data-slot="chat-scroll-content"]'
     );
@@ -188,6 +191,7 @@ describe("ChatPage", () => {
     expect(composerShell).toHaveClass("max-w-3xl");
     expect(composerShell).toHaveClass("-translate-x-1/2");
     expect(composerShell).not.toHaveClass("inset-x-0");
+    expect(scrollViewport).toHaveClass("scrollbar-hide");
     expect(scrollContent).toHaveStyle({ paddingBottom: "220px" });
     expect(userBubble).toHaveClass("ml-auto");
     expect(userBubble).toHaveClass("bg-muted");
