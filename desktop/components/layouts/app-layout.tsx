@@ -33,6 +33,24 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 function RouteBreadcrumb({ pathname }: { pathname: string }) {
+  if (pathname === "/dev") {
+    return (
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link href="/">工作台</Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>Dev</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
+    );
+  }
+
   if (pathname !== "/sop/annotation") {
     return null;
   }

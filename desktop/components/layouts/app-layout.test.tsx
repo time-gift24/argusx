@@ -49,4 +49,22 @@ describe("AppLayout", () => {
       container.querySelector('[data-slot="main-scroll-region"]')
     ).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
   });
+
+  it("shows the Dev breadcrumb on the dev overview route", () => {
+    mockPathname = "/dev";
+
+    render(
+      <AppLayout>
+        <div>workspace</div>
+      </AppLayout>
+    );
+
+    expect(screen.getByText("工作台")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { current: "page", name: "Dev" })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("打开 SOP 页面导航")
+    ).not.toBeInTheDocument();
+  });
 });
