@@ -138,7 +138,7 @@ describe("ProviderSettingsDialog", () => {
     expect(screen.getByLabelText("Provider 类型")).toHaveValue("Z.ai");
     expect(screen.getByLabelText("名称")).toHaveValue("Z.ai");
     expect(screen.getByLabelText("Base URL")).toHaveValue(
-      "https://open.bigmodel.cn/api/coding/paas/v4/"
+      "https://open.bigmodel.cn/api/coding/paas/v4"
     );
     expect(screen.getByLabelText("Model")).toHaveValue("glm-5");
   });

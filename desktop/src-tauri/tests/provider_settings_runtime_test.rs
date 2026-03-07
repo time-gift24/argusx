@@ -46,7 +46,7 @@ fn provider_model_runner_supports_zai_profile_from_sqlite() {
             id: None,
             provider_kind: desktop_lib::provider_settings::ProviderKind::Zai,
             name: "Z.ai".into(),
-            base_url: "https://open.bigmodel.cn/api/coding/paas/v4/".into(),
+            base_url: "https://open.bigmodel.cn/api/coding/paas/v4".into(),
             model: "glm-5".into(),
             api_key: Some("sk-zai".into()),
             is_default: true,
