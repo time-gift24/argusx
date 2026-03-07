@@ -82,3 +82,19 @@ fn rejects_enabled_stdio_mcp_server_without_command() {
         Err(ConfigError::MissingMcpCommand(scope)) if scope == "mcp.server.filesystem"
     ));
 }
+
+#[test]
+fn accepts_git_as_valid_builtin_tool() {
+    let raw = r#"
+        [tools]
+        builtin_tools = ["read", "git"]
+
+        [tools.builtin.git]
+        max_concurrency = 2
+    "#;
+
+    let result = AgentToolConfig::parse_and_validate(raw);
+    assert!(result.is_ok());
+    let cfg = result.unwrap();
+    assert!(cfg.tools.builtin_tools.contains(&"git".to_string()));
+}
