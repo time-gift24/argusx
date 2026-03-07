@@ -12,4 +12,8 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt", "macros", "time"] }
 tokio-util = { workspace = true }
+tracing = { workspace = true }
 tool = { path = "../tool" }
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true }

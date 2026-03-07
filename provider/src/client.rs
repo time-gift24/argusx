@@ -1,13 +1,18 @@
-use crate::{Dialect, Error, ErrorKind, Mapper, ProviderConfig, Request, StreamError};
+use crate::{
+    Dialect, Error, ErrorKind, Mapper, ProviderConfig, ProviderStreamMode, ReplayReader, Request,
+    SseRecorder, StreamError,
+};
 use argus_core::{Error as CoreError, ResponseContract, ResponseEvent, ResponseStream};
 use bytes::Bytes;
 use eventsource_stream::{Event as SseMessage, EventStreamError, Eventsource};
-use futures::StreamExt;
 use futures::stream::{self, BoxStream};
+use futures::{Stream, StreamExt};
 use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::{Error as ReqwestError, Response};
 use std::collections::HashMap;
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::{Mutex, mpsc};
+use tracing::{Instrument, info, info_span, warn};
 
 type MessageStream = BoxStream<'static, Result<SseMessage, EventStreamError<ReqwestError>>>;
 
@@ -36,119 +41,157 @@ impl ProviderClient {
     }
 
     fn stream_dialect(&self, dialect: Dialect, request: Request) -> Result<ResponseStream, Error> {
+        let model = request.model.clone();
+        if let Some(ProviderStreamMode::Replay { file_path, timing }) =
+            self.config.dev.as_ref().map(|dev| &dev.stream_mode)
+        {
+            return self.stream_replay(dialect, model, file_path.clone(), *timing);
+        }
+
+        self.stream_live(dialect, model, request)
+    }
+
+    fn stream_live(
+        &self,
+        dialect: Dialect,
+        model: String,
+        request: Request,
+    ) -> Result<ResponseStream, Error> {
         let url = self.config.chat_completions_url();
         let http = self.http.clone();
         let api_key = self.config.api_key.clone();
         let headers = self.config.headers.clone();
+        let record_target = self
+            .config
+            .dev
+            .as_ref()
+            .and_then(|dev| dev.record_live_sse.clone());
+        let record_enabled = record_target.is_some();
         let request = request.normalized_for_send();
         let (tx, rx) = mpsc::channel(32);
+        let span = info_span!(
+            "provider.stream",
+            dialect = ?dialect,
+            mode = "live",
+            model = %model,
+            record_enabled
+        );
 
-        let producer = tokio::spawn(async move {
-            let response = match http
-                .post(url)
-                .header(reqwest::header::AUTHORIZATION, format!("Bearer {api_key}"))
-                .header(reqwest::header::CONTENT_TYPE, "application/json")
-                .header(reqwest::header::ACCEPT, "text/event-stream")
-                .headers(to_header_map(&headers))
-                .json(&request)
-                .send()
-                .await
-            {
-                Ok(response) => response,
-                Err(err) => {
-                    send_terminal_error(
-                        &tx,
-                        &mut ResponseContract::new(),
-                        StreamError {
-                            kind: ErrorKind::Transport,
-                            message: err.to_string(),
-                        },
-                    )
-                    .await;
-                    return;
-                }
-            };
-
-            let mut contract = ResponseContract::new();
-            let mut sse = match into_sse_message_stream(response).await {
-                Ok(sse) => sse,
-                Err(err) => {
-                    send_terminal_error(&tx, &mut contract, err).await;
-                    return;
-                }
-            };
-            let mut mapper = Mapper::new(dialect);
-
-            while let Some(item) = sse.next().await {
-                match item {
-                    Ok(message) => {
-                        if message.data == "[DONE]" {
-                            match mapper.on_done() {
-                                Ok(events) => {
-                                    if emit_events(&tx, &mut contract, events).await.is_err() {
-                                        return;
-                                    }
-                                }
-                                Err(err) => {
-                                    send_terminal_error(
-                                        &tx,
-                                        &mut contract,
-                                        StreamError {
-                                            kind: classify_mapper_error(&err),
-                                            message: err.to_string(),
-                                        },
-                                    )
-                                    .await;
-                                }
-                            }
-                            return;
-                        }
-
-                        match mapper.feed(&message.data) {
-                            Ok(events) => {
-                                if emit_events(&tx, &mut contract, events).await.is_err() {
-                                    return;
-                                }
-                            }
+        let producer = tokio::spawn(
+            async move {
+                info!("stream started");
+                let recorder = Arc::new(Mutex::new(match record_target {
+                    Some(target) => {
+                        match SseRecorder::create(target.file_path, target.write_timing_sidecar)
+                            .await
+                        {
+                            Ok(recorder) => Some(recorder),
                             Err(err) => {
-                                send_terminal_error(
-                                    &tx,
-                                    &mut contract,
-                                    StreamError {
-                                        kind: classify_mapper_error(&err),
-                                        message: err.to_string(),
-                                    },
-                                )
-                                .await;
-                                return;
+                                warn!(error = %err, "failed to create recorder");
+                                None
                             }
                         }
                     }
+                    None => None,
+                }));
+                let response = match http
+                    .post(url)
+                    .header(reqwest::header::AUTHORIZATION, format!("Bearer {api_key}"))
+                    .header(reqwest::header::CONTENT_TYPE, "application/json")
+                    .header(reqwest::header::ACCEPT, "text/event-stream")
+                    .headers(to_header_map(&headers))
+                    .json(&request)
+                    .send()
+                    .await
+                {
+                    Ok(response) => response,
                     Err(err) => {
                         send_terminal_error(
                             &tx,
-                            &mut contract,
                             StreamError {
-                                kind: classify_eventsource_error(&err),
+                                kind: ErrorKind::Transport,
                                 message: err.to_string(),
                             },
                         )
                         .await;
                         return;
                     }
-                }
-            }
+                };
 
-            send_terminal_error(
-                &tx,
-                &mut contract,
-                StreamError {
-                    kind: ErrorKind::Protocol,
-                    message: "stream ended before [DONE]".into(),
-                },
-            )
-            .await;
-        });
+                let sse = match into_sse_message_stream(response).await {
+                    Ok(sse) => sse,
+                    Err(err) => {
+                        send_terminal_error(&tx, err).await;
+                        return;
+                    }
+                };
+                let mut payloads = sse
+                    .then({
+                        let recorder = Arc::clone(&recorder);
+                        move |item| {
+                            let recorder = Arc::clone(&recorder);
+                            async move {
+                                match item {
+                                    Ok(message) => {
+                                        write_raw_frame_to_recorder(
+                                            &recorder,
+                                            message.raw.as_deref(),
+                                        )
+                                        .await;
+                                        Ok(message.data)
+                                    }
+                                    Err(err) => Err(StreamError {
+                                        kind: classify_eventsource_error(&err),
+                                        message: err.to_string(),
+                                    }),
+                                }
+                            }
+                        }
+                    })
+                    .boxed();
+                drive_payload_stream(&tx, dialect, &mut payloads).await;
+                drop(payloads);
+                finish_recorder(recorder).await;
+            }
+            .instrument(span),
+        );
+
+        Ok(ResponseStream::from_parts(rx, producer.abort_handle()))
+    }
+
+    fn stream_replay(
+        &self,
+        dialect: Dialect,
+        model: String,
+        file_path: std::path::PathBuf,
+        timing: crate::ReplayTiming,
+    ) -> Result<ResponseStream, Error> {
+        let prepared = crate::replay::prepare(file_path, timing)?;
+        let (tx, rx) = mpsc::channel(32);
+        let span = info_span!(
+            "provider.stream",
+            dialect = ?dialect,
+            mode = "replay",
+            model = %model,
+            record_enabled = false
+        );
+
+        let producer = tokio::spawn(
+            async move {
+                info!("stream started");
+                let replay = ReplayReader::from_prepared(prepared);
+                let mut payloads = replay
+                    .map(|item| item.map(Bytes::from))
+                    .eventsource()
+                    .map(|item| {
+                        item.map(|message| message.data)
+                            .map_err(map_replay_eventsource_error)
+                    })
+                    .boxed();
+                drive_payload_stream(&tx, dialect, &mut payloads).await;
+            }
+            .instrument(span),
+        );
 
         Ok(ResponseStream::from_parts(rx, producer.abort_handle()))
     }
@@ -173,11 +216,8 @@ async fn emit_events(
     Ok(())
 }
 
-async fn send_terminal_error(
-    tx: &mpsc::Sender<ResponseEvent>,
-    contract: &mut ResponseContract,
-    err: StreamError,
-) {
+async fn send_terminal_error(tx: &mpsc::Sender<ResponseEvent>, err: StreamError) {
+    let mut contract = ResponseContract::new();
     let event = ResponseEvent::Error(CoreError {
         message: format!("{:?}: {}", err.kind, err.message),
     });
@@ -185,6 +225,79 @@ async fn send_terminal_error(
     if contract.accept(&event).is_ok() {
         let _ = tx.send(event).await;
     }
+}
+
+async fn drive_payload_stream<S>(
+    tx: &mpsc::Sender<ResponseEvent>,
+    dialect: Dialect,
+    payloads: &mut S,
+) where
+    S: Stream<Item = Result<String, StreamError>> + Unpin,
+{
+    let mut contract = ResponseContract::new();
+    let mut mapper = Mapper::new(dialect);
+
+    while let Some(item) = payloads.next().await {
+        match item {
+            Ok(payload) => {
+                if payload == "[DONE]" {
+                    match mapper.on_done() {
+                        Ok(events) => {
+                            if emit_events(tx, &mut contract, events).await.is_err() {
+                                return;
+                            }
+                        }
+                        Err(err) => {
+                            warn!(error = %err, "stream failed during terminal mapping");
+                            send_terminal_error(
+                                tx,
+                                StreamError {
+                                    kind: classify_mapper_error(&err),
+                                    message: err.to_string(),
+                                },
+                            )
+                            .await;
+                            return;
+                        }
+                    }
+                    info!("stream completed");
+                    return;
+                }
+
+                match mapper.feed(&payload) {
+                    Ok(events) => {
+                        if emit_events(tx, &mut contract, events).await.is_err() {
+                            return;
+                        }
+                    }
+                    Err(err) => {
+                        send_terminal_error(
+                            tx,
+                            StreamError {
+                                kind: classify_mapper_error(&err),
+                                message: err.to_string(),
+                            },
+                        )
+                        .await;
+                        return;
+                    }
+                }
+            }
+            Err(err) => {
+                send_terminal_error(tx, err).await;
+                return;
+            }
+        }
+    }
+
+    send_terminal_error(
+        tx,
+        StreamError {
+            kind: ErrorKind::Protocol,
+            message: "stream ended before [DONE]".into(),
+        },
+    )
+    .await;
 }
 
 fn to_header_map(headers: &HashMap<String, String>) -> reqwest::header::HeaderMap {
@@ -272,5 +385,48 @@ fn classify_mapper_error(err: &Error) -> ErrorKind {
         Error::Openai(crate::dialect::openai::mapper::Error::Protocol(_))
         | Error::Zai(crate::dialect::zai::mapper::Error::Protocol(_)) => ErrorKind::Protocol,
         Error::Config(_) => ErrorKind::Protocol,
+    }
+}
+
+fn map_replay_eventsource_error(err: EventStreamError<StreamError>) -> StreamError {
+    match err {
+        EventStreamError::Utf8(err) => StreamError {
+            kind: ErrorKind::Parse,
+            message: format!("UTF8 error: {err}"),
+        },
+        EventStreamError::Parser(err) => StreamError {
+            kind: ErrorKind::Parse,
+            message: format!("Parse error: {err}"),
+        },
+        EventStreamError::Transport(err) => err,
+    }
+}
+
+async fn write_raw_frame_to_recorder(
+    recorder: &Arc<Mutex<Option<SseRecorder>>>,
+    raw_frame: Option<&str>,
+) {
+    let Some(raw_frame) = raw_frame else {
+        return;
+    };
+    let mut recorder = recorder.lock().await;
+    if let Some(active) = recorder.as_mut() {
+        if let Err(err) = active.write_frame(raw_frame).await {
+            warn!(error = %err, "failed to write recorder frame");
+            recorder.take();
+        }
+    }
+}
+
+async fn finish_recorder(recorder: Arc<Mutex<Option<SseRecorder>>>) {
+    let active = {
+        let mut recorder = recorder.lock().await;
+        recorder.take()
+    };
+
+    if let Some(mut active) = active {
+        if let Err(err) = active.finish().await {
+            warn!(error = %err, "failed to finalize recorder");
+        }
     }
 }

@@ -7,10 +7,12 @@ edition = "2024"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 reqwest = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
-tokio = { workspace = true, features = ["sync", "rt-multi-thread", "macros"] }
+async-stream = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt-multi-thread", "macros", "fs", "time", "io-util"] }
 eventsource_stream = { package = "eventsource-stream", path = "../vendor/eventsource_stream" }
 argus_core = { package = "core", path = "../core" }
 rpassword = "7"
@@ -20,5 +22,7 @@ name = "provider_cli"
 path = "src/bin/provider_cli.rs"
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["sync", "time"] }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time", "test-util"] }
+tracing-subscriber = { workspace = true }
 wiremock = { workspace = true }

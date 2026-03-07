@@ -8,6 +8,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tool::{ToolContext, ToolResult};
+use tracing::{Instrument, info, info_span};
 
 use crate::{
     AuthorizationDecision, FinalStepPolicy, LlmStepRequest, ModelRunner, PermissionDecision,
@@ -81,12 +82,18 @@ impl TurnDriver {
             transcript: TurnTranscript::new(),
             turn_start: Instant::now(),
         };
+        let span = info_span!(
+            "turn.run",
+            session_id = %driver.context.session_id,
+            turn_id = %driver.context.turn_id
+        );
 
-        let task = task::spawn(async move { driver.run().await });
+        let task = task::spawn(async move { driver.run().await }.instrument(span));
         (handle, task)
     }
 
     async fn run(mut self) -> Result<(), TurnError> {
+        info!("turn started");
         self.emit(TurnEvent::TurnStarted).await?;
         self.transcript.push(TurnMessage::User {
             content: self.context.user_message.clone(),
@@ -95,17 +102,14 @@ impl TurnDriver {
         let mut step_index: u32 = 0;
 
         loop {
-            // --- turn deadline ---
             if self.turn_start.elapsed() >= self.options.turn_deadline {
                 return self.finish(TurnFinishReason::LlmTimeout).await;
             }
 
-            // --- cancellation ---
             if self.consume_cancel_request()? {
                 return self.finish_cancelled().await;
             }
 
-            // --- step limit ---
             let allow_tools = match self.options.final_step_policy {
                 FinalStepPolicy::Fail => {
                     if step_index >= self.options.max_steps {
@@ -115,14 +119,12 @@ impl TurnDriver {
                 }
                 FinalStepPolicy::ForceText => {
                     if step_index > self.options.max_steps {
-                        // Hard ceiling: forced-text step returned tool calls — protocol error.
                         return self.finish(TurnFinishReason::MaxStepsExceeded).await;
                     }
                     step_index < self.options.max_steps
                 }
             };
 
-            // --- build request from transcript ---
             let request = LlmStepRequest {
                 session_id: self.context.session_id.clone(),
                 turn_id: self.context.turn_id.clone(),
@@ -131,7 +133,6 @@ impl TurnDriver {
                 allow_tools,
             };
 
-            // --- start model (with model_start_timeout) ---
             let mut active_step = ActiveLlmStep {
                 step_index,
                 tool_calls: Vec::new(),
@@ -156,7 +157,7 @@ impl TurnDriver {
                     ) => {
                         match result {
                             Ok(Ok(stream)) => break stream,
-                            Ok(Err(e)) => return Err(e),
+                            Ok(Err(err)) => return Err(err),
                             Err(_elapsed) => {
                                 return self.finish(TurnFinishReason::LlmTimeout).await;
                             }
@@ -165,7 +166,6 @@ impl TurnDriver {
                 }
             };
 
-            // --- stream (with stream_idle_timeout per event) ---
             let terminal_reason = loop {
                 tokio::select! {
                     biased;
@@ -210,10 +210,7 @@ impl TurnDriver {
                                     self.state = TurnState::Failed(TurnFailure {
                                         message: err.message.clone(),
                                     });
-                                    self.emit(TurnEvent::TurnFinished {
-                                        reason: TurnFinishReason::Failed,
-                                    })
-                                    .await?;
+                                    self.finish(TurnFinishReason::Failed).await?;
                                     return Err(TurnError::Runtime(err.message));
                                 }
                                 ResponseEvent::Created(_)
@@ -225,13 +222,10 @@ impl TurnDriver {
                     }
                 }
             };
+            info!(step_index, finish_reason = ?terminal_reason, "step finished");
 
-            // --- dispatch on terminal reason ---
             match terminal_reason {
                 FinishReason::Stop => {
-                    // Text deltas were emitted in real-time above but are not
-                    // buffered here. Buffering them into the transcript is a
-                    // follow-up item; the turn is semantically complete on Stop.
                     let summary = TurnSummary {
                         turn_id: self.context.turn_id.clone(),
                     };
@@ -248,7 +242,6 @@ impl TurnDriver {
                         return self.finish_cancelled().await;
                     }
 
-                    // Append assistant tool-call message to transcript.
                     self.transcript.push(TurnMessage::AssistantToolCalls {
                         content: None,
                         calls: active_step.tool_calls.clone(),
@@ -265,7 +258,6 @@ impl TurnDriver {
                         return Ok(());
                     }
 
-                    // Append tool results in original call order.
                     for (call, outcome) in active_step.tool_calls.iter().zip(outcomes.iter()) {
                         self.transcript.push(TurnMessage::ToolResult {
                             call_id: call_id_str(call),
@@ -291,6 +283,7 @@ impl TurnDriver {
     }
 
     async fn finish(&mut self, reason: TurnFinishReason) -> Result<(), TurnError> {
+        info!(reason = ?reason, "turn finished");
         self.emit(TurnEvent::TurnFinished { reason }).await
     }
 
@@ -305,7 +298,15 @@ impl TurnDriver {
     /// Execute all tool calls in the batch concurrently.
     ///
     /// Returns outcomes in the **same order as `batch.calls`**.
-    async fn execute_tool_batch(&mut self, batch: ToolBatch) -> Result<Vec<ToolOutcome>, TurnError> {
+    async fn execute_tool_batch(
+        &mut self,
+        batch: ToolBatch,
+    ) -> Result<Vec<ToolOutcome>, TurnError> {
+        info!(
+            step_index = batch.step_index,
+            tool_count = batch.calls.len(),
+            "tool batch prepared"
+        );
         let mut join_set = JoinSet::new();
         let mut pending_permissions = Vec::new();
         let mut outcome_map: HashMap<String, ToolOutcome> = HashMap::new();
@@ -328,6 +329,7 @@ impl TurnDriver {
                 }
                 AuthorizationDecision::Deny => {
                     let cid = call_id_str(call);
+                    info!(call_id = %cid, "tool call denied");
                     self.emit(TurnEvent::ToolCallCompleted {
                         call_id: cid.clone(),
                         result: ToolOutcome::Denied,
@@ -336,6 +338,11 @@ impl TurnDriver {
                     outcome_map.insert(cid, ToolOutcome::Denied);
                 }
                 AuthorizationDecision::Ask(request) => {
+                    info!(
+                        request_id = %request.request_id,
+                        tool_call_id = %request.tool_call_id,
+                        "tool permission requested"
+                    );
                     self.emit(TurnEvent::ToolCallPermissionRequested {
                         request: request.clone(),
                     })
@@ -378,9 +385,15 @@ impl TurnDriver {
                         crate::TurnCommand::ResolvePermission { request_id, decision } => {
                             if let Some(index) = pending_permissions
                                 .iter()
-                                .position(|p| p.request.request_id == request_id)
+                                .position(|pending| pending.request.request_id == request_id)
                             {
                                 let pending = pending_permissions.swap_remove(index);
+                                info!(
+                                    request_id = %request_id,
+                                    tool_call_id = %pending.request.tool_call_id,
+                                    decision = ?decision,
+                                    "tool permission resolved"
+                                );
                                 self.emit(TurnEvent::ToolCallPermissionResolved {
                                     request_id: request_id.clone(),
                                     decision: decision.clone(),
@@ -416,7 +429,8 @@ impl TurnDriver {
                 }
                 Some(result) = join_set.join_next(), if !join_set.is_empty() => {
                     let (cid, task_result) = result
-                        .map_err(|e| TurnError::Runtime(format!("tool task join failed: {e}")))?;
+                        .map_err(|err| TurnError::Runtime(format!("tool task join failed: {err}")))?;
+                    info!(call_id = %cid, "tool call completed");
                     let outcome = map_tool_result(task_result);
                     self.emit(TurnEvent::ToolCallCompleted {
                         call_id: cid.clone(),
@@ -439,7 +453,6 @@ impl TurnDriver {
         })
         .await?;
 
-        // Return outcomes in original call order.
         let ordered = batch
             .calls
             .iter()
@@ -482,10 +495,7 @@ impl TurnDriver {
         self.state = TurnState::Cancelled(TurnSummary {
             turn_id: self.context.turn_id.clone(),
         });
-        self.emit(TurnEvent::TurnFinished {
-            reason: TurnFinishReason::Cancelled,
-        })
-        .await
+        self.finish(TurnFinishReason::Cancelled).await
     }
 
     fn consume_cancel_request(&mut self) -> Result<bool, TurnError> {
@@ -504,10 +514,6 @@ impl TurnDriver {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Pure utility functions (no self)
-// ---------------------------------------------------------------------------
 
 fn call_id_str(call: &argus_core::ToolCall) -> String {
     match call {

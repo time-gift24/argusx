@@ -5,7 +5,7 @@ use alloc::string::{FromUtf8Error, String, ToString};
 use std::string::FromUtf8Error;
 
 use crate::event::Event;
-use crate::parser::{is_bom, is_lf, line, RawEventLine};
+use crate::parser::{RawEventLine, is_bom, is_lf, line};
 use crate::utf8_stream::{Utf8Stream, Utf8StreamError};
 use core::fmt;
 use core::pin::Pin;
@@ -19,6 +19,7 @@ use pin_project_lite::pin_project;
 struct EventBuilder {
     event: Event,
     is_complete: bool,
+    raw: String,
 }
 
 impl EventBuilder {
@@ -95,6 +96,7 @@ impl EventBuilder {
     fn dispatch(&mut self) -> Option<Event> {
         let builder = core::mem::take(self);
         let mut event = builder.event;
+        event.raw = (!builder.raw.is_empty()).then_some(builder.raw);
         self.event.id = event.id.clone();
 
         if event.data.is_empty() {
@@ -217,8 +219,9 @@ fn parse_event<E>(
     loop {
         match line(buffer.as_ref()) {
             Ok((rem, next_line)) => {
-                builder.add(next_line);
                 let consumed = buffer.len() - rem.len();
+                builder.raw.push_str(&buffer[..consumed]);
+                builder.add(next_line);
                 let rem = buffer.split_off(consumed);
                 *buffer = rem;
                 if builder.is_complete {
@@ -305,11 +308,7 @@ mod tests {
         let mut buffer = "data: Hello, world!\n\n".to_string();
         let mut builder = EventBuilder::default();
 
-        let event = parse_event::<()>(
-            &mut buffer,
-            &mut builder,
-        )
-        .expect("parse should succeed");
+        let event = parse_event::<()>(&mut buffer, &mut builder).expect("parse should succeed");
 
         assert_eq!(
             event,
@@ -320,6 +319,24 @@ mod tests {
             })
         );
         assert_eq!(buffer, "");
+    }
+
+    #[test]
+    fn default_event_has_no_raw_frame() {
+        assert!(Event::default().raw.is_none());
+    }
+
+    #[test]
+    fn parse_event_captures_raw_frame_text() {
+        let mut buffer = "id: evt-1\ndata: Hello, world!\n\n".to_string();
+        let mut builder = EventBuilder::default();
+
+        let event = parse_event::<()>(&mut buffer, &mut builder).expect("parse should succeed");
+
+        assert_eq!(
+            event.and_then(|event| event.raw),
+            Some("id: evt-1\ndata: Hello, world!\n\n".to_string())
+        );
     }
 
     #[test]
