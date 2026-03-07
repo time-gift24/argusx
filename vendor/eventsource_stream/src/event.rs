@@ -14,8 +14,8 @@ pub struct Event {
     pub id: String,
     /// Retry duration if given
     pub retry: Option<Duration>,
-    /// The raw SSE frame text that produced this event.
-    pub raw: String,
+    /// The raw SSE frame text that produced this event, when raw capture is enabled.
+    pub raw: Option<String>,
 }
 
 impl PartialEq for Event {

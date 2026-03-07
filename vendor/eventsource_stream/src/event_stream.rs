@@ -96,7 +96,7 @@ impl EventBuilder {
     fn dispatch(&mut self) -> Option<Event> {
         let builder = core::mem::take(self);
         let mut event = builder.event;
-        event.raw = builder.raw;
+        event.raw = (!builder.raw.is_empty()).then_some(builder.raw);
         self.event.id = event.id.clone();
 
         if event.data.is_empty() {
@@ -319,6 +319,24 @@ mod tests {
             })
         );
         assert_eq!(buffer, "");
+    }
+
+    #[test]
+    fn default_event_has_no_raw_frame() {
+        assert!(Event::default().raw.is_none());
+    }
+
+    #[test]
+    fn parse_event_captures_raw_frame_text() {
+        let mut buffer = "id: evt-1\ndata: Hello, world!\n\n".to_string();
+        let mut builder = EventBuilder::default();
+
+        let event = parse_event::<()>(&mut buffer, &mut builder).expect("parse should succeed");
+
+        assert_eq!(
+            event.and_then(|event| event.raw),
+            Some("id: evt-1\ndata: Hello, world!\n\n".to_string())
+        );
     }
 
     #[test]

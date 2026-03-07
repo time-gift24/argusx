@@ -133,7 +133,11 @@ impl ProviderClient {
                             async move {
                                 match item {
                                     Ok(message) => {
-                                        write_raw_frame_to_recorder(&recorder, &message.raw).await;
+                                        write_raw_frame_to_recorder(
+                                            &recorder,
+                                            message.raw.as_deref(),
+                                        )
+                                        .await;
                                         Ok(message.data)
                                     }
                                     Err(err) => Err(StreamError {
@@ -398,7 +402,13 @@ fn map_replay_eventsource_error(err: EventStreamError<StreamError>) -> StreamErr
     }
 }
 
-async fn write_raw_frame_to_recorder(recorder: &Arc<Mutex<Option<SseRecorder>>>, raw_frame: &str) {
+async fn write_raw_frame_to_recorder(
+    recorder: &Arc<Mutex<Option<SseRecorder>>>,
+    raw_frame: Option<&str>,
+) {
+    let Some(raw_frame) = raw_frame else {
+        return;
+    };
     let mut recorder = recorder.lock().await;
     if let Some(active) = recorder.as_mut() {
         if let Err(err) = active.write_frame(raw_frame).await {
