@@ -102,13 +102,19 @@
 .ai-streamdown [data-streamdown="code-block"],
 .ai-streamdown [data-streamdown="mermaid-block"] {
   margin-block: 0.25rem;
-  background: var(--background);
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.ai-streamdown [data-streamdown="code-block-header"] span {
+  margin-left: 0;
 }
 
 .ai-streamdown [data-streamdown="code-block-body"] {
   border: 0;
   background: transparent;
-  padding: 0.375rem 0.625rem 0.375rem 0.625rem;
+  padding: 0.375rem 0 0.375rem 0;
 }
 
 .ai-streamdown [data-streamdown="code-block-body"] pre,
@@ -116,6 +122,26 @@
   background: transparent !important;
   font-size: 10px;
   line-height: 12px;
+}
+
+.ai-streamdown [data-streamdown="code-block-body"] pre {
+  margin: 0;
+  padding: 0 !important;
+}
+
+.ai-streamdown [data-streamdown="code-block-body"] pre > code,
+.ai-streamdown [data-streamdown="code-block-body"] code {
+  padding: 0 !important;
+}
+
+.ai-streamdown [data-streamdown="code-block-body"] pre > code > span::before,
+.ai-streamdown [data-streamdown="code-block-body"] code > span::before {
+  font-size: 10px !important;
+  line-height: 12px !important;
+  width: 1.25rem !important;
+  margin-right: 0.5rem !important;
+  text-align: left !important;
+  padding: 0 !important;
 }
 
 .ai-streamdown [data-streamdown="code-block-body"] [style*="background-color"] {
@@ -161,6 +187,19 @@
 
 .ai-streamdown [data-streamdown="mermaid"] {
   width: 100%;
+}
+
+.ai-streamdown [data-streamdown="mermaid"] [role="img"] {
+  justify-content: flex-start;
+}
+
+.ai-streamdown [data-streamdown="mermaid-block"] > div:first-child > span {
+  margin-left: 0;
+}
+
+.ai-streamdown [data-streamdown="mermaid-block"] > div:last-child {
+  border: 0;
+  background: transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {
