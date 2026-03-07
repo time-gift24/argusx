@@ -5,7 +5,7 @@ use tool::builtin::git::guard::GitGuard;
 
 fn setup_repo() -> (TempDir, Repository) {
     let temp = tempfile::tempdir().unwrap();
-    let repo = Repository::init(&temp.path()).unwrap();
+    let repo = Repository::init(temp.path()).unwrap();
 
     // Configure identity for commits
     let mut config = repo.config().unwrap();
@@ -23,14 +23,8 @@ fn setup_repo() -> (TempDir, Repository) {
     drop(index);
 
     let tree = repo.find_tree(tree_id).unwrap();
-    repo.commit(
-        Some("HEAD"),
-        &sig,
-        &sig,
-        "Initial commit\n",
-        &tree,
-        &[],
-    ).unwrap();
+    repo.commit(Some("HEAD"), &sig, &sig, "Initial commit\n", &tree, &[])
+        .unwrap();
 
     // Drop tree before returning
     drop(tree);
@@ -50,7 +44,7 @@ async fn authorize_repo_accepts_normal_repo() {
 #[tokio::test]
 async fn authorize_repo_accepts_bare_repo() {
     let temp = tempfile::tempdir().unwrap();
-    let _repo = Repository::init_bare(&temp.path()).unwrap();
+    let _repo = Repository::init_bare(temp.path()).unwrap();
 
     let guard = GitGuard::new(vec![temp.path().to_path_buf()]).unwrap();
     let result = guard.authorize_repo(temp.path().to_str().unwrap()).await;
@@ -63,7 +57,9 @@ async fn authorize_clone_target_rejects_non_empty_dir() {
     std::fs::write(temp.path().join("existing.txt"), b"data\n").unwrap();
 
     let guard = GitGuard::new(vec![temp.path().to_path_buf()]).unwrap();
-    let result = guard.authorize_clone_target(temp.path().to_str().unwrap()).await;
+    let result = guard
+        .authorize_clone_target(temp.path().to_str().unwrap())
+        .await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -75,7 +71,9 @@ async fn authorize_clone_target_accepts_empty_dir() {
     let temp = tempfile::tempdir().unwrap();
 
     let guard = GitGuard::new(vec![temp.path().to_path_buf()]).unwrap();
-    let result = guard.authorize_clone_target(temp.path().to_str().unwrap()).await;
+    let result = guard
+        .authorize_clone_target(temp.path().to_str().unwrap())
+        .await;
 
     assert!(result.is_ok());
 }
@@ -86,7 +84,9 @@ async fn authorize_clone_target_accepts_nonexistent_path() {
     let new_path = temp.path().join("new_repo");
 
     let guard = GitGuard::new(vec![temp.path().to_path_buf()]).unwrap();
-    let result = guard.authorize_clone_target(new_path.to_str().unwrap()).await;
+    let result = guard
+        .authorize_clone_target(new_path.to_str().unwrap())
+        .await;
 
     assert!(result.is_ok());
 }
@@ -120,7 +120,8 @@ fn validate_repo_relative_paths_accepts_valid_relative() {
     let (temp, repo) = setup_repo();
     let guard = GitGuard::new(vec![temp.path().to_path_buf()]).unwrap();
 
-    let result = guard.validate_repo_relative_paths(&repo, &["src/main.rs".to_string(), "README.md".to_string()]);
+    let result = guard
+        .validate_repo_relative_paths(&repo, &["src/main.rs".to_string(), "README.md".to_string()]);
 
     assert!(result.is_ok());
     let paths = result.unwrap();
@@ -137,6 +138,8 @@ async fn authorize_repo_rejects_outside_allowed_roots() {
     // Guard only allows temp.path(), not other_temp.path()
     let guard = GitGuard::new(vec![temp.path().to_path_buf()]).unwrap();
 
-    let result = guard.authorize_repo(other_temp.path().to_str().unwrap()).await;
+    let result = guard
+        .authorize_repo(other_temp.path().to_str().unwrap())
+        .await;
     assert!(result.is_err());
 }

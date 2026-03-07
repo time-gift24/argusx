@@ -1,54 +1,79 @@
 use super::error::GitError;
-use super::types::GitArgs;
 use super::guard::GitGuard;
+use super::types::GitArgs;
 use crate::context::ToolResult;
-use git2::{Repository, StatusOptions, BranchType, ErrorCode};
+use git2::{BranchType, ErrorCode, Repository, StatusOptions};
 use serde_json::json;
 
-pub async fn execute(
-    guard: &GitGuard,
-    args: GitArgs,
-) -> Result<ToolResult, GitError> {
+pub async fn execute(guard: &GitGuard, args: GitArgs) -> Result<ToolResult, GitError> {
     match args {
-        GitArgs::Status { repo_path, include_untracked } => {
-            status(guard, &repo_path, include_untracked).await
+        GitArgs::Status {
+            repo_path,
+            include_untracked,
+        } => status(guard, &repo_path, include_untracked).await,
+        GitArgs::Diff {
+            repo_path,
+            staged,
+            revision_range,
+            paths,
+            max_bytes,
+        } => {
+            diff(
+                guard,
+                &repo_path,
+                staged,
+                revision_range.as_deref(),
+                &paths,
+                max_bytes,
+            )
+            .await
         }
-        GitArgs::Diff { repo_path, staged, revision_range, paths, max_bytes } => {
-            diff(guard, &repo_path, staged, revision_range.as_deref(), &paths, max_bytes).await
+        GitArgs::Log {
+            repo_path,
+            max_count,
+            revision_range,
+            oneline,
+        } => {
+            log(
+                guard,
+                &repo_path,
+                max_count,
+                revision_range.as_deref(),
+                oneline,
+            )
+            .await
         }
-        GitArgs::Log { repo_path, max_count, revision_range, oneline } => {
-            log(guard, &repo_path, max_count, revision_range.as_deref(), oneline).await
-        }
-        GitArgs::Show { repo_path, object, max_bytes } => {
-            show(guard, &repo_path, &object, max_bytes).await
-        }
-        GitArgs::BranchList { repo_path } => {
-            branch_list(guard, &repo_path).await
-        }
-        GitArgs::RemoteList { repo_path } => {
-            remote_list(guard, &repo_path).await
-        }
-        GitArgs::WorktreeList { repo_path } => {
-            worktree_list(guard, &repo_path).await
-        }
-        GitArgs::Add { repo_path, paths } => {
-            add(guard, &repo_path, &paths).await
-        }
-        GitArgs::Commit { repo_path, message, allow_empty } => {
-            commit(guard, &repo_path, &message, allow_empty).await
-        }
-        GitArgs::BranchCreate { repo_path, branch, start_point, checkout } => {
-            branch_create(guard, &repo_path, &branch, start_point.as_deref(), checkout).await
-        }
-        GitArgs::Checkout { repo_path, branch } => {
-            checkout(guard, &repo_path, &branch).await
-        }
-        GitArgs::Clone { url, target_path, branch } => {
-            clone(guard, &url, &target_path, branch.as_deref()).await
-        }
-        GitArgs::Fetch { repo_path, remote, prune } => {
-            fetch(guard, &repo_path, &remote, prune).await
-        }
+        GitArgs::Show {
+            repo_path,
+            object,
+            max_bytes,
+        } => show(guard, &repo_path, &object, max_bytes).await,
+        GitArgs::BranchList { repo_path } => branch_list(guard, &repo_path).await,
+        GitArgs::RemoteList { repo_path } => remote_list(guard, &repo_path).await,
+        GitArgs::WorktreeList { repo_path } => worktree_list(guard, &repo_path).await,
+        GitArgs::Add { repo_path, paths } => add(guard, &repo_path, &paths).await,
+        GitArgs::Commit {
+            repo_path,
+            message,
+            allow_empty,
+        } => commit(guard, &repo_path, &message, allow_empty).await,
+        GitArgs::BranchCreate {
+            repo_path,
+            branch,
+            start_point,
+            checkout,
+        } => branch_create(guard, &repo_path, &branch, start_point.as_deref(), checkout).await,
+        GitArgs::Checkout { repo_path, branch } => checkout(guard, &repo_path, &branch).await,
+        GitArgs::Clone {
+            url,
+            target_path,
+            branch,
+        } => clone(guard, &url, &target_path, branch.as_deref()).await,
+        GitArgs::Fetch {
+            repo_path,
+            remote,
+            prune,
+        } => fetch(guard, &repo_path, &remote, prune).await,
     }
 }
 
@@ -123,10 +148,7 @@ async fn status(
 // Branch List Action
 // ============================================================================
 
-async fn branch_list(
-    guard: &GitGuard,
-    repo_path: &str,
-) -> Result<ToolResult, GitError> {
+async fn branch_list(guard: &GitGuard, repo_path: &str) -> Result<ToolResult, GitError> {
     let (path, repo) = guard.authorize_repo(repo_path).await?;
 
     let mut branches = Vec::new();
@@ -173,25 +195,18 @@ async fn branch_list(
 // Remote List Action
 // ============================================================================
 
-async fn remote_list(
-    guard: &GitGuard,
-    repo_path: &str,
-) -> Result<ToolResult, GitError> {
+async fn remote_list(guard: &GitGuard, repo_path: &str) -> Result<ToolResult, GitError> {
     let (path, repo) = guard.authorize_repo(repo_path).await?;
 
     let mut remotes = Vec::new();
 
-    for remote_name in repo.remotes()?.iter() {
-        if let Some(name) = remote_name {
-            let url = repo.find_remote(name)?
-                .url()
-                .map(|s| s.to_string());
+    for name in repo.remotes()?.iter().flatten() {
+        let url = repo.find_remote(name)?.url().map(|s| s.to_string());
 
-            remotes.push(json!({
-                "name": name,
-                "url": url
-            }));
-        }
+        remotes.push(json!({
+            "name": name,
+            "url": url
+        }));
     }
 
     Ok(ToolResult::ok(json!({
@@ -208,10 +223,7 @@ async fn remote_list(
 // Worktree List Action
 // ============================================================================
 
-async fn worktree_list(
-    guard: &GitGuard,
-    repo_path: &str,
-) -> Result<ToolResult, GitError> {
+async fn worktree_list(guard: &GitGuard, repo_path: &str) -> Result<ToolResult, GitError> {
     let (path, repo) = guard.authorize_repo(repo_path).await?;
 
     let mut worktrees = Vec::new();
@@ -230,17 +242,15 @@ async fn worktree_list(
     // List linked worktrees
     match repo.worktrees() {
         Ok(wts) => {
-            for wt_name in wts.iter() {
-                if let Some(name) = wt_name {
-                    if let Ok(wt) = repo.find_worktree(name) {
-                        let wt_path = wt.path().to_string_lossy().to_string();
-                        worktrees.push(json!({
-                            "path": wt_path,
-                            "is_main": false,
-                            "head": name,
-                            "branch": name
-                        }));
-                    }
+            for name in wts.iter().flatten() {
+                if let Ok(wt) = repo.find_worktree(name) {
+                    let wt_path = wt.path().to_string_lossy().to_string();
+                    worktrees.push(json!({
+                        "path": wt_path,
+                        "is_main": false,
+                        "head": name,
+                        "branch": name
+                    }));
                 }
             }
         }
@@ -270,10 +280,8 @@ fn get_current_branch(repo: &Repository) -> Result<Option<String>, GitError> {
     if let Some(head_ref) = head {
         let is_detached = head_ref.target().is_some() && head_ref.shorthand().is_none();
 
-        if is_detached {
-            if let Some(target) = head_ref.target() {
-                return Ok(Some(format!("detached at {}", target)));
-            }
+        if is_detached && let Some(target) = head_ref.target() {
+            return Ok(Some(format!("detached at {}", target)));
         }
 
         Ok(head_ref.shorthand().map(|s| s.to_string()))
@@ -301,7 +309,8 @@ async fn diff(
 
     let diff = if staged {
         // Diff between HEAD and index (staged changes)
-        let head_tree = repo.head()
+        let head_tree = repo
+            .head()
             .ok()
             .and_then(|h| h.target())
             .and_then(|oid| repo.find_commit(oid).ok())
@@ -311,15 +320,15 @@ async fn diff(
             Some(t) => t,
             None => {
                 // Empty tree for initial commit
-                let empty_tree = repo.find_tree(repo.treebuilder(None)?.write()?)?;
-                empty_tree
+                repo.find_tree(repo.treebuilder(None)?.write()?)?
             }
         };
 
         repo.diff_tree_to_index(Some(&head_tree), None, Some(&mut diff_opts))?
     } else {
         // Diff between HEAD tree and workdir (all changes including unstaged)
-        let head_tree = repo.head()
+        let head_tree = repo
+            .head()
             .ok()
             .and_then(|h| h.target())
             .and_then(|oid| repo.find_commit(oid).ok())
@@ -352,7 +361,8 @@ async fn diff(
 
     // Get stats
     let stats = diff.stats()?;
-    let (files_changed, insertions, deletions) = (stats.files_changed(), stats.insertions(), stats.deletions());
+    let (files_changed, insertions, deletions) =
+        (stats.files_changed(), stats.insertions(), stats.deletions());
 
     // Truncate if needed
     let (patch, truncated) = truncate_string(patch, max_bytes);
@@ -383,15 +393,14 @@ async fn log(
     let (path, repo) = guard.authorize_repo(repo_path).await?;
 
     // Cap max_count at 200
-    let max_count = max_count.min(200).max(1);
+    let max_count = max_count.clamp(1, 200);
 
     let mut commits = Vec::new();
     let mut revwalk = repo.revwalk()?;
     revwalk.push_head()?;
     revwalk.set_sorting(git2::Sort::TIME)?;
 
-    let mut count = 0;
-    for oid_result in revwalk {
+    for (count, oid_result) in revwalk.enumerate() {
         if count >= max_count {
             break;
         }
@@ -414,9 +423,7 @@ async fn log(
                 "time": commit.time().seconds()
             })
         };
-
         commits.push(entry);
-        count += 1;
     }
 
     Ok(ToolResult::ok(json!({
@@ -456,7 +463,8 @@ async fn show(
         let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
 
         let mut diff_opts = git2::DiffOptions::new();
-        let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(tree), Some(&mut diff_opts))?;
+        let diff =
+            repo.diff_tree_to_tree(parent_tree.as_ref(), Some(tree), Some(&mut diff_opts))?;
 
         diff.print(git2::DiffFormat::Patch, |_, _, line| {
             match line.origin() {
@@ -530,11 +538,7 @@ fn truncate_string(input: String, max_bytes: usize) -> (String, bool) {
 // Write Actions (Task 7)
 // ============================================================================
 
-async fn add(
-    guard: &GitGuard,
-    repo_path: &str,
-    paths: &[String],
-) -> Result<ToolResult, GitError> {
+async fn add(guard: &GitGuard, repo_path: &str, paths: &[String]) -> Result<ToolResult, GitError> {
     let (path, repo) = guard.authorize_repo(repo_path).await?;
     let validated_paths = guard.validate_repo_relative_paths(&repo, paths)?;
 
@@ -580,7 +584,8 @@ async fn commit(
     let (path, repo) = guard.authorize_repo(repo_path).await?;
 
     // Get signature
-    let sig = repo.signature()
+    let sig = repo
+        .signature()
         .map_err(|e| GitError::IdentityMissing(e.to_string()))?;
 
     // Get index tree
@@ -590,34 +595,28 @@ async fn commit(
 
     // Get parent commits
     let mut parents = Vec::new();
-    if let Ok(head) = repo.head() {
-        if let Some(oid) = head.target() {
-            if let Ok(parent) = repo.find_commit(oid) {
-                parents.push(parent);
-            }
-        }
+    if let Ok(head) = repo.head()
+        && let Some(oid) = head.target()
+        && let Ok(parent) = repo.find_commit(oid)
+    {
+        parents.push(parent);
     }
 
     // Check if there are changes to commit
     if !allow_empty {
-        let head_tree = parents.get(0).map(|p| p.tree()).transpose()?;
+        let head_tree = parents.first().map(|p| p.tree()).transpose()?;
         let diff = repo.diff_tree_to_tree(head_tree.as_ref(), Some(&tree), None)?;
 
         if diff.deltas().len() == 0 {
-            return Err(GitError::NothingToCommit("no changes to commit".to_string()));
+            return Err(GitError::NothingToCommit(
+                "no changes to commit".to_string(),
+            ));
         }
     }
 
     // Create commit
     let parent_refs: Vec<_> = parents.iter().collect();
-    let commit_id = repo.commit(
-        Some("HEAD"),
-        &sig,
-        &sig,
-        message,
-        &tree,
-        &parent_refs
-    )?;
+    let commit_id = repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parent_refs)?;
 
     let summary = message.lines().next().unwrap_or("");
 
@@ -652,13 +651,12 @@ async fn branch_create(
             let obj = repo.revparse_single(sp)?;
             obj.peel_to_commit()?
         }
-        None => {
-            repo.head()
-                .ok()
-                .and_then(|h| h.target())
-                .and_then(|oid| repo.find_commit(oid).ok())
-                .ok_or_else(|| GitError::OperationFailed("no HEAD commit".to_string()))?
-        }
+        None => repo
+            .head()
+            .ok()
+            .and_then(|h| h.target())
+            .and_then(|oid| repo.find_commit(oid).ok())
+            .ok_or_else(|| GitError::OperationFailed("no HEAD commit".to_string()))?,
     };
 
     // Create branch (force = false)
@@ -688,15 +686,12 @@ async fn branch_create(
     })))
 }
 
-async fn checkout(
-    guard: &GitGuard,
-    repo_path: &str,
-    branch: &str,
-) -> Result<ToolResult, GitError> {
+async fn checkout(guard: &GitGuard, repo_path: &str, branch: &str) -> Result<ToolResult, GitError> {
     let (path, repo) = guard.authorize_repo(repo_path).await?;
 
     // Check for uncommitted changes
-    let head_tree = repo.head()
+    let head_tree = repo
+        .head()
         .ok()
         .and_then(|h| h.target())
         .and_then(|oid| repo.find_commit(oid).ok())
@@ -706,7 +701,9 @@ async fn checkout(
     let diff = repo.diff_tree_to_workdir(head_tree.as_ref(), Some(&mut diff_opts))?;
 
     if diff.deltas().count() > 0 {
-        return Err(GitError::DirtyWorktree("uncommitted changes, please commit or stash first".to_string()));
+        return Err(GitError::DirtyWorktree(
+            "uncommitted changes, please commit or stash first".to_string(),
+        ));
     }
 
     // Find the branch
@@ -751,12 +748,14 @@ async fn clone(
     }
 
     // Perform clone
-    let repo = builder.clone(url, &path)
+    let repo = builder
+        .clone(url, &path)
         .map_err(|e| GitError::OperationFailed(format!("clone failed: {}", e)))?;
 
     // Get head info
     let head = get_current_branch(&repo)?;
-    let remote_name = repo.remotes()
+    let remote_name = repo
+        .remotes()
         .ok()
         .and_then(|r| r.get(0).map(|s| s.to_string()));
 
@@ -781,7 +780,8 @@ async fn fetch(
     let (path, repo) = guard.authorize_repo(repo_path).await?;
 
     // Get the remote
-    let mut remote = repo.find_remote(remote)
+    let mut remote = repo
+        .find_remote(remote)
         .map_err(|e| GitError::OperationFailed(format!("remote '{}' not found: {}", remote, e)))?;
 
     // Build fetch options
@@ -793,7 +793,8 @@ async fn fetch(
     }
 
     // Perform fetch
-    remote.fetch(&[] as &[&str], Some(&mut fetch_opts), None)
+    remote
+        .fetch(&[] as &[&str], Some(&mut fetch_opts), None)
         .map_err(|e| GitError::OperationFailed(format!("fetch failed: {}", e)))?;
 
     // Get fetch result info

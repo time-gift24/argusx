@@ -2,8 +2,10 @@ use telemetry::{BatchEnqueueResult, BatchQueue, EventPriority, TelemetryConfig, 
 
 #[tokio::test]
 async fn low_priority_events_are_dropped_when_queue_is_full() {
-    let mut config = TelemetryConfig::default();
-    config.max_in_memory_events = 1;
+    let config = TelemetryConfig {
+        max_in_memory_events: 1,
+        ..TelemetryConfig::default()
+    };
     let mut queue = BatchQueue::new(config);
 
     let first = TelemetryRecord::builder("step_started", EventPriority::Low).build();
@@ -18,8 +20,10 @@ async fn low_priority_events_are_dropped_when_queue_is_full() {
 
 #[tokio::test]
 async fn high_priority_batch_requests_flush_at_batch_size() {
-    let mut config = TelemetryConfig::default();
-    config.high_priority_batch_size = 2;
+    let config = TelemetryConfig {
+        high_priority_batch_size: 2,
+        ..TelemetryConfig::default()
+    };
     let mut queue = BatchQueue::new(config);
 
     assert!(matches!(
@@ -38,8 +42,10 @@ async fn high_priority_batch_requests_flush_at_batch_size() {
 
 #[tokio::test]
 async fn high_priority_events_do_not_overflow_a_full_high_priority_queue() {
-    let mut config = TelemetryConfig::default();
-    config.max_in_memory_events = 1;
+    let config = TelemetryConfig {
+        max_in_memory_events: 1,
+        ..TelemetryConfig::default()
+    };
     let mut queue = BatchQueue::new(config);
 
     assert!(matches!(

@@ -2,12 +2,12 @@ use git2::{Repository, Signature};
 use serde_json::json;
 use std::path::Path;
 use tempfile::TempDir;
-use tool::{GitTool, Tool, ToolContext};
 use tokio_util::sync::CancellationToken;
+use tool::{GitTool, Tool, ToolContext};
 
 fn create_repo_for_writes() -> (TempDir, Repository) {
     let temp = tempfile::tempdir().unwrap();
-    let repo = Repository::init(&temp.path()).unwrap();
+    let repo = Repository::init(temp.path()).unwrap();
 
     let mut config = repo.config().unwrap();
     config.set_str("user.name", "Test User").unwrap();
@@ -23,7 +23,9 @@ fn create_repo_for_writes() -> (TempDir, Repository) {
     drop(index);
 
     let tree = repo.find_tree(tree_id).unwrap();
-    let _commit = repo.commit(Some("HEAD"), &sig, &sig, "Initial commit\n", &tree, &[]).unwrap();
+    let _commit = repo
+        .commit(Some("HEAD"), &sig, &sig, "Initial commit\n", &tree, &[])
+        .unwrap();
     drop(tree);
 
     (temp, repo)
@@ -188,9 +190,8 @@ async fn checkout_rejects_dirty_worktree() {
         .await;
 
     // Should return an error (Err or Ok with is_error=true)
-    match result {
-        Ok(r) => assert!(r.is_error, "expected error for dirty worktree"),
-        Err(_) => {} // Error is also acceptable
+    if let Ok(r) = result {
+        assert!(r.is_error, "expected error for dirty worktree");
     }
 }
 
@@ -198,7 +199,7 @@ async fn checkout_rejects_dirty_worktree() {
 async fn clone_creates_local_copy() {
     // Create source repo
     let source_temp = tempfile::tempdir().unwrap();
-    let source_repo = Repository::init(&source_temp.path()).unwrap();
+    let source_repo = Repository::init(source_temp.path()).unwrap();
     let mut config = source_repo.config().unwrap();
     config.set_str("user.name", "Test User").unwrap();
     config.set_str("user.email", "test@example.com").unwrap();
@@ -212,7 +213,9 @@ async fn clone_creates_local_copy() {
     let tree_id = index.write_tree().unwrap();
     drop(index);
     let tree = source_repo.find_tree(tree_id).unwrap();
-    source_repo.commit(Some("HEAD"), &sig, &sig, "Initial\n", &tree, &[]).unwrap();
+    source_repo
+        .commit(Some("HEAD"), &sig, &sig, "Initial\n", &tree, &[])
+        .unwrap();
     drop(tree);
 
     // Clone target
@@ -260,7 +263,9 @@ async fn fetch_updates_from_remote() {
     let tree = source_repo.find_tree(tree_id).unwrap();
     let head = source_repo.head().unwrap().target().unwrap();
     let parent = source_repo.find_commit(head).unwrap();
-    source_repo.commit(Some("HEAD"), &sig, &sig, "Add new\n", &tree, &[&parent]).unwrap();
+    source_repo
+        .commit(Some("HEAD"), &sig, &sig, "Add new\n", &tree, &[&parent])
+        .unwrap();
 
     let tool = GitTool::new(vec![target_temp.path().to_path_buf()]).unwrap();
 

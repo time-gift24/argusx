@@ -13,12 +13,14 @@ async fn runtime_flushes_high_priority_records_on_shutdown() {
         .mount(&server)
         .await;
 
-    let mut config = TelemetryConfig::default();
-    config.clickhouse_url = server.uri();
-    config.high_priority_batch_size = 100;
-    config.low_priority_batch_size = 100;
-    config.high_priority_flush_interval_ms = 60_000;
-    config.low_priority_flush_interval_ms = 60_000;
+    let config = TelemetryConfig {
+        clickhouse_url: server.uri(),
+        high_priority_batch_size: 100,
+        low_priority_batch_size: 100,
+        high_priority_flush_interval_ms: 60_000,
+        low_priority_flush_interval_ms: 60_000,
+        ..TelemetryConfig::default()
+    };
 
     let runtime = init(config).unwrap();
 

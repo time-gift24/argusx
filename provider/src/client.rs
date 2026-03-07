@@ -263,7 +263,7 @@ async fn drive_payload_stream<S>(
                                     response_meta = Some(meta.clone());
                                 }
                                 if let ResponseEvent::Done { usage, .. } = event {
-                                    final_usage = usage.clone();
+                                    final_usage = *usage;
                                 }
                             }
 
@@ -301,7 +301,7 @@ async fn drive_payload_stream<S>(
                                 response_meta = Some(meta.clone());
                             }
                             if let ResponseEvent::Done { usage, .. } = event {
-                                final_usage = usage.clone();
+                                final_usage = *usage;
                             }
                         }
                         if emit_events(tx, &mut contract, events).await.is_err() {
@@ -497,11 +497,11 @@ async fn write_raw_frame_to_recorder(
         return;
     };
     let mut recorder = recorder.lock().await;
-    if let Some(active) = recorder.as_mut() {
-        if let Err(err) = active.write_frame(raw_frame).await {
-            warn!(error = %err, "failed to write recorder frame");
-            recorder.take();
-        }
+    if let Some(active) = recorder.as_mut()
+        && let Err(err) = active.write_frame(raw_frame).await
+    {
+        warn!(error = %err, "failed to write recorder frame");
+        recorder.take();
     }
 }
 
@@ -511,9 +511,9 @@ async fn finish_recorder(recorder: Arc<Mutex<Option<SseRecorder>>>) {
         recorder.take()
     };
 
-    if let Some(mut active) = active {
-        if let Err(err) = active.finish().await {
-            warn!(error = %err, "failed to finalize recorder");
-        }
+    if let Some(mut active) = active
+        && let Err(err) = active.finish().await
+    {
+        warn!(error = %err, "failed to finalize recorder");
     }
 }

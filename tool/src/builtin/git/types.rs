@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -95,66 +95,84 @@ pub fn default_remote() -> String {
 
 pub fn build_schema() -> Value {
     let one_of: Vec<Value> = vec![
-        build_action_schema("status", &[
-            ("repo_path", "string", true),
-            ("include_untracked", "boolean", false),
-        ]),
-        build_action_schema("diff", &[
-            ("repo_path", "string", true),
-            ("staged", "boolean", false),
-            ("revision_range", "string", false),
-            ("paths", "array", false),
-            ("max_bytes", "integer", false),
-        ]),
-        build_action_schema("log", &[
-            ("repo_path", "string", true),
-            ("max_count", "integer", false),
-            ("revision_range", "string", false),
-            ("oneline", "boolean", false),
-        ]),
-        build_action_schema("show", &[
-            ("repo_path", "string", true),
-            ("object", "string", true),
-            ("max_bytes", "integer", false),
-        ]),
-        build_action_schema("branch_list", &[
-            ("repo_path", "string", true),
-        ]),
-        build_action_schema("remote_list", &[
-            ("repo_path", "string", true),
-        ]),
-        build_action_schema("worktree_list", &[
-            ("repo_path", "string", true),
-        ]),
-        build_action_schema("add", &[
-            ("repo_path", "string", true),
-            ("paths", "array", true),
-        ]),
-        build_action_schema("commit", &[
-            ("repo_path", "string", true),
-            ("message", "string", true),
-            ("allow_empty", "boolean", false),
-        ]),
-        build_action_schema("branch_create", &[
-            ("repo_path", "string", true),
-            ("branch", "string", true),
-            ("start_point", "string", false),
-            ("checkout", "boolean", false),
-        ]),
-        build_action_schema("checkout", &[
-            ("repo_path", "string", true),
-            ("branch", "string", true),
-        ]),
-        build_action_schema("clone", &[
-            ("url", "string", true),
-            ("target_path", "string", true),
-            ("branch", "string", false),
-        ]),
-        build_action_schema("fetch", &[
-            ("repo_path", "string", true),
-            ("remote", "string", false),
-            ("prune", "boolean", false),
-        ]),
+        build_action_schema(
+            "status",
+            &[
+                ("repo_path", "string", true),
+                ("include_untracked", "boolean", false),
+            ],
+        ),
+        build_action_schema(
+            "diff",
+            &[
+                ("repo_path", "string", true),
+                ("staged", "boolean", false),
+                ("revision_range", "string", false),
+                ("paths", "array", false),
+                ("max_bytes", "integer", false),
+            ],
+        ),
+        build_action_schema(
+            "log",
+            &[
+                ("repo_path", "string", true),
+                ("max_count", "integer", false),
+                ("revision_range", "string", false),
+                ("oneline", "boolean", false),
+            ],
+        ),
+        build_action_schema(
+            "show",
+            &[
+                ("repo_path", "string", true),
+                ("object", "string", true),
+                ("max_bytes", "integer", false),
+            ],
+        ),
+        build_action_schema("branch_list", &[("repo_path", "string", true)]),
+        build_action_schema("remote_list", &[("repo_path", "string", true)]),
+        build_action_schema("worktree_list", &[("repo_path", "string", true)]),
+        build_action_schema(
+            "add",
+            &[("repo_path", "string", true), ("paths", "array", true)],
+        ),
+        build_action_schema(
+            "commit",
+            &[
+                ("repo_path", "string", true),
+                ("message", "string", true),
+                ("allow_empty", "boolean", false),
+            ],
+        ),
+        build_action_schema(
+            "branch_create",
+            &[
+                ("repo_path", "string", true),
+                ("branch", "string", true),
+                ("start_point", "string", false),
+                ("checkout", "boolean", false),
+            ],
+        ),
+        build_action_schema(
+            "checkout",
+            &[("repo_path", "string", true), ("branch", "string", true)],
+        ),
+        build_action_schema(
+            "clone",
+            &[
+                ("url", "string", true),
+                ("target_path", "string", true),
+                ("branch", "string", false),
+            ],
+        ),
+        build_action_schema(
+            "fetch",
+            &[
+                ("repo_path", "string", true),
+                ("remote", "string", false),
+                ("prune", "boolean", false),
+            ],
+        ),
     ];
 
     json!({ "oneOf": one_of })

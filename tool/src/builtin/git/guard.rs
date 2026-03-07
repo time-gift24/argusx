@@ -1,6 +1,6 @@
+use super::error::GitError;
 use crate::builtin::fs::error::FsError;
 use crate::builtin::fs::guard::FsGuard;
-use super::error::GitError;
 use git2::Repository;
 use std::path::{Path, PathBuf};
 
@@ -16,7 +16,9 @@ impl GitGuard {
     }
 
     pub async fn authorize_repo(&self, repo_path: &str) -> Result<(PathBuf, Repository), GitError> {
-        let path = self.fs.authorize_existing(repo_path)
+        let path = self
+            .fs
+            .authorize_existing(repo_path)
             .await
             .map_err(|e| GitError::AccessDenied(e.to_string()))?;
 
@@ -24,27 +26,34 @@ impl GitGuard {
             &path,
             git2::RepositoryOpenFlags::NO_SEARCH,
             Vec::<&str>::new(),
-        ).map_err(|_| GitError::NotRepo(repo_path.to_string()))?;
+        )
+        .map_err(|_| GitError::NotRepo(repo_path.to_string()))?;
 
         Ok((path, repo))
     }
 
     pub async fn authorize_clone_target(&self, target_path: &str) -> Result<PathBuf, GitError> {
-        let path = self.fs.authorize_maybe_new(target_path)
+        let path = self
+            .fs
+            .authorize_maybe_new(target_path)
             .await
             .map_err(|e| GitError::AccessDenied(e.to_string()))?;
 
         // If path exists, it must be an empty directory
         if path.exists() {
             if !path.is_dir() {
-                return Err(GitError::InvalidPath("clone target must be a directory".to_string()));
+                return Err(GitError::InvalidPath(
+                    "clone target must be a directory".to_string(),
+                ));
             }
             let is_empty = std::fs::read_dir(&path)
                 .map_err(|e| GitError::InvalidPath(e.to_string()))?
                 .next()
                 .is_none();
             if !is_empty {
-                return Err(GitError::InvalidPath("clone target directory is not empty".to_string()));
+                return Err(GitError::InvalidPath(
+                    "clone target directory is not empty".to_string(),
+                ));
             }
         }
 
@@ -62,12 +71,21 @@ impl GitGuard {
 
             // Reject absolute paths
             if path.is_absolute() {
-                return Err(GitError::InvalidPath(format!("absolute path not allowed: {}", p)));
+                return Err(GitError::InvalidPath(format!(
+                    "absolute path not allowed: {}",
+                    p
+                )));
             }
 
             // Reject paths containing ..
-            if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
-                return Err(GitError::InvalidPath(format!("parent directory traversal not allowed: {}", p)));
+            if path
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                return Err(GitError::InvalidPath(format!(
+                    "parent directory traversal not allowed: {}",
+                    p
+                )));
             }
 
             validated.push(path.to_path_buf());

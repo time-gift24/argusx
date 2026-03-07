@@ -5,7 +5,7 @@ use alloc::string::{FromUtf8Error, String, ToString};
 use std::string::FromUtf8Error;
 
 use crate::event::Event;
-use crate::parser::{RawEventLine, is_bom, is_lf, line};
+use crate::parser::{is_bom, is_lf, line, RawEventLine};
 use crate::utf8_stream::{Utf8Stream, Utf8StreamError};
 use core::fmt;
 use core::pin::Pin;

@@ -19,6 +19,7 @@ impl FakeModelRunner {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn received_requests(&self) -> Vec<LlmStepRequest> {
         self.received.lock().await.clone()
     }

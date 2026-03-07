@@ -136,10 +136,7 @@ async fn denied_tool_appears_as_error_tool_result_in_next_step() {
     let model = Arc::new(support::FakeModelRunner::new(vec![first_step, second_step]));
     let model_ref = Arc::clone(&model);
 
-    let authorizer = support::permission_authorizer([(
-        "call-denied",
-        AuthorizationDecision::Deny,
-    )]);
+    let authorizer = support::permission_authorizer([("call-denied", AuthorizationDecision::Deny)]);
 
     let (handle, task) = TurnDriver::spawn(
         context(),
@@ -203,7 +200,11 @@ async fn timed_out_tool_appears_as_error_tool_result_in_next_step() {
         context(),
         options,
         model,
-        Arc::new(support::delayed_tool_runner([("call-slow", 200, ToolResult::ok(json!({})))])),
+        Arc::new(support::delayed_tool_runner([(
+            "call-slow",
+            200,
+            ToolResult::ok(json!({})),
+        )])),
         Arc::new(support::FakeAuthorizer::default()),
         Arc::new(support::FakeObserver),
     );
@@ -356,7 +357,11 @@ async fn max_steps_force_text_makes_turn_complete_despite_greedy_model() {
     );
 
     let requests = model_ref.received_requests().await;
-    assert_eq!(requests.len(), 9, "expected 8 tool-call steps + 1 forced-text step");
+    assert_eq!(
+        requests.len(),
+        9,
+        "expected 8 tool-call steps + 1 forced-text step"
+    );
 
     let last_request = requests.last().unwrap();
     assert!(
@@ -432,7 +437,9 @@ async fn stream_idle_timeout_produces_llm_timeout() {
         async fn start(&self, _request: LlmStepRequest) -> Result<ResponseStream, turn::TurnError> {
             let (tx, rx) = mpsc::channel::<ResponseEvent>(4);
             // Send one delta so the stream starts, then hang forever.
-            tx.send(ResponseEvent::ContentDelta("partial".into())).await.unwrap();
+            tx.send(ResponseEvent::ContentDelta("partial".into()))
+                .await
+                .unwrap();
             let handle = task::spawn(async move {
                 let _tx = tx; // keep sender alive so channel never closes
                 tokio::time::sleep(Duration::from_secs(3600)).await;

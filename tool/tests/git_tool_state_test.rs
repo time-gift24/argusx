@@ -2,12 +2,12 @@ use git2::{Repository, Signature};
 use serde_json::json;
 use std::path::Path;
 use tempfile::TempDir;
-use tool::{GitTool, Tool, ToolContext};
 use tokio_util::sync::CancellationToken;
+use tool::{GitTool, Tool, ToolContext};
 
 fn create_test_repo() -> (TempDir, Repository) {
     let temp = tempfile::tempdir().unwrap();
-    let repo = Repository::init(&temp.path()).unwrap();
+    let repo = Repository::init(temp.path()).unwrap();
 
     // Configure identity
     let mut config = repo.config().unwrap();
@@ -24,7 +24,8 @@ fn create_test_repo() -> (TempDir, Repository) {
     drop(index);
 
     let tree = repo.find_tree(tree_id).unwrap();
-    repo.commit(Some("HEAD"), &sig, &sig, "Initial commit\n", &tree, &[]).unwrap();
+    repo.commit(Some("HEAD"), &sig, &sig, "Initial commit\n", &tree, &[])
+        .unwrap();
     drop(tree);
 
     (temp, repo)
@@ -64,7 +65,10 @@ async fn status_reports_clean_repo() {
 
     assert!(!result.is_error);
     let output = &result.output;
-    println!("CLEAN DEBUG: {}", serde_json::to_string_pretty(&output).unwrap());
+    println!(
+        "CLEAN DEBUG: {}",
+        serde_json::to_string_pretty(&output).unwrap()
+    );
     assert_eq!(output["action"], "status");
     assert!(output["data"]["is_clean"].as_bool().unwrap());
     assert!(output["data"]["files"].as_array().unwrap().is_empty());
@@ -130,7 +134,8 @@ async fn remote_list_reports_configured_remotes() {
     let (temp, repo) = create_test_repo();
 
     // Add a remote
-    repo.remote("origin", "https://github.com/example/repo.git").unwrap();
+    repo.remote("origin", "https://github.com/example/repo.git")
+        .unwrap();
 
     let tool = GitTool::new(vec![temp.path().to_path_buf()]).unwrap();
 

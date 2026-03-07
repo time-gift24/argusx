@@ -15,20 +15,15 @@ use crate::{
 };
 
 /// Degradation policy for handling write failures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DegradationPolicy {
     /// Strict mode: errors are propagated to the caller.
     Strict,
     /// Drop events on failure without retrying.
+    #[default]
     DropOnFailure,
     /// Buffer events up to a maximum size on failure.
     BufferOnFailure { max_buffer_size: usize },
-}
-
-impl Default for DegradationPolicy {
-    fn default() -> Self {
-        Self::DropOnFailure
-    }
 }
 
 #[derive(Debug, Default)]

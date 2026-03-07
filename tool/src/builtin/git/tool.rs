@@ -22,8 +22,9 @@ impl GitTool {
     }
 
     pub fn from_current_dir() -> Result<Self, FsError> {
-        Self::new(vec![std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))])
+        Self::new(vec![
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        ])
     }
 }
 

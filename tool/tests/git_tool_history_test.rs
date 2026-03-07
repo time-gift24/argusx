@@ -2,12 +2,12 @@ use git2::{Repository, Signature};
 use serde_json::json;
 use std::path::Path;
 use tempfile::TempDir;
-use tool::{GitTool, Tool, ToolContext};
 use tokio_util::sync::CancellationToken;
+use tool::{GitTool, Tool, ToolContext};
 
 fn create_multi_commit_repo() -> (TempDir, Repository) {
     let temp = tempfile::tempdir().unwrap();
-    let repo = Repository::init(&temp.path()).unwrap();
+    let repo = Repository::init(temp.path()).unwrap();
 
     // Configure identity
     let mut config = repo.config().unwrap();
@@ -25,7 +25,9 @@ fn create_multi_commit_repo() -> (TempDir, Repository) {
     drop(index);
 
     let tree = repo.find_tree(tree_id).unwrap();
-    let commit1 = repo.commit(Some("HEAD"), &sig, &sig, "First commit\n", &tree, &[]).unwrap();
+    let commit1 = repo
+        .commit(Some("HEAD"), &sig, &sig, "First commit\n", &tree, &[])
+        .unwrap();
     drop(tree);
 
     // Second commit
@@ -37,7 +39,16 @@ fn create_multi_commit_repo() -> (TempDir, Repository) {
 
     let tree = repo.find_tree(tree_id).unwrap();
     let parent1 = repo.find_commit(commit1).unwrap();
-    let commit2 = repo.commit(Some("HEAD"), &sig, &sig, "Second commit\n", &tree, &[&parent1]).unwrap();
+    let commit2 = repo
+        .commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            "Second commit\n",
+            &tree,
+            &[&parent1],
+        )
+        .unwrap();
     drop(tree);
     drop(parent1);
 
@@ -50,7 +61,16 @@ fn create_multi_commit_repo() -> (TempDir, Repository) {
 
     let tree = repo.find_tree(tree_id).unwrap();
     let parent2 = repo.find_commit(commit2).unwrap();
-    let _commit3 = repo.commit(Some("HEAD"), &sig, &sig, "Third commit\n", &tree, &[&parent2]).unwrap();
+    let _commit3 = repo
+        .commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            "Third commit\n",
+            &tree,
+            &[&parent2],
+        )
+        .unwrap();
     drop(tree);
     drop(parent2);
 

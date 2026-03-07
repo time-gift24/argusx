@@ -11,8 +11,10 @@ async fn writer_posts_json_each_row_to_clickhouse() {
         .mount(&server)
         .await;
 
-    let mut config = TelemetryConfig::default();
-    config.clickhouse_url = server.uri();
+    let config = TelemetryConfig {
+        clickhouse_url: server.uri(),
+        ..TelemetryConfig::default()
+    };
     let writer = ClickHouseWriter::new(config).unwrap();
 
     writer
