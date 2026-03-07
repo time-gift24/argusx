@@ -14,6 +14,7 @@ import {
   PromptComposer,
   Reasoning,
   ToolCallItem,
+  type PlanSnapshot,
   type PromptComposerSubmitPayload,
 } from "@/components/ai";
 import { Checkpoint } from "@/components/ai-elements/checkpoint";
@@ -56,6 +57,7 @@ type ChatTurnView = {
   clientKey: string;
   assistantText: string;
   error: string | null;
+  latestPlan: PlanSnapshot | null;
   prompt: string;
   reasoningText: string;
   status: TurnStatus;
@@ -323,11 +325,12 @@ function createClientTurnKey(sequenceRef: MutableRefObject<number>) {
   return `client-turn-${sequenceRef.current}`;
 }
 
-function createPendingTurn(clientKey: string, prompt: string): ChatTurnView {
+export function createPendingTurn(clientKey: string, prompt: string): ChatTurnView {
   return {
     assistantText: "",
     clientKey,
     error: null,
+    latestPlan: null,
     prompt,
     reasoningText: "",
     status: "running",
@@ -397,7 +400,7 @@ function reduceTurnEvent(
   return nextTurns;
 }
 
-function reduceTurnEventForTurn(
+export function reduceTurnEventForTurn(
   current: ChatTurnView,
   event: DesktopTurnEvent
 ): ChatTurnView {
@@ -434,6 +437,18 @@ function reduceTurnEventForTurn(
         turnId,
         reasoningText: `${current.reasoningText}${text}`,
         status: "running",
+      };
+    }
+    case "plan-updated": {
+      const latestPlan = parsePlanSnapshot(event.data);
+      if (!latestPlan) {
+        return current;
+      }
+
+      return {
+        ...current,
+        latestPlan,
+        turnId,
       };
     }
     case "tool-call-prepared": {
@@ -600,6 +615,49 @@ function getRecord(value: unknown): Record<string, unknown> | null {
   }
 
   return value as Record<string, unknown>;
+}
+
+function getArray(value: unknown): unknown[] | null {
+  return Array.isArray(value) ? value : null;
+}
+
+function parsePlanSnapshot(value: Record<string, unknown>): PlanSnapshot | null {
+  const title = getString(value.title)?.trim();
+  const sourceCallId = getString(value.sourceCallId)?.trim();
+  const tasks = getArray(value.tasks)?.map(parsePlanTask);
+
+  if (!title || !sourceCallId || !tasks || tasks.some((task) => task === null)) {
+    return null;
+  }
+
+  return {
+    description: getString(value.description),
+    isStreaming: typeof value.isStreaming === "boolean" ? value.isStreaming : false,
+    sourceCallId,
+    tasks: tasks as PlanSnapshot["tasks"],
+    title,
+  };
+}
+
+function parsePlanTask(value: unknown): PlanSnapshot["tasks"][number] | null {
+  const record = getRecord(value);
+  const id = getString(record?.id)?.trim();
+  const title = getString(record?.title)?.trim();
+  const status = getString(record?.status);
+
+  if (!id || !title || !isPlanTaskStatus(status)) {
+    return null;
+  }
+
+  return {
+    id,
+    status,
+    title,
+  };
+}
+
+function isPlanTaskStatus(value: string | null): value is PlanSnapshot["tasks"][number]["status"] {
+  return value === "pending" || value === "in_progress" || value === "completed";
 }
 
 function summarizeValue(value: unknown): string | undefined {
