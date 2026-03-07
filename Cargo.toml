@@ -1,5 +1,5 @@
 [workspace]
-members = ["core", "desktop/src-tauri", "provider", "tool", "turn", "vendor/eventsource_stream"]
+members = ["core", "desktop/src-tauri", "provider", "tool", "turn", "telemetry", "vendor/eventsource_stream"]
 resolver = "2"
 
 [workspace.dependencies]
