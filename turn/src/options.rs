@@ -10,7 +10,7 @@ pub enum FinalStepPolicy {
 
 #[derive(Debug, Clone, Copy)]
 pub struct TurnOptions {
-    /// Per-tool execution timeout.
+    /// Per-tool execution timeout. Default is 30 s (was 5 s in the original single-field struct).
     pub tool_timeout: Duration,
     /// How long to wait for the model stream to start after calling `start()`.
     pub model_start_timeout: Duration,
@@ -22,6 +22,7 @@ pub struct TurnOptions {
     /// Maximum number of tool-call steps allowed. On reaching this limit, the
     /// policy in `final_step_policy` is applied.
     pub max_steps: u32,
+    /// Policy applied when `max_steps` is reached.
     pub final_step_policy: FinalStepPolicy,
 }
 

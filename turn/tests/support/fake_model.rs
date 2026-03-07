@@ -27,6 +27,8 @@ impl FakeModelRunner {
 #[async_trait]
 impl ModelRunner for FakeModelRunner {
     async fn start(&self, request: LlmStepRequest) -> Result<ResponseStream, TurnError> {
+        // NOTE: received.push and invocations.pop_front are not atomic.
+        // This is safe in single-driver tests; do not share across concurrent drivers.
         self.received.lock().await.push(request);
         let (tx, rx) = mpsc::channel(4);
         let events = self

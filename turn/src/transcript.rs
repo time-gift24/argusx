@@ -1,5 +1,7 @@
 use argus_core::ToolCall;
 
+// Eq is valid: every field in every variant implements Eq.
+// ToolCall (in AssistantToolCalls) derives Eq in argus_core.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TurnMessage {
     User { content: String },
