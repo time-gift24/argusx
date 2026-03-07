@@ -1,10 +1,6 @@
 "use client";
 
 import { BrainIcon } from "lucide-react";
-import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
-import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
 import { Streamdown } from "streamdown";
 
 import {
@@ -13,9 +9,15 @@ import {
   StreamItemTrigger,
   type StreamItemProps,
 } from "@/components/ai/stream-item";
+import {
+  sharedStreamdownClassName,
+  sharedStreamdownControls,
+  sharedStreamdownIcons,
+  sharedStreamdownPlugins,
+  sharedStreamdownTranslations,
+} from "@/components/ai/streamdown";
+import { AI_RUNTIME_DENSITY } from "@/components/ai/styles";
 import { cn } from "@/lib/utils";
-
-const streamdownPlugins = { cjk, code, math, mermaid };
 
 export type ReasoningProps = Omit<StreamItemProps, "children"> & {
   children: string;
@@ -36,8 +38,21 @@ export function Reasoning({
         label="Reasoning"
         status={isRunning ? "Thinking" : "Thought"}
       />
-      <StreamItemContent className={cn("leading-6", contentClassName)}>
-        <Streamdown plugins={streamdownPlugins}>{children}</Streamdown>
+      <StreamItemContent
+        className={cn(
+          AI_RUNTIME_DENSITY.bodyText,
+          contentClassName
+        )}
+      >
+        <Streamdown
+          className={sharedStreamdownClassName}
+          controls={sharedStreamdownControls}
+          icons={sharedStreamdownIcons}
+          plugins={sharedStreamdownPlugins}
+          translations={sharedStreamdownTranslations}
+        >
+          {children}
+        </Streamdown>
       </StreamItemContent>
     </StreamItem>
   );

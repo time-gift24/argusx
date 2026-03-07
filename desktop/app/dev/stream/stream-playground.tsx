@@ -33,13 +33,17 @@ function SampleFrame({
   return (
     <section
       className={cn(
-        "flex min-w-0 flex-col gap-4 rounded-xl border border-dashed border-border/80 bg-background/70 p-4 sm:p-5",
+        "flex min-w-0 flex-col gap-3 rounded-xl border border-dashed border-border/80 bg-background/70 p-4 sm:p-5",
         className
       )}
     >
       <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-medium text-foreground">{title}</h2>
-        <p className="text-xs leading-5 text-muted-foreground">{description}</p>
+        <h2 className="text-[12px] font-medium leading-[14px] text-foreground">
+          {title}
+        </h2>
+        <p className="text-[12px] leading-[14px] text-muted-foreground">
+          {description}
+        </p>
       </div>
       <div className="min-w-0">{children}</div>
     </section>
@@ -102,7 +106,7 @@ export function StreamPlayground() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8">
       <header className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
-          <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+          <span className="text-[12px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
             AI Runtime Surface
           </span>
           <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
@@ -110,7 +114,7 @@ export function StreamPlayground() {
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">
                 Stream component playground
               </h1>
-              <p className="text-sm leading-6 text-muted-foreground">
+              <p className="text-[12px] leading-[14px] text-muted-foreground">
                 Validate the shared running-state shell before wiring it into
                 the real chat stream. The item itself stays borderless; the
                 dashed wrappers belong only to this demo page.
@@ -136,7 +140,7 @@ export function StreamPlayground() {
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] leading-[14px] text-muted-foreground">
           <span>Run key: {runKey}</span>
           <span>Status: {isRunning ? "running" : "idle"}</span>
         </div>
@@ -157,11 +161,29 @@ export function StreamPlayground() {
           title="Running Tool"
         >
           <ToolCallItem
-            inputSummary="pwd && ls"
             isRunning={isRunning}
             name="shell"
-            outputSummary={isRunning ? undefined : "exit 0 · 148ms"}
             runKey={runKey}
+            sections={[
+              {
+                code: "pwd && ls",
+                downloadFilename: "runtime-shell",
+                id: "input",
+                label: "Input",
+                language: "bash",
+              },
+              ...(isRunning
+                ? []
+                : [
+                    {
+                      code: "exit 0\n148ms",
+                      downloadFilename: "runtime-shell-result",
+                      id: "output",
+                      label: "Output",
+                      language: "text",
+                    },
+                  ]),
+            ]}
           />
         </SampleFrame>
 
@@ -172,8 +194,16 @@ export function StreamPlayground() {
           <ToolCallItem
             isRunning={false}
             name="read"
-            outputSummary="Cargo.toml loaded · 2.1 KB"
             runKey={runKey}
+            sections={[
+              {
+                code: '{\n  "path": "Cargo.toml",\n  "bytes": 2147\n}',
+                downloadFilename: "cargo-toml-read",
+                id: "output",
+                label: "Output",
+                language: "json",
+              },
+            ]}
           />
         </SampleFrame>
 

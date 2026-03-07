@@ -3,6 +3,7 @@
 import type { ComponentProps, ReactNode } from "react";
 
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
+import { AI_RUNTIME_DENSITY } from "@/components/ai/styles";
 import { cn } from "@/lib/utils";
 import { ChevronDownIcon } from "lucide-react";
 import {
@@ -166,7 +167,11 @@ export function StreamItem({
   return (
     <StreamItemContext.Provider value={contextValue}>
       <div
-        className={cn("flex w-full flex-col gap-2", className)}
+        className={cn(
+          "flex w-full flex-col",
+          AI_RUNTIME_DENSITY.blockGap,
+          className
+        )}
         data-slot="stream-item"
         {...props}
       >
@@ -198,7 +203,8 @@ export const StreamItemTrigger = memo(
       <button
         aria-expanded={isOpen}
         className={cn(
-          "group flex w-full items-center gap-2 rounded-sm py-0.5 text-left text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30",
+          "group flex w-full items-center gap-1 rounded-sm py-0.5 text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30",
+          AI_RUNTIME_DENSITY.triggerText,
           className
         )}
         data-slot="stream-item-trigger"
@@ -214,7 +220,7 @@ export const StreamItemTrigger = memo(
       >
         <span
           className={cn(
-            "relative inline-flex min-w-0 items-center gap-2 overflow-hidden rounded-sm",
+            "relative inline-flex min-w-0 items-center gap-1 overflow-hidden rounded-sm",
             isRunning && "text-foreground"
           )}
         >
@@ -229,7 +235,12 @@ export const StreamItemTrigger = memo(
           <span className="truncate">{label}</span>
         </span>
         {status ? (
-          <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
+          <span
+            className={cn(
+              "ml-auto shrink-0 text-muted-foreground",
+              AI_RUNTIME_DENSITY.bodyText
+            )}
+          >
             {status}
           </span>
         ) : null}
@@ -261,7 +272,12 @@ export function StreamItemContent({
 
   return (
     <div
-      className={cn("pl-6 text-sm text-muted-foreground", className)}
+      className={cn(
+        AI_RUNTIME_DENSITY.contentIndent,
+        AI_RUNTIME_DENSITY.bodyText,
+        "text-muted-foreground",
+        className
+      )}
       data-slot="stream-item-content"
       data-state="open"
       {...props}

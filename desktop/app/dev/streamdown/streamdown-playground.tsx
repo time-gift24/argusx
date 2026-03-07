@@ -1,17 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
-import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
 import { Streamdown } from "streamdown";
 
+import {
+  sharedStreamdownClassName,
+  sharedStreamdownControls,
+  sharedStreamdownIcons,
+  sharedStreamdownPlugins,
+  sharedStreamdownTranslations,
+} from "@/components/ai/streamdown";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const streamdownPlugins = { cjk, code, math, mermaid };
-const proseClassName = "prose prose-sm max-w-none dark:prose-invert";
+const proseClassName = sharedStreamdownClassName;
 const streamingTickMs = 28;
 
 type SampleMarkdown = {
@@ -114,7 +116,11 @@ const SAMPLE_MARKDOWNS: SampleMarkdown[] = [
       "## Task List",
       "",
       "- [x] Complete documentation",
+      "    - Review API surface",
+      "    - Capture screenshots",
       "- [ ] Set up CI/CD pipeline",
+      "    1. Add lint job",
+      "    2. Add build step",
       "- [ ] Write unit tests",
       "- [ ] Review code changes",
       "- [ ] Deploy to production",
@@ -143,11 +149,13 @@ function DemoCard({
   return (
     <section
       className={cn(
-        "group relative overflow-hidden rounded-xl border border-border/50 bg-background/70 p-6 transition-colors duration-200 hover:border-border/80 hover:bg-background/90",
+        "group relative overflow-hidden rounded-xl border border-border/50 bg-background/70 p-4 transition-colors duration-200 hover:border-border/80 hover:bg-background/90",
         className
       )}
     >
-      <h3 className="mb-4 text-sm font-medium text-foreground">{title}</h3>
+      <h3 className="mb-2.5 text-[12px] font-medium leading-[14px] text-foreground">
+        {title}
+      </h3>
       <div className="min-h-0">{children}</div>
     </section>
   );
@@ -155,7 +163,13 @@ function DemoCard({
 
 function MarkdownPreview({ content }: { content: string }) {
   return (
-    <Streamdown className={proseClassName} plugins={streamdownPlugins}>
+    <Streamdown
+      className={proseClassName}
+      controls={sharedStreamdownControls}
+      icons={sharedStreamdownIcons}
+      plugins={sharedStreamdownPlugins}
+      translations={sharedStreamdownTranslations}
+    >
       {content}
     </Streamdown>
   );
@@ -233,8 +247,10 @@ function StreamingDemo() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-foreground">{currentDemo.title}</span>
-          <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-300">
+          <span className="text-[12px] font-medium leading-[14px] text-foreground">
+            {currentDemo.title}
+          </span>
+          <span className="rounded-full bg-blue-500/10 px-2.5 py-1 text-[12px] font-medium leading-[14px] text-blue-600 dark:text-blue-300">
             Live
           </span>
         </div>
@@ -264,11 +280,11 @@ function StreamingDemo() {
           </Button>
         </div>
       </div>
-      <div className="min-h-[400px] overflow-y-auto rounded-xl border border-border/50 bg-background p-6">
+      <div className="min-h-[400px] overflow-y-auto rounded-xl border border-border/50 bg-background p-4">
         {displayText ? (
           <MarkdownPreview content={displayText} />
         ) : (
-          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+          <div className="flex h-32 items-center justify-center text-[12px] leading-[14px] text-muted-foreground">
             Click "Start" to stream the current sample.
           </div>
         )}
@@ -282,13 +298,13 @@ export function StreamdownPlayground() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-12 px-4 py-8 sm:px-6 lg:px-8">
       <header className="flex flex-col gap-6">
         <div className="flex flex-col gap-2">
-          <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+          <span className="text-[12px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
             Markdown Rendering
           </span>
           <h1 className="text-4xl font-semibold tracking-tight text-foreground">
             Streamdown Playground
           </h1>
-          <p className="max-w-2xl text-base leading-7 text-muted-foreground">
+          <p className="max-w-2xl text-[12px] leading-[14px] text-muted-foreground">
             Real-time markdown rendering with code fences, math, mermaid diagrams, and CJK
             content. The page mirrors the existing dev playground style while keeping the
             sample data easy to maintain.
