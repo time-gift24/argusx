@@ -193,3 +193,89 @@ async fn checkout_rejects_dirty_worktree() {
         Err(_) => {} // Error is also acceptable
     }
 }
+
+#[tokio::test]
+async fn clone_creates_local_copy() {
+    // Create source repo
+    let source_temp = tempfile::tempdir().unwrap();
+    let source_repo = Repository::init(&source_temp.path()).unwrap();
+    let mut config = source_repo.config().unwrap();
+    config.set_str("user.name", "Test User").unwrap();
+    config.set_str("user.email", "test@example.com").unwrap();
+    drop(config);
+
+    // Create initial commit
+    let sig = Signature::now("Test User", "test@example.com").unwrap();
+    std::fs::write(source_temp.path().join("README.md"), b"test\n").unwrap();
+    let mut index = source_repo.index().unwrap();
+    index.add_path(Path::new("README.md")).unwrap();
+    let tree_id = index.write_tree().unwrap();
+    drop(index);
+    let tree = source_repo.find_tree(tree_id).unwrap();
+    source_repo.commit(Some("HEAD"), &sig, &sig, "Initial\n", &tree, &[]).unwrap();
+    drop(tree);
+
+    // Clone target
+    let target_temp = tempfile::tempdir().unwrap();
+    let target_path = target_temp.path().to_str().unwrap();
+    let source_url = source_temp.path().to_str().unwrap();
+
+    let tool = GitTool::new(vec![target_temp.path().to_path_buf()]).unwrap();
+
+    let result = tool
+        .execute(
+            tool_context(),
+            json!({
+                "action": "clone",
+                "url": source_url,
+                "target_path": target_path
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.is_error);
+    assert!(result.output["data"]["repo_path"].is_string());
+    assert!(std::fs::exists(target_path).unwrap());
+}
+
+#[tokio::test]
+async fn fetch_updates_from_remote() {
+    let (source_temp, source_repo) = create_repo_for_writes();
+
+    // Clone to target (this creates origin automatically)
+    let target_temp = tempfile::tempdir().unwrap();
+    let target_path = target_temp.path().to_str().unwrap();
+    let source_url = source_temp.path().to_str().unwrap();
+
+    git2::Repository::clone(source_url, target_path).unwrap();
+
+    // Add new commit to source
+    std::fs::write(source_temp.path().join("new.txt"), b"new\n").unwrap();
+    let mut index = source_repo.index().unwrap();
+    index.add_path(Path::new("new.txt")).unwrap();
+    let tree_id = index.write_tree().unwrap();
+    drop(index);
+    let sig = Signature::now("Test User", "test@example.com").unwrap();
+    let tree = source_repo.find_tree(tree_id).unwrap();
+    let head = source_repo.head().unwrap().target().unwrap();
+    let parent = source_repo.find_commit(head).unwrap();
+    source_repo.commit(Some("HEAD"), &sig, &sig, "Add new\n", &tree, &[&parent]).unwrap();
+
+    let tool = GitTool::new(vec![target_temp.path().to_path_buf()]).unwrap();
+
+    let result = tool
+        .execute(
+            tool_context(),
+            json!({
+                "action": "fetch",
+                "repo_path": target_path,
+                "remote": "origin"
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert!(!result.is_error);
+    assert_eq!(result.output["action"], "fetch");
+}

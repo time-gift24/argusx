@@ -736,19 +736,37 @@ async fn checkout(
 
 async fn clone(
     guard: &GitGuard,
-    _url: &str,
+    url: &str,
     target_path: &str,
-    _branch: Option<&str>,
+    branch: Option<&str>,
 ) -> Result<ToolResult, GitError> {
-    let _path = guard.authorize_clone_target(target_path).await?;
-    // Placeholder - actual implementation in Task 9
+    // Authorize the clone target
+    let path = guard.authorize_clone_target(target_path).await?;
+
+    // Build clone options
+    let mut builder = git2::build::RepoBuilder::new();
+
+    if let Some(b) = branch {
+        builder.branch(b);
+    }
+
+    // Perform clone
+    let repo = builder.clone(url, &path)
+        .map_err(|e| GitError::OperationFailed(format!("clone failed: {}", e)))?;
+
+    // Get head info
+    let head = get_current_branch(&repo)?;
+    let remote_name = repo.remotes()
+        .ok()
+        .and_then(|r| r.get(0).map(|s| s.to_string()));
+
     Ok(ToolResult::ok(json!({
         "action": "clone",
-        "repo_path": target_path,
+        "repo_path": path.to_string_lossy(),
         "data": {
-            "repo_path": target_path,
-            "head": null,
-            "remote": null
+            "repo_path": path.to_string_lossy(),
+            "head": head,
+            "remote": remote_name
         },
         "warnings": []
     })))
@@ -757,18 +775,38 @@ async fn clone(
 async fn fetch(
     guard: &GitGuard,
     repo_path: &str,
-    _remote: &str,
-    _prune: bool,
+    remote: &str,
+    prune: bool,
 ) -> Result<ToolResult, GitError> {
-    let (path, _repo) = guard.authorize_repo(repo_path).await?;
-    // Placeholder - actual implementation in Task 9
+    let (path, repo) = guard.authorize_repo(repo_path).await?;
+
+    // Get the remote
+    let mut remote = repo.find_remote(remote)
+        .map_err(|e| GitError::OperationFailed(format!("remote '{}' not found: {}", remote, e)))?;
+
+    // Build fetch options
+    let mut fetch_opts = git2::FetchOptions::new();
+    if prune {
+        fetch_opts.prune(git2::FetchPrune::On);
+    } else {
+        fetch_opts.prune(git2::FetchPrune::Unspecified);
+    }
+
+    // Perform fetch
+    remote.fetch(&[] as &[&str], Some(&mut fetch_opts), None)
+        .map_err(|e| GitError::OperationFailed(format!("fetch failed: {}", e)))?;
+
+    // Get fetch result info
+    let updated_refs: Vec<String> = Vec::new(); // git2 doesn't easily expose this
+    let pruned_refs: Vec<String> = Vec::new();
+
     Ok(ToolResult::ok(json!({
         "action": "fetch",
         "repo_path": path.to_string_lossy(),
         "data": {
-            "remote": null,
-            "updated_refs": [],
-            "pruned_refs": []
+            "remote": remote.name().unwrap_or("origin"),
+            "updated_refs": updated_refs,
+            "pruned_refs": pruned_refs
         },
         "warnings": []
     })))
