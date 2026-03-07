@@ -32,6 +32,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 function RouteBreadcrumb({ pathname }: { pathname: string }) {
   if (pathname === "/dev") {
@@ -146,9 +147,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </header>
           <div
             data-slot="main-scroll-region"
-            className="min-h-0 flex-1 overflow-y-auto"
+            className={cn(
+              "min-h-0 flex-1",
+              isChatRoute ? "overflow-hidden" : "overflow-y-auto"
+            )}
           >
-            <div className="flex min-h-full flex-col gap-5 p-5 xl:px-8 xl:py-6">
+            <div
+              className={cn(
+                "flex flex-col",
+                isChatRoute
+                  ? "min-h-0 flex-1"
+                  : "min-h-full gap-5 p-5 xl:px-8 xl:py-6"
+              )}
+            >
               {children}
             </div>
           </div>

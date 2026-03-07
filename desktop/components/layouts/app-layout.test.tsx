@@ -16,7 +16,7 @@ describe("AppLayout", () => {
   it("treats the root route as the chat workspace and hides the right module trigger", () => {
     mockPathname = "/";
 
-    render(
+    const { container } = render(
       <AppLayout>
         <div>workspace</div>
       </AppLayout>
@@ -27,6 +27,9 @@ describe("AppLayout", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByText("工作台")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Provider 配置" })).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-slot="main-scroll-region"]')
+    ).toHaveClass("overflow-hidden");
   });
 
   it("keeps the right module trigger on non-chat routes and shows breadcrumb in the header", () => {
