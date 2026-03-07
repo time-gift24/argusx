@@ -23,13 +23,13 @@ describe("ToolCallItem", () => {
     expect(screen.getByText("Running")).toBeInTheDocument();
     expect(screen.getByText("cwd: /workspace")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /shell/i }).className).toContain(
-      "text-[10px]"
+      "text-[14px]"
     );
     expect(screen.getByRole("button", { name: /shell/i }).className).toContain(
-      "leading-[12px]"
+      "leading-5"
     );
-    expect(screen.getByText("Running").className).toContain("text-[10px]");
-    expect(screen.getByText("Running").className).toContain("leading-[12px]");
+    expect(screen.getByText("Running").className).toContain("text-[14px]");
+    expect(screen.getByText("Running").className).toContain("leading-5");
     expect(screen.getByText("cwd: /workspace").className).toContain("text-[14px]");
     expect(screen.getByText("cwd: /workspace").className).toContain("leading-5");
 

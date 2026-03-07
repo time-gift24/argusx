@@ -56,10 +56,10 @@ describe("Reasoning", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("First line")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /reasoning/i }).className).toContain(
-      "text-[10px]"
+      "text-[14px]"
     );
     expect(screen.getByRole("button", { name: /reasoning/i }).className).toContain(
-      "leading-[12px]"
+      "leading-5"
     );
     expect(container.querySelector(".ai-streamdown")).toBeInTheDocument();
   });
