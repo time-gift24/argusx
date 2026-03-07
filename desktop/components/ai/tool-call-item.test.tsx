@@ -11,7 +11,7 @@ afterEach(() => {
 
 describe("ToolCallItem", () => {
   it("renders fallback summaries for running and completed states", () => {
-    const { rerender } = render(
+    const { container, rerender } = render(
       <ToolCallItem
         inputSummary="cwd: /workspace"
         isRunning
@@ -32,6 +32,11 @@ describe("ToolCallItem", () => {
     expect(screen.getByText("Running").className).toContain("leading-5");
     expect(screen.getByText("cwd: /workspace").className).toContain("text-[14px]");
     expect(screen.getByText("cwd: /workspace").className).toContain("leading-5");
+    expect(
+      container
+        .querySelector('[data-slot="stream-item-trigger"]')
+        ?.querySelector("svg")
+    ).not.toHaveClass("size-[10px]");
 
     rerender(
       <ToolCallItem

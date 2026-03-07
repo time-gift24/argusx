@@ -87,6 +87,11 @@ describe("Reasoning", () => {
     expect(
       container.querySelector('[data-slot="stream-item-content"]')
     ).toHaveClass("leading-5");
+    expect(
+      container
+        .querySelector('[data-slot="stream-item-trigger"]')
+        ?.querySelector("svg")
+    ).not.toHaveClass("size-[10px]");
   });
 
   it("marks the legacy streamdown customization layer as deprecated reference code", () => {
