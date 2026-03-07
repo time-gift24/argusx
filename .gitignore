@@ -27,6 +27,7 @@ __pycache__/
 
 # Worktrees
 .worktrees/
+worktrees/
 .agent
 
 # Local env files
