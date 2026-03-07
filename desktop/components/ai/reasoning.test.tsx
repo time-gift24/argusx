@@ -231,6 +231,7 @@ describe("Reasoning", () => {
   it("tunes global streamdown spacing and code scale for compact content", () => {
     const globalsCss = readFileSync(globalsCssPath, "utf8");
 
+    expect(globalsCss).toMatch(/\.ai-streamdown \{[\s\S]*font-size: 14px;[\s\S]*line-height: 20px;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown > :not\(\[hidden\]\) ~ :not\(\[hidden\]\) \{\s*margin-block-start: 6px;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown p \{\s*margin-block: 6px;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="unordered-list"\],\s*\.ai-streamdown \[data-streamdown="ordered-list"\] \{\s*margin-block: 6px;/s);
@@ -271,5 +272,20 @@ describe("Reasoning", () => {
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-block-actions"\],\s*\.ai-streamdown \[data-streamdown="mermaid-block-actions"\] \{[\s\S]*gap: 0\.375rem;/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-expand-hint"\] \{[\s\S]*position: absolute;[\s\S]*left: 50%;[\s\S]*transform: translateX\(-50%\);/s);
     expect(globalsCss).toMatch(/\.ai-streamdown \[data-streamdown="code-expand-button"\] \{[\s\S]*font-size: 12px;[\s\S]*line-height: 14px;/s);
+  });
+
+  it("keeps stream-item body content on the 14px scale", () => {
+    const { container } = render(
+      <Reasoning isRunning runKey={1}>
+        {"Body copy"}
+      </Reasoning>
+    );
+
+    expect(
+      container.querySelector('[data-slot="stream-item-content"]')
+    ).toHaveClass("text-[14px]");
+    expect(
+      container.querySelector('[data-slot="stream-item-content"]')
+    ).toHaveClass("leading-5");
   });
 });
