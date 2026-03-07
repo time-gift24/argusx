@@ -1,13 +1,15 @@
-use std::sync::Arc;
-
 use tokio::sync::{Mutex, mpsc};
 
 use crate::{TurnCommand, TurnError, TurnEvent};
 
 #[derive(Clone)]
-pub struct TurnHandle {
+pub struct TurnController {
     command_tx: mpsc::Sender<TurnCommand>,
-    event_rx: Arc<Mutex<mpsc::Receiver<TurnEvent>>>,
+}
+
+pub struct TurnHandle {
+    controller: TurnController,
+    event_rx: Mutex<mpsc::Receiver<TurnEvent>>,
 }
 
 impl TurnHandle {
@@ -16,15 +18,35 @@ impl TurnHandle {
         event_rx: mpsc::Receiver<TurnEvent>,
     ) -> Self {
         Self {
-            command_tx,
-            event_rx: Arc::new(Mutex::new(event_rx)),
+            controller: TurnController { command_tx },
+            event_rx: Mutex::new(event_rx),
         }
+    }
+
+    pub fn controller(&self) -> TurnController {
+        self.controller.clone()
     }
 
     pub async fn next_event(&self) -> Option<TurnEvent> {
         self.event_rx.lock().await.recv().await
     }
 
+    pub async fn cancel(&self) -> Result<(), TurnError> {
+        self.controller.cancel().await
+    }
+
+    pub async fn resolve_permission(
+        &self,
+        request_id: String,
+        decision: crate::PermissionDecision,
+    ) -> Result<(), TurnError> {
+        self.controller
+            .resolve_permission(request_id, decision)
+            .await
+    }
+}
+
+impl TurnController {
     pub async fn cancel(&self) -> Result<(), TurnError> {
         self.command_tx
             .send(TurnCommand::Cancel)

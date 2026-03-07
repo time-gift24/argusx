@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
-use async_trait::async_trait;
 use argus_core::ToolCall;
+use async_trait::async_trait;
 use serde_json::json;
 use tokio::{sync::Mutex, time::sleep};
 use tool::{ToolContext, ToolResult};

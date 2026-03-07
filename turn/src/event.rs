@@ -27,15 +27,31 @@ pub enum TurnFinishReason {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TurnEvent {
     TurnStarted,
-    LlmTextDelta { text: String },
-    LlmReasoningDelta { text: String },
-    ToolCallPrepared { call: ToolCall },
-    ToolCallCompleted { call_id: String, result: ToolOutcome },
-    ToolCallPermissionRequested { request: PermissionRequest },
+    LlmTextDelta {
+        text: String,
+    },
+    LlmReasoningDelta {
+        text: String,
+    },
+    ToolCallPrepared {
+        call: ToolCall,
+    },
+    ToolCallCompleted {
+        call_id: String,
+        result: ToolOutcome,
+    },
+    ToolCallPermissionRequested {
+        request: PermissionRequest,
+    },
     ToolCallPermissionResolved {
         request_id: String,
         decision: PermissionDecision,
     },
-    StepFinished { step_index: u32, reason: StepFinishReason },
-    TurnFinished { reason: TurnFinishReason },
+    StepFinished {
+        step_index: u32,
+        reason: StepFinishReason,
+    },
+    TurnFinished {
+        reason: TurnFinishReason,
+    },
 }

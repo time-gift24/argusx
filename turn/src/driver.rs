@@ -10,9 +10,9 @@ use tokio_util::sync::CancellationToken;
 use tool::{ToolContext, ToolResult};
 
 use crate::{
-    AuthorizationDecision, LlmRequestSnapshot, ModelRunner, PermissionDecision,
-    StepFinishReason, ToolAuthorizer, ToolOutcome, ToolRunner, TurnContext, TurnError, TurnEvent,
-    TurnFailure, TurnFinishReason, TurnHandle, TurnOptions, TurnState, TurnSummary,
+    AuthorizationDecision, LlmRequestSnapshot, ModelRunner, PermissionDecision, StepFinishReason,
+    ToolAuthorizer, ToolOutcome, ToolRunner, TurnContext, TurnError, TurnEvent, TurnFailure,
+    TurnFinishReason, TurnHandle, TurnOptions, TurnState, TurnSummary,
     state::{ActiveLlmStep, PendingPermissionCall, PermissionPause, ToolBatch},
 };
 
@@ -236,17 +236,17 @@ impl TurnDriver {
             return Ok(());
         }
 
-        for call in batch.calls.clone() {
+        for call in &batch.calls {
             if self.consume_cancel_request()? {
                 self.finish_cancelled().await?;
                 return Ok(());
             }
 
-            match self.authorizer.authorize(&call).await? {
-                AuthorizationDecision::Allow => self.spawn_tool_call(&mut join_set, call),
+            match self.authorizer.authorize(call).await? {
+                AuthorizationDecision::Allow => self.spawn_tool_call(&mut join_set, call.clone()),
                 AuthorizationDecision::Deny => {
                     self.emit(TurnEvent::ToolCallCompleted {
-                        call_id: call_id(&call),
+                        call_id: call_id(call),
                         result: ToolOutcome::Denied,
                     })
                     .await?;
@@ -256,7 +256,10 @@ impl TurnDriver {
                         request: request.clone(),
                     })
                     .await?;
-                    pending_permissions.push(PendingPermissionCall { request, call });
+                    pending_permissions.push(PendingPermissionCall {
+                        request,
+                        call: call.clone(),
+                    });
                 }
             }
         }
@@ -360,10 +363,7 @@ impl TurnDriver {
             let call_id = call_id(&call);
             let result = match tokio::time::timeout(
                 timeout,
-                tool_runner.execute(
-                    call,
-                    ToolContext::new(session_id, turn_id, cancel_token),
-                ),
+                tool_runner.execute(call, ToolContext::new(session_id, turn_id, cancel_token)),
             )
             .await
             {

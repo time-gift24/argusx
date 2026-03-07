@@ -2,8 +2,8 @@ mod support;
 
 use std::{sync::Arc, time::Duration};
 
-use async_trait::async_trait;
 use argus_core::{Builtin, BuiltinToolCall, FinishReason, ResponseEvent, ToolCall, Usage};
+use async_trait::async_trait;
 use serde_json::json;
 use tokio::{
     sync::{Mutex, Notify, mpsc, oneshot},
@@ -12,8 +12,8 @@ use tokio::{
 };
 use tool::{ToolContext, ToolResult};
 use turn::{
-    LlmRequestSnapshot, ModelRunner, ToolOutcome, ToolRunner, TurnContext, TurnDriver, TurnError,
-    TurnEvent, TurnFinishReason, TurnHandle, TurnObserver,
+    LlmRequestSnapshot, ModelRunner, ToolOutcome, ToolRunner, TurnContext, TurnController,
+    TurnDriver, TurnError, TurnEvent, TurnFinishReason, TurnObserver,
 };
 
 fn builtin_call(sequence: u32, call_id: &str) -> ToolCall {
@@ -53,7 +53,7 @@ async fn cancelling_before_next_model_invocation_stops_at_step_boundary() {
         Arc::new(support::FakeAuthorizer::default()),
         observer.clone(),
     );
-    observer.install_handle(handle.clone()).await;
+    observer.install_handle(handle.controller()).await;
 
     let mut events = Vec::new();
     while let Some(event) = handle.next_event().await {
@@ -62,10 +62,11 @@ async fn cancelling_before_next_model_invocation_stops_at_step_boundary() {
 
     task.await.unwrap().unwrap();
 
-    assert!(events.iter().any(|event| matches!(
-        event,
-        TurnEvent::StepFinished { .. }
-    )));
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, TurnEvent::StepFinished { .. }))
+    );
     assert!(events.iter().any(|event| matches!(
         event,
         TurnEvent::TurnFinished {
@@ -182,7 +183,10 @@ impl BlockingStartModelRunner {
 
 #[async_trait]
 impl ModelRunner for BlockingStartModelRunner {
-    async fn start(&self, _request: LlmRequestSnapshot) -> Result<argus_core::ResponseStream, TurnError> {
+    async fn start(
+        &self,
+        _request: LlmRequestSnapshot,
+    ) -> Result<argus_core::ResponseStream, TurnError> {
         self.release.notified().await;
 
         let (tx, rx) = mpsc::channel(1);
@@ -228,11 +232,11 @@ impl ToolRunner for CompletesAfterCancelToolRunner {
 
 #[derive(Default)]
 struct CancelOnStepFinishedObserver {
-    handle: Mutex<Option<TurnHandle>>,
+    handle: Mutex<Option<TurnController>>,
 }
 
 impl CancelOnStepFinishedObserver {
-    async fn install_handle(&self, handle: TurnHandle) {
+    async fn install_handle(&self, handle: TurnController) {
         *self.handle.lock().await = Some(handle);
     }
 }

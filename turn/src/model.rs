@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use argus_core::ResponseStream;
+use async_trait::async_trait;
 
 use crate::TurnError;
 

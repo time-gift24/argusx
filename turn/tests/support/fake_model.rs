@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, sync::Arc};
 
-use async_trait::async_trait;
 use argus_core::{FinishReason, ResponseEvent, ResponseStream, Usage};
+use async_trait::async_trait;
 use tokio::sync::{Mutex, mpsc};
 use tokio::task;
 use turn::{LlmRequestSnapshot, ModelRunner, TurnError};

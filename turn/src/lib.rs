@@ -18,7 +18,7 @@ pub use context::TurnContext;
 pub use driver::TurnDriver;
 pub use error::TurnError;
 pub use event::{StepFinishReason, ToolOutcome, TurnEvent, TurnFinishReason};
-pub use handle::TurnHandle;
+pub use handle::{TurnController, TurnHandle};
 pub use model::{LlmRequestSnapshot, ModelRunner};
 pub use observer::TurnObserver;
 pub use options::TurnOptions;
