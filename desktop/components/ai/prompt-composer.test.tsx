@@ -179,6 +179,29 @@ describe("PromptComposer", () => {
     ).toBeInTheDocument();
   });
 
+  it("hides empty categories from the mode bar and picker", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <PromptComposer
+        agents={agents}
+        onSubmit={vi.fn()}
+        workflows={[]}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Agents" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Workflows" })
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /code reviewer/i }));
+    const menu = await screen.findByRole("menu");
+
+    expect(within(menu).getByText("Agents")).toBeInTheDocument();
+    expect(within(menu).queryByText("Workflows")).not.toBeInTheDocument();
+  });
+
   it("locks controls while submitting and preserves the draft when submit rejects", async () => {
     const user = userEvent.setup();
     let rejectSubmit: ((error: Error) => void) | undefined;

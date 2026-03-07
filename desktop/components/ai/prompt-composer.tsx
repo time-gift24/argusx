@@ -54,8 +54,10 @@ export function PromptComposer({
   value,
   workflows,
 }: PromptComposerProps) {
+  const hasAgents = agents.length > 0;
+  const hasWorkflows = workflows.length > 0;
   const [category, setCategory] = useState<PromptComposerCategory>(
-    agents.length > 0 ? "agent" : "workflow"
+    hasAgents ? "agent" : "workflow"
   );
   const [lastSelectionByCategory, setLastSelectionByCategory] = useState<{
     agent: string;
@@ -169,32 +171,36 @@ export function PromptComposer({
         className={AI_PROMPT_COMPOSER_STYLES.modeBar}
         data-slot="prompt-composer-mode-bar"
       >
-        <button
-          className={cn(
-            AI_PROMPT_COMPOSER_STYLES.categoryBase,
-            AI_PROMPT_COMPOSER_STYLES.category.agent
-          )}
-          data-category="agent"
-          data-state={category === "agent" ? "active" : "inactive"}
-          disabled={isSubmitting}
-          onClick={() => handleCategoryChange("agent")}
-          type="button"
-        >
-          Agents
-        </button>
-        <button
-          className={cn(
-            AI_PROMPT_COMPOSER_STYLES.categoryBase,
-            AI_PROMPT_COMPOSER_STYLES.category.workflow
-          )}
-          data-category="workflow"
-          data-state={category === "workflow" ? "active" : "inactive"}
-          disabled={isSubmitting}
-          onClick={() => handleCategoryChange("workflow")}
-          type="button"
-        >
-          Workflows
-        </button>
+        {hasAgents ? (
+          <button
+            className={cn(
+              AI_PROMPT_COMPOSER_STYLES.categoryBase,
+              AI_PROMPT_COMPOSER_STYLES.category.agent
+            )}
+            data-category="agent"
+            data-state={category === "agent" ? "active" : "inactive"}
+            disabled={isSubmitting}
+            onClick={() => handleCategoryChange("agent")}
+            type="button"
+          >
+            Agents
+          </button>
+        ) : null}
+        {hasWorkflows ? (
+          <button
+            className={cn(
+              AI_PROMPT_COMPOSER_STYLES.categoryBase,
+              AI_PROMPT_COMPOSER_STYLES.category.workflow
+            )}
+            data-category="workflow"
+            data-state={category === "workflow" ? "active" : "inactive"}
+            disabled={isSubmitting}
+            onClick={() => handleCategoryChange("workflow")}
+            type="button"
+          >
+            Workflows
+          </button>
+        ) : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -209,31 +215,35 @@ export function PromptComposer({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Agents</DropdownMenuLabel>
-              {agents.map((item) => (
-                <DropdownMenuItem
-                  disabled={item.disabled}
-                  key={item.id}
-                  onClick={() => handleSelectionChange("agent", item.id)}
-                >
-                  {item.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Workflows</DropdownMenuLabel>
-              {workflows.map((item) => (
-                <DropdownMenuItem
-                  disabled={item.disabled}
-                  key={item.id}
-                  onClick={() => handleSelectionChange("workflow", item.id)}
-                >
-                  {item.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuGroup>
+            {hasAgents ? (
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Agents</DropdownMenuLabel>
+                {agents.map((item) => (
+                  <DropdownMenuItem
+                    disabled={item.disabled}
+                    key={item.id}
+                    onClick={() => handleSelectionChange("agent", item.id)}
+                  >
+                    {item.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+            ) : null}
+            {hasAgents && hasWorkflows ? <DropdownMenuSeparator /> : null}
+            {hasWorkflows ? (
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Workflows</DropdownMenuLabel>
+                {workflows.map((item) => (
+                  <DropdownMenuItem
+                    disabled={item.disabled}
+                    key={item.id}
+                    onClick={() => handleSelectionChange("workflow", item.id)}
+                  >
+                    {item.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
         <p className={cn(AI_PROMPT_COMPOSER_STYLES.selectionDescription, "flex-1")}>

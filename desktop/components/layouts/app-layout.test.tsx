@@ -26,6 +26,7 @@ describe("AppLayout", () => {
       screen.queryByRole("button", { name: /toggle chat panel/i })
     ).not.toBeInTheDocument();
     expect(screen.queryByText("工作台")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Provider 配置" })).toBeInTheDocument();
   });
 
   it("keeps the right module trigger on non-chat routes and shows breadcrumb in the header", () => {

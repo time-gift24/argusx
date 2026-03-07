@@ -12,6 +12,7 @@ import "../../app/globals.css";
 import { AppSidebar } from "./sidebar/app-sidebar";
 import { ModuleSidebar } from "./sidebar/module-sidebar";
 import { SidebarTrigger } from "./sidebar/sidebar-trigger";
+import { ProviderSettingsDialog } from "@/components/settings/provider-settings-dialog";
 import { ThemeToggle } from "./theme-toggle";
 import {
   Breadcrumb,
@@ -127,6 +128,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <span className="text-sm text-muted-foreground">ArgusX</span>
               </div>
               <div className="flex items-center gap-2">
+                <ProviderSettingsDialog />
                 <ThemeToggle />
                 {!isChatRoute ? (
                   <SidebarTrigger
