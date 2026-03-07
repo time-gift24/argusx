@@ -2,6 +2,7 @@
 
 import {
   startTransition,
+  type MutableRefObject,
   useEffect,
   useEffectEvent,
   useRef,
@@ -15,6 +16,7 @@ import {
   ToolCallItem,
   type PromptComposerSubmitPayload,
 } from "@/components/ai";
+import { Checkpoint } from "@/components/ai-elements/checkpoint";
 import {
   sharedStreamdownClassName,
   sharedStreamdownComponents,
@@ -24,6 +26,7 @@ import {
   sharedStreamdownShikiTheme,
   sharedStreamdownTranslations,
 } from "@/components/ai/streamdown";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useTurn, type DesktopTurnEvent } from "@/lib/chat";
 
@@ -48,7 +51,7 @@ type ToolCallStatus =
   | "denied"
   | "cancelled";
 
-type TurnStatus = "idle" | "running" | "completed" | "cancelled" | "failed";
+type TurnStatus = "running" | "completed" | "cancelled" | "failed";
 
 type ToolCallView = {
   callId: string;
@@ -59,45 +62,38 @@ type ToolCallView = {
   status: ToolCallStatus;
 };
 
-type ChatViewState = {
-  activeTurnId: string | null;
+type ChatTurnView = {
+  clientKey: string;
   assistantText: string;
   error: string | null;
   prompt: string;
   reasoningText: string;
   status: TurnStatus;
   toolCalls: ToolCallView[];
+  turnId: string | null;
 };
 
-const EMPTY_STATE: ChatViewState = {
-  activeTurnId: null,
-  assistantText: "",
-  error: null,
-  prompt: "",
-  reasoningText: "",
-  status: "idle",
-  toolCalls: [],
-};
+const AUTO_SCROLL_THRESHOLD_PX = 96;
+const COMPOSER_SAFE_GAP_PX = 24;
+const MIN_COMPOSER_OFFSET_PX = 220;
 
 export default function ChatPage() {
   const { cancelTurn, startTurn, subscribe } = useTurn();
-  const [chatState, setChatState] = useState<ChatViewState>(EMPTY_STATE);
-  const activeTurnIdRef = useRef<string | null>(null);
-  const statusRef = useRef<TurnStatus>("idle");
-  const ignoredTurnIdsRef = useRef(new Set<string>());
+  const [composerOffset, setComposerOffset] = useState(MIN_COMPOSER_OFFSET_PX);
+  const [turns, setTurns] = useState<ChatTurnView[]>([]);
+  const composerShellRef = useRef<HTMLDivElement>(null);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(true);
+  const turnSequenceRef = useRef(0);
+  const turnsRef = useRef<ChatTurnView[]>([]);
 
   useEffect(() => {
-    activeTurnIdRef.current = chatState.activeTurnId;
-    statusRef.current = chatState.status;
-  }, [chatState.activeTurnId, chatState.status]);
+    turnsRef.current = turns;
+  }, [turns]);
 
   const handleTurnEvent = useEffectEvent((event: DesktopTurnEvent) => {
-    if (ignoredTurnIdsRef.current.has(event.turnId)) {
-      return;
-    }
-
     startTransition(() => {
-      setChatState((current) => reduceTurnEvent(current, event));
+      setTurns((current) => reduceTurnEvent(current, event));
     });
   });
 
@@ -122,144 +118,199 @@ export default function ChatPage() {
     };
   }, [handleTurnEvent, subscribe]);
 
+  const syncComposerOffset = useEffectEvent(() => {
+    const nextHeight = composerShellRef.current?.offsetHeight ?? 0;
+    setComposerOffset(
+      Math.max(MIN_COMPOSER_OFFSET_PX, nextHeight + COMPOSER_SAFE_GAP_PX)
+    );
+  });
+
+  useEffect(() => {
+    syncComposerOffset();
+
+    if (
+      typeof ResizeObserver === "undefined" ||
+      !composerShellRef.current
+    ) {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      syncComposerOffset();
+    });
+
+    observer.observe(composerShellRef.current);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [syncComposerOffset]);
+
+  useEffect(() => {
+    const viewport = scrollViewportRef.current;
+    if (!viewport || !shouldAutoScrollRef.current) {
+      return;
+    }
+
+    viewport.scrollTop = viewport.scrollHeight;
+  }, [composerOffset, turns]);
+
+  const handleScroll = useEffectEvent(() => {
+    const viewport = scrollViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    shouldAutoScrollRef.current = isNearBottom(viewport);
+  });
+
   const handleSubmit = async (payload: PromptComposerSubmitPayload) => {
     if (payload.category !== "agent") {
       throw new Error("Workflow turns are not implemented yet.");
     }
 
-    const previousTurnId = activeTurnIdRef.current;
-    if (previousTurnId) {
-      ignoredTurnIdsRef.current.add(previousTurnId);
-    }
-
-    if (previousTurnId && statusRef.current === "running") {
-      await cancelTurn(previousTurnId);
-    }
+    const clientKey = createClientTurnKey(turnSequenceRef);
+    const runningTurn = getRunningTurn(turnsRef.current);
 
     startTransition(() => {
-      setChatState({
-        ...EMPTY_STATE,
-        prompt: payload.draft,
-        status: "running",
-      });
+      setTurns((current) => [...current, createPendingTurn(clientKey, payload.draft)]);
     });
 
     try {
+      if (runningTurn?.turnId) {
+        await cancelTurn(runningTurn.turnId);
+      }
+
       const result = await startTurn({
         prompt: payload.draft,
         targetId: payload.selectionId,
         targetKind: "agent",
       });
 
-      ignoredTurnIdsRef.current.delete(result.turnId);
-
       startTransition(() => {
-        setChatState((current) => ({
-          ...current,
-          activeTurnId: current.activeTurnId ?? result.turnId,
-          status: "running",
-        }));
+        setTurns((current) => assignTurnId(current, clientKey, result.turnId));
       });
     } catch (error) {
       startTransition(() => {
-        setChatState((current) => ({
-          ...current,
-          error: error instanceof Error ? error.message : "Unable to start turn.",
-          status: "failed",
-        }));
+        setTurns((current) =>
+          markTurnFailed(
+            current,
+            clientKey,
+            error instanceof Error ? error.message : "Unable to start turn."
+          )
+        );
       });
       throw error;
     }
   };
 
-  const handleCancel = async () => {
-    if (!chatState.activeTurnId || chatState.status !== "running") {
-      return;
-    }
-
-    await cancelTurn(chatState.activeTurnId);
-  };
-
   return (
     <div className="flex min-h-0 flex-1 flex-col p-4 lg:p-6">
-      <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-4">
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="flex min-h-full flex-col justify-end">
-            {hasConversationState(chatState) ? (
-              <div className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                      Latest Turn
-                    </p>
-                    <p className="mt-1 text-sm text-foreground/80">
-                      {chatState.prompt || "Waiting for input"}
-                    </p>
-                  </div>
-                  {chatState.status === "running" && chatState.activeTurnId ? (
-                    <button
-                      className="rounded-full border border-border/60 px-3 py-1 text-xs text-foreground transition-colors hover:bg-muted/60"
-                      onClick={() => void handleCancel()}
-                      type="button"
-                    >
-                      Cancel
-                    </button>
-                  ) : null}
-                </div>
+      <div className="relative mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+        <div
+          className="min-h-0 flex-1 overflow-y-auto"
+          onScroll={handleScroll}
+          ref={scrollViewportRef}
+        >
+          <div
+            className="flex min-h-full flex-col justify-end"
+            data-slot="chat-scroll-content"
+            style={{ paddingBottom: `${composerOffset}px` }}
+          >
+            {turns.length > 0 ? (
+              <div className="flex flex-col gap-8 py-4">
+                {turns.map((turn, index) => (
+                  <section
+                    className="space-y-4"
+                    data-slot="chat-turn"
+                    key={turn.clientKey}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-3 text-muted-foreground">
+                          <Separator className="flex-1" />
+                          <Checkpoint className="shrink-0 gap-3 text-muted-foreground">
+                            <span className="shrink-0 text-[11px] font-medium tracking-[0.08em]">
+                              {`第 ${index + 1} 轮`}
+                            </span>
+                          </Checkpoint>
+                        </div>
+                      </div>
+                      {turn.status === "running" && turn.turnId ? (
+                        <button
+                          className="shrink-0 rounded-full border border-border/60 px-3 py-1 text-xs text-foreground transition-colors hover:bg-muted/60"
+                          onClick={() => void cancelTurn(turn.turnId)}
+                          type="button"
+                        >
+                          Cancel
+                        </button>
+                      ) : null}
+                    </div>
 
-                <div className="mt-4 flex flex-col gap-4">
-                  {chatState.assistantText ? (
-                    <Streamdown
-                      className={cn(sharedStreamdownClassName, "text-sm")}
-                      components={sharedStreamdownComponents}
-                      controls={sharedStreamdownControls}
-                      icons={sharedStreamdownIcons}
-                      isAnimating={chatState.status === "running"}
-                      plugins={sharedStreamdownPlugins}
-                      shikiTheme={sharedStreamdownShikiTheme}
-                      translations={sharedStreamdownTranslations}
-                    >
-                      {chatState.assistantText}
-                    </Streamdown>
-                  ) : chatState.status === "running" ? (
-                    <p className="text-sm text-muted-foreground">
-                      Waiting for model output...
-                    </p>
-                  ) : null}
+                    <div className="flex">
+                      <div
+                        className="ml-auto max-w-[min(32rem,80%)] rounded-3xl bg-muted px-4 py-3 text-sm text-foreground shadow-sm"
+                        data-slot="chat-turn-user"
+                      >
+                        {turn.prompt}
+                      </div>
+                    </div>
 
-                  {chatState.reasoningText ? (
-                    <Reasoning
-                      isRunning={chatState.status === "running"}
-                      runKey={chatState.activeTurnId ?? chatState.prompt}
+                    <div
+                      className="space-y-4 text-sm"
+                      data-slot="chat-turn-assistant"
                     >
-                      {chatState.reasoningText}
-                    </Reasoning>
-                  ) : null}
+                      {turn.assistantText ? (
+                        <Streamdown
+                          className={cn(sharedStreamdownClassName, "text-sm")}
+                          components={sharedStreamdownComponents}
+                          controls={sharedStreamdownControls}
+                          icons={sharedStreamdownIcons}
+                          isAnimating={turn.status === "running"}
+                          plugins={sharedStreamdownPlugins}
+                          shikiTheme={sharedStreamdownShikiTheme}
+                          translations={sharedStreamdownTranslations}
+                        >
+                          {turn.assistantText}
+                        </Streamdown>
+                      ) : turn.status === "running" ? (
+                        <p className="text-sm text-muted-foreground">
+                          Waiting for model output...
+                        </p>
+                      ) : null}
 
-                  {chatState.toolCalls.map((toolCall) => (
-                    <ToolCallItem
-                      inputSummary={formatArgumentsSummary(toolCall.argumentsJson)}
-                      isRunning={toolCall.status === "running"}
-                      key={toolCall.callId}
-                      name={toolCall.name}
-                      outputSummary={toolCall.outputSummary}
-                      runKey={chatState.activeTurnId ?? chatState.prompt}
-                      errorSummary={toolCall.errorSummary}
-                    />
-                  ))}
+                      {turn.reasoningText ? (
+                        <Reasoning
+                          isRunning={turn.status === "running"}
+                          runKey={turn.turnId ?? turn.clientKey}
+                        >
+                          {turn.reasoningText}
+                        </Reasoning>
+                      ) : null}
 
-                  {chatState.error ? (
-                    <p
-                      className="text-sm text-destructive"
-                      role="alert"
-                    >
-                      {chatState.error}
-                    </p>
-                  ) : null}
-                </div>
+                      {turn.toolCalls.map((toolCall) => (
+                        <ToolCallItem
+                          errorSummary={toolCall.errorSummary}
+                          inputSummary={formatArgumentsSummary(toolCall.argumentsJson)}
+                          isRunning={toolCall.status === "running"}
+                          key={toolCall.callId}
+                          name={toolCall.name}
+                          outputSummary={toolCall.outputSummary}
+                          runKey={turn.turnId ?? turn.clientKey}
+                        />
+                      ))}
+
+                      {turn.error ? (
+                        <p className="text-sm text-destructive" role="alert">
+                          {turn.error}
+                        </p>
+                      ) : null}
+                    </div>
+                  </section>
+                ))}
               </div>
             ) : (
-              <div className="flex min-h-full items-end">
+              <div className="flex min-h-full items-end pb-4">
                 <p className="text-sm text-muted-foreground">
                   Start a turn to stream assistant output, reasoning, and tool activity.
                 </p>
@@ -267,46 +318,114 @@ export default function ChatPage() {
             )}
           </div>
         </div>
-
-        <PromptComposer
-          agents={[...AGENTS]}
-          onSubmit={handleSubmit}
-          workflows={[]}
-        />
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-10 backdrop-blur-sm"
+          data-slot="chat-composer-shell"
+          ref={composerShellRef}
+        >
+          <div className="pointer-events-auto bg-gradient-to-t from-background/95 via-background/75 to-transparent px-1 pb-1 pt-10">
+            <PromptComposer
+              agents={[...AGENTS]}
+              onSubmit={handleSubmit}
+              workflows={[]}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function hasConversationState(state: ChatViewState) {
-  return (
-    state.prompt.length > 0 ||
-    state.assistantText.length > 0 ||
-    state.reasoningText.length > 0 ||
-    state.toolCalls.length > 0 ||
-    state.error !== null
+function createClientTurnKey(sequenceRef: MutableRefObject<number>) {
+  sequenceRef.current += 1;
+  return `client-turn-${sequenceRef.current}`;
+}
+
+function createPendingTurn(clientKey: string, prompt: string): ChatTurnView {
+  return {
+    assistantText: "",
+    clientKey,
+    error: null,
+    prompt,
+    reasoningText: "",
+    status: "running",
+    toolCalls: [],
+    turnId: null,
+  };
+}
+
+function assignTurnId(
+  turns: ChatTurnView[],
+  clientKey: string,
+  turnId: string
+): ChatTurnView[] {
+  return turns.map((turn) =>
+    turn.clientKey === clientKey && turn.turnId === null
+      ? {
+          ...turn,
+          turnId,
+        }
+      : turn
   );
 }
 
+function markTurnFailed(
+  turns: ChatTurnView[],
+  clientKey: string,
+  error: string
+): ChatTurnView[] {
+  return turns.map((turn) =>
+    turn.clientKey === clientKey
+      ? {
+          ...turn,
+          error,
+          status: "failed",
+        }
+      : turn
+  );
+}
+
+function getRunningTurn(turns: ChatTurnView[]) {
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    if (turns[index].status === "running") {
+      return turns[index];
+    }
+  }
+
+  return null;
+}
+
 function reduceTurnEvent(
-  current: ChatViewState,
+  current: ChatTurnView[],
   event: DesktopTurnEvent
-): ChatViewState {
-  if (current.activeTurnId && current.activeTurnId !== event.turnId) {
+): ChatTurnView[] {
+  const targetIndex = findTurnIndex(current, event.turnId);
+
+  if (targetIndex === -1) {
     return current;
   }
 
-  if (!current.activeTurnId && current.status === "idle" && current.prompt.length === 0) {
+  const nextTurn = reduceTurnEventForTurn(current[targetIndex], event);
+  if (nextTurn === current[targetIndex]) {
     return current;
   }
 
-  const activeTurnId = current.activeTurnId ?? event.turnId;
+  const nextTurns = [...current];
+  nextTurns[targetIndex] = nextTurn;
+  return nextTurns;
+}
+
+function reduceTurnEventForTurn(
+  current: ChatTurnView,
+  event: DesktopTurnEvent
+): ChatTurnView {
+  const turnId = current.turnId ?? event.turnId;
 
   switch (event.type) {
     case "turn-started":
       return {
         ...current,
-        activeTurnId,
+        turnId,
         status: "running",
       };
     case "llm-text-delta": {
@@ -317,7 +436,7 @@ function reduceTurnEvent(
 
       return {
         ...current,
-        activeTurnId,
+        turnId,
         assistantText: `${current.assistantText}${text}`,
         status: "running",
       };
@@ -330,7 +449,7 @@ function reduceTurnEvent(
 
       return {
         ...current,
-        activeTurnId,
+        turnId,
         reasoningText: `${current.reasoningText}${text}`,
         status: "running",
       };
@@ -345,7 +464,7 @@ function reduceTurnEvent(
 
       return {
         ...current,
-        activeTurnId,
+        turnId,
         toolCalls: upsertToolCall(current.toolCalls, {
           argumentsJson,
           callId,
@@ -363,7 +482,7 @@ function reduceTurnEvent(
 
       return {
         ...current,
-        activeTurnId,
+        turnId,
         toolCalls: upsertToolCall(
           current.toolCalls,
           mapCompletedToolCall(current.toolCalls, callId, result)
@@ -375,7 +494,7 @@ function reduceTurnEvent(
 
       return {
         ...current,
-        activeTurnId,
+        turnId,
         error:
           current.error ??
           (reason && reason !== "completed" && reason !== "cancelled"
@@ -389,7 +508,7 @@ function reduceTurnEvent(
 
       return {
         ...current,
-        activeTurnId,
+        turnId,
         error: message ?? "Turn failed.",
         status: "failed",
       };
@@ -397,9 +516,24 @@ function reduceTurnEvent(
     default:
       return {
         ...current,
-        activeTurnId,
+        turnId,
       };
   }
+}
+
+function findTurnIndex(turns: ChatTurnView[], turnId: string) {
+  const exactMatchIndex = turns.findIndex((turn) => turn.turnId === turnId);
+  if (exactMatchIndex !== -1) {
+    return exactMatchIndex;
+  }
+
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    if (turns[index].turnId === null && turns[index].status === "running") {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 function upsertToolCall(toolCalls: ToolCallView[], next: ToolCallView): ToolCallView[] {
@@ -504,4 +638,11 @@ function formatArgumentsSummary(argumentsJson: string): string {
   } catch {
     return argumentsJson;
   }
+}
+
+function isNearBottom(element: HTMLDivElement) {
+  return (
+    element.scrollHeight - element.scrollTop - element.clientHeight <=
+    AUTO_SCROLL_THRESHOLD_PX
+  );
 }
