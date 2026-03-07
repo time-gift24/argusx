@@ -2,7 +2,9 @@ use crate::{
     Dialect, Error, ErrorKind, Mapper, ProviderConfig, ProviderStreamMode, ReplayReader, Request,
     SseRecorder, StreamError,
 };
-use argus_core::{Error as CoreError, ResponseContract, ResponseEvent, ResponseStream};
+use argus_core::{
+    Error as CoreError, Meta, ResponseContract, ResponseEvent, ResponseStream, Usage,
+};
 use bytes::Bytes;
 use eventsource_stream::{Event as SseMessage, EventStreamError, Eventsource};
 use futures::stream::{self, BoxStream};
@@ -69,6 +71,7 @@ impl ProviderClient {
         let record_enabled = record_target.is_some();
         let request = request.normalized_for_send();
         let (tx, rx) = mpsc::channel(32);
+        let provider = format!("{dialect:?}");
         let span = info_span!(
             "provider.stream",
             dialect = ?dialect,
@@ -80,6 +83,11 @@ impl ProviderClient {
         let producer = tokio::spawn(
             async move {
                 info!("stream started");
+                tracing::info!(
+                    event_name = "llm_request",
+                    provider = provider.as_str(),
+                    model_name = model.as_str(),
+                );
                 let recorder = Arc::new(Mutex::new(match record_target {
                     Some(target) => {
                         match SseRecorder::create(target.file_path, target.write_timing_sidecar)
@@ -108,6 +116,7 @@ impl ProviderClient {
                     Err(err) => {
                         send_terminal_error(
                             &tx,
+                            &mut ResponseContract::new(),
                             StreamError {
                                 kind: ErrorKind::Transport,
                                 message: err.to_string(),
@@ -121,7 +130,7 @@ impl ProviderClient {
                 let sse = match into_sse_message_stream(response).await {
                     Ok(sse) => sse,
                     Err(err) => {
-                        send_terminal_error(&tx, err).await;
+                        send_terminal_error(&tx, &mut ResponseContract::new(), err).await;
                         return;
                     }
                 };
@@ -216,8 +225,11 @@ async fn emit_events(
     Ok(())
 }
 
-async fn send_terminal_error(tx: &mpsc::Sender<ResponseEvent>, err: StreamError) {
-    let mut contract = ResponseContract::new();
+async fn send_terminal_error(
+    tx: &mpsc::Sender<ResponseEvent>,
+    contract: &mut ResponseContract,
+    err: StreamError,
+) {
     let event = ResponseEvent::Error(CoreError {
         message: format!("{:?}: {}", err.kind, err.message),
     });
@@ -236,6 +248,9 @@ async fn drive_payload_stream<S>(
 {
     let mut contract = ResponseContract::new();
     let mut mapper = Mapper::new(dialect);
+    let provider = format!("{dialect:?}");
+    let mut final_usage: Option<Usage> = None;
+    let mut response_meta: Option<Meta> = None;
 
     while let Some(item) = payloads.next().await {
         match item {
@@ -243,6 +258,20 @@ async fn drive_payload_stream<S>(
                 if payload == "[DONE]" {
                     match mapper.on_done() {
                         Ok(events) => {
+                            for event in &events {
+                                if let ResponseEvent::Created(meta) = event {
+                                    response_meta = Some(meta.clone());
+                                }
+                                if let ResponseEvent::Done { usage, .. } = event {
+                                    final_usage = usage.clone();
+                                }
+                            }
+
+                            emit_completion_event(
+                                provider.as_str(),
+                                response_meta.as_ref(),
+                                &final_usage,
+                            );
                             if emit_events(tx, &mut contract, events).await.is_err() {
                                 return;
                             }
@@ -251,6 +280,7 @@ async fn drive_payload_stream<S>(
                             warn!(error = %err, "stream failed during terminal mapping");
                             send_terminal_error(
                                 tx,
+                                &mut contract,
                                 StreamError {
                                     kind: classify_mapper_error(&err),
                                     message: err.to_string(),
@@ -266,6 +296,14 @@ async fn drive_payload_stream<S>(
 
                 match mapper.feed(&payload) {
                     Ok(events) => {
+                        for event in &events {
+                            if let ResponseEvent::Created(meta) = event {
+                                response_meta = Some(meta.clone());
+                            }
+                            if let ResponseEvent::Done { usage, .. } = event {
+                                final_usage = usage.clone();
+                            }
+                        }
                         if emit_events(tx, &mut contract, events).await.is_err() {
                             return;
                         }
@@ -273,6 +311,7 @@ async fn drive_payload_stream<S>(
                     Err(err) => {
                         send_terminal_error(
                             tx,
+                            &mut contract,
                             StreamError {
                                 kind: classify_mapper_error(&err),
                                 message: err.to_string(),
@@ -284,7 +323,7 @@ async fn drive_payload_stream<S>(
                 }
             }
             Err(err) => {
-                send_terminal_error(tx, err).await;
+                send_terminal_error(tx, &mut contract, err).await;
                 return;
             }
         }
@@ -292,6 +331,7 @@ async fn drive_payload_stream<S>(
 
     send_terminal_error(
         tx,
+        &mut contract,
         StreamError {
             kind: ErrorKind::Protocol,
             message: "stream ended before [DONE]".into(),
@@ -400,6 +440,53 @@ fn map_replay_eventsource_error(err: EventStreamError<StreamError>) -> StreamErr
         },
         EventStreamError::Transport(err) => err,
     }
+}
+
+fn emit_completion_event(provider: &str, meta: Option<&Meta>, usage: &Option<Usage>) {
+    let billing_key = billing_dedupe_key(provider, meta, usage);
+    let model_name = meta.map(|value| value.model.as_str());
+    let response_id = meta.map(|value| value.id.as_str());
+
+    match usage {
+        Some(usage) => {
+            tracing::info!(
+                event_name = "llm_response_completed",
+                event_priority = "high",
+                provider = provider,
+                model_name = model_name.unwrap_or(""),
+                response_id = response_id.unwrap_or(""),
+                input_tokens = usage.input_tokens,
+                output_tokens = usage.output_tokens,
+                total_tokens = usage.total_tokens,
+                billing_dedupe_key = billing_key.as_str()
+            );
+        }
+        None => {
+            tracing::info!(
+                event_name = "llm_response_completed",
+                event_priority = "high",
+                provider = provider,
+                model_name = model_name.unwrap_or(""),
+                response_id = response_id.unwrap_or(""),
+                billing_dedupe_key = billing_key.as_str()
+            );
+        }
+    }
+}
+
+fn billing_dedupe_key(provider: &str, meta: Option<&Meta>, usage: &Option<Usage>) -> String {
+    let response_id = meta.map(|value| value.id.as_str()).unwrap_or("unknown");
+    let model_name = meta.map(|value| value.model.as_str()).unwrap_or("unknown");
+    let usage = usage.unwrap_or(Usage {
+        input_tokens: 0,
+        output_tokens: 0,
+        total_tokens: 0,
+    });
+
+    format!(
+        "provider:{provider}|response:{response_id}|model:{model_name}|tokens:{}:{}:{}",
+        usage.input_tokens, usage.output_tokens, usage.total_tokens
+    )
 }
 
 async fn write_raw_frame_to_recorder(
