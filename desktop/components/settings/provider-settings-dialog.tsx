@@ -35,7 +35,7 @@ type FormState = {
 };
 
 const ZAI_DEFAULTS = {
-  baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4/",
+  baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",
   model: "glm-5",
   name: "Z.ai",
 } as const;
