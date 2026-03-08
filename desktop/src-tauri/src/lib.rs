@@ -1,29 +1,14 @@
 mod session_commands;
 
-use session::manager::SessionManager;
-use session::store::ThreadStore;
 use session_commands::{
     DesktopSessionState, cancel_thread_turn, create_thread, list_threads,
     resolve_thread_permission, send_message, spawn_session_event_bridge, switch_thread,
 };
 
-// Desktop telemetry integration
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let config = telemetry::TelemetryConfig::from_path("config/telemetry.toml")
-        .unwrap_or_else(|_| telemetry::TelemetryConfig::default());
-    let runtime = if config.enabled {
-        Some(telemetry::init(config)?)
-    } else {
-        None
-    };
-
-    let pool = tauri::async_runtime::block_on(async { sqlx::SqlitePool::connect("sqlite:argusx.db").await })?;
-    let store = ThreadStore::new(pool);
-    tauri::async_runtime::block_on(async { store.init_schema().await })?;
-
-    let manager = SessionManager::new("default-session".into(), store);
-    tauri::async_runtime::block_on(async { manager.initialize().await })?;
+    let runtime = tauri::async_runtime::block_on(runtime::build_runtime())?;
+    let manager = runtime.session_manager.clone();
     let session_state = DesktopSessionState::new(manager);
     let bridge_manager = session_state.manager.clone();
 
@@ -50,10 +35,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         })
         .run(tauri::generate_context!());
 
-    if let Some(runtime) = runtime {
-        runtime.shutdown(std::time::Duration::from_secs(10))?;
+    if let Err(ref err) = run_result {
+        tracing::error!(event_name = "tauri_run_error", error = %err);
     }
 
+    runtime.shutdown(std::time::Duration::from_secs(10))?;
     run_result?;
     Ok(())
 }
@@ -61,7 +47,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn desktop_lib_builds() {
-        assert_eq!(2 + 2, 4);
+    fn desktop_builds_against_runtime_crate() {
+        let _ = std::any::type_name::<runtime::ArgusxRuntime>();
     }
 }

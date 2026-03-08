@@ -1,14 +1,15 @@
 #[cfg(test)]
 mod tests;
 
+mod bootstrap;
 mod config;
+mod logging;
 mod paths;
 
 use std::path::PathBuf;
 
+pub use bootstrap::{ArgusxRuntime, build_runtime, build_runtime_from_config};
 pub use config::{AppConfig, PathsConfig, TelemetrySection};
-
-pub struct ArgusxRuntime;
 
 pub fn ensure_app_config_at(
     app_home: impl AsRef<std::path::Path>,
@@ -50,6 +51,19 @@ delta_events = false
 "#
 }
 
-pub async fn build_runtime() -> anyhow::Result<ArgusxRuntime> {
-    anyhow::bail!("not implemented")
+pub(crate) fn to_telemetry_config(section: TelemetrySection) -> telemetry::TelemetryConfig {
+    telemetry::TelemetryConfig {
+        enabled: section.enabled,
+        clickhouse_url: section.clickhouse_url,
+        database: section.database,
+        table: section.table,
+        high_priority_batch_size: section.high_priority_batch_size,
+        low_priority_batch_size: section.low_priority_batch_size,
+        high_priority_flush_interval_ms: section.high_priority_flush_interval_ms,
+        low_priority_flush_interval_ms: section.low_priority_flush_interval_ms,
+        max_in_memory_events: section.max_in_memory_events,
+        max_retry_backoff_ms: section.max_retry_backoff_ms,
+        full_logging: section.full_logging,
+        delta_events: section.delta_events,
+    }
 }
