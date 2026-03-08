@@ -203,7 +203,7 @@ describe("ChatPage", () => {
     expect(loadActiveChatThread).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("Existing prompt")).toBeInTheDocument();
     expect(screen.getByText("Existing answer")).toBeInTheDocument();
-    expect(screen.getByText("Execution Plan")).toBeInTheDocument();
+    expect(screen.queryByText("Execution Plan")).not.toBeInTheDocument();
 
     await user.type(
       screen.getByRole("textbox", { name: /prompt/i }),
@@ -467,9 +467,9 @@ describe("ChatPage", () => {
     expect(finished.lastResolvedPermission).toBeNull();
   });
 
-  it("renders the queue before assistant markdown and hides update_plan tool rows", async () => {
+  it("renders the active plan above the composer and hides it when the turn finishes", async () => {
     const user = userEvent.setup();
-    render(<ChatPage />);
+    const { container } = render(<ChatPage />);
 
     await user.type(
       screen.getByRole("textbox", { name: /prompt/i }),
@@ -527,22 +527,179 @@ describe("ChatPage", () => {
       });
     });
 
+    const composerShell = container.querySelector(
+      '[data-slot="chat-composer-shell"]'
+    ) as HTMLElement | null;
     const assistantSection = screen
       .getByText("Assistant answer")
       .closest('[data-slot="chat-turn-assistant"]') as HTMLElement | null;
-    const planQueue = within(assistantSection!).getByText("Execution Plan").closest(
+    const planQueue = within(composerShell!).getByText("Execution Plan").closest(
       '[data-slot="plan-queue"]'
     ) as HTMLElement | null;
-    const assistantText = within(assistantSection!).getByText("Assistant answer");
 
     expect(planQueue).toBeInTheDocument();
-    expect(within(assistantSection!).getByText("Write failing test")).toBeInTheDocument();
+    expect(within(composerShell!).getByText("Write failing test")).toBeInTheDocument();
     expect(within(assistantSection!).queryByText("update_plan")).not.toBeInTheDocument();
+    expect(within(assistantSection!).queryByText("Execution Plan")).not.toBeInTheDocument();
     expect(
       document.querySelector('[data-slot="tool-permission-confirmation"]')
     ).not.toBeInTheDocument();
-    expect(planQueue?.compareDocumentPosition(assistantText)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING
+
+    await act(async () => {
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "turn-finished",
+        data: { reason: "completed" },
+      });
+    });
+
+    expect(within(composerShell!).queryByText("Execution Plan")).not.toBeInTheDocument();
+  });
+
+  it("groups read tools into a collapsed Summary section and keeps only the latest 3 items", async () => {
+    const user = userEvent.setup();
+    render(<ChatPage />);
+
+    await user.type(
+      screen.getByRole("textbox", { name: /prompt/i }),
+      "Review this plan"
     );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await act(async () => {
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-prepared",
+        data: {
+          argumentsJson: '{"path":"src/old.ts"}',
+          callId: "call-read-1",
+          name: "read",
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-completed",
+        data: {
+          callId: "call-read-1",
+          result: {
+            output: {
+              content: "old content",
+            },
+            status: "success",
+          },
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-prepared",
+        data: {
+          argumentsJson: '{"pattern":"*.tsx","path":"desktop/components"}',
+          callId: "call-glob-1",
+          name: "glob",
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-completed",
+        data: {
+          callId: "call-glob-1",
+          result: {
+            output: {
+              matches: ["desktop/components/ai/read-task-group.tsx"],
+            },
+            status: "success",
+          },
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-prepared",
+        data: {
+          argumentsJson: '{"pattern":"Summary","path":"desktop"}',
+          callId: "call-grep-1",
+          name: "grep",
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-completed",
+        data: {
+          callId: "call-grep-1",
+          result: {
+            output: {
+              matches: ["desktop/app/chat/page.tsx:1:Summary"],
+            },
+            status: "success",
+          },
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-prepared",
+        data: {
+          argumentsJson: '{"path":"src/new.ts"}',
+          callId: "call-read-2",
+          name: "read",
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-completed",
+        data: {
+          callId: "call-read-2",
+          result: {
+            output: {
+              content: "new content",
+            },
+            status: "success",
+          },
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-prepared",
+        data: {
+          argumentsJson: '{"command":"pwd"}',
+          callId: "call-shell",
+          name: "shell",
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-completed",
+        data: {
+          callId: "call-shell",
+          result: {
+            output: "/Users/wanyaozhong/projects/argusx",
+            status: "success",
+          },
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "llm-text-delta",
+        data: { text: "Assistant answer" },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "turn-finished",
+        data: { reason: "completed" },
+      });
+    });
+
+    const assistantSection = screen
+      .getByText("Assistant answer")
+      .closest('[data-slot="chat-turn-assistant"]') as HTMLElement | null;
+
+    expect(within(assistantSection!).getByRole("button", { name: "Summary" })).toBeInTheDocument();
+    expect(within(assistantSection!).queryByText("src/old.ts")).not.toBeInTheDocument();
+    expect(within(assistantSection!).getByText("shell")).toBeInTheDocument();
+
+    await user.click(within(assistantSection!).getByRole("button", { name: "Summary" }));
+
+    expect(within(assistantSection!).queryByText("src/old.ts")).not.toBeInTheDocument();
+    expect(within(assistantSection!).getByText("desktop/components")).toBeInTheDocument();
+    expect(within(assistantSection!).getByText("desktop")).toBeInTheDocument();
+    expect(within(assistantSection!).getByText("src/new.ts")).toBeInTheDocument();
   });
 });
