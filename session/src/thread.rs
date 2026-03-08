@@ -25,16 +25,37 @@ impl ThreadRuntime {
         turns
             .iter()
             .filter(|turn| is_replayable_status(&turn.status))
-            .flat_map(|turn| turn.transcript.iter().cloned().map(persisted_message_to_turn_message))
+            .flat_map(|turn| {
+                turn.transcript
+                    .iter()
+                    .cloned()
+                    .map(persisted_message_to_turn_message)
+            })
             .collect()
     }
 }
 
 pub struct ActiveTurnRuntime {
     pub turn_id: Uuid,
-    pub turn_number: u32,
-    pub controller: TurnController,
+    pub turn_number: Option<u32>,
+    pub controller: Option<TurnController>,
     pub waiting_permission: Option<PermissionRequest>,
+}
+
+impl ActiveTurnRuntime {
+    pub fn starting(turn_id: Uuid) -> Self {
+        Self {
+            turn_id,
+            turn_number: None,
+            controller: None,
+            waiting_permission: None,
+        }
+    }
+
+    pub fn activate(&mut self, turn_number: u32, controller: TurnController) {
+        self.turn_number = Some(turn_number);
+        self.controller = Some(controller);
+    }
 }
 
 impl fmt::Debug for ThreadRuntime {
@@ -57,7 +78,10 @@ impl fmt::Debug for ActiveTurnRuntime {
 }
 
 pub fn persist_transcript(messages: &[TurnMessage]) -> Vec<PersistedMessage> {
-    messages.iter().map(turn_message_to_persisted_message).collect()
+    messages
+        .iter()
+        .map(turn_message_to_persisted_message)
+        .collect()
 }
 
 fn is_replayable_status(status: &TurnStatus) -> bool {
@@ -111,13 +135,15 @@ fn turn_message_to_persisted_message(message: &TurnMessage) -> PersistedMessage 
         TurnMessage::AssistantText { content } => PersistedMessage::AssistantText {
             content: content.as_ref().to_owned(),
         },
-        TurnMessage::AssistantToolCalls { content, calls } => PersistedMessage::AssistantToolCalls {
-            content: content.as_ref().map(|value| value.as_ref().to_owned()),
-            calls: calls
-                .iter()
-                .map(|call| turn_tool_call_to_persisted_tool_call(call.as_ref()))
-                .collect(),
-        },
+        TurnMessage::AssistantToolCalls { content, calls } => {
+            PersistedMessage::AssistantToolCalls {
+                content: content.as_ref().map(|value| value.as_ref().to_owned()),
+                calls: calls
+                    .iter()
+                    .map(|call| turn_tool_call_to_persisted_tool_call(call.as_ref()))
+                    .collect(),
+            }
+        }
         TurnMessage::ToolResult {
             call_id,
             tool_name,
@@ -213,6 +239,10 @@ fn turn_tool_call_to_persisted_tool_call(call: &ToolCall) -> PersistedToolCall {
     }
 }
 
+pub(crate) fn persist_tool_call(call: &ToolCall) -> PersistedToolCall {
+    turn_tool_call_to_persisted_tool_call(call)
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
@@ -264,8 +294,12 @@ mod tests {
 
         let prior = runtime.build_prior_messages(&turns);
         assert_eq!(prior.len(), 2);
-        assert!(matches!(prior[0], TurnMessage::User { ref content } if content.as_ref() == "hello"));
-        assert!(matches!(prior[1], TurnMessage::AssistantText { ref content } if content.as_ref() == "hi"));
+        assert!(
+            matches!(prior[0], TurnMessage::User { ref content } if content.as_ref() == "hello")
+        );
+        assert!(
+            matches!(prior[1], TurnMessage::AssistantText { ref content } if content.as_ref() == "hi")
+        );
     }
 
     #[test]

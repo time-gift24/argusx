@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
@@ -164,6 +164,69 @@ impl ThreadStore {
         Ok(())
     }
 
+    pub async fn insert_turn_and_advance_thread(
+        &self,
+        turn: &TurnRecord,
+        previous_last_turn_number: u32,
+        updated_at: DateTime<Utc>,
+    ) -> Result<()> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .context("begin turn startup transaction")?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO turns (
+                id, thread_id, turn_number, user_input, status, finish_reason,
+                transcript_json, final_output, started_at, finished_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(turn.id.to_string())
+        .bind(turn.thread_id.to_string())
+        .bind(i64::from(turn.turn_number))
+        .bind(&turn.user_input)
+        .bind(turn_status_to_str(&turn.status))
+        .bind(&turn.finish_reason)
+        .bind(serde_json::to_string(&turn.transcript).context("serialize turn transcript")?)
+        .bind(&turn.final_output)
+        .bind(turn.started_at.to_rfc3339())
+        .bind(turn.finished_at.map(|value| value.to_rfc3339()))
+        .execute(&mut *tx)
+        .await
+        .context("insert turn in startup transaction")?;
+
+        let result = sqlx::query(
+            r#"
+            UPDATE threads
+            SET updated_at = ?, last_turn_number = ?
+            WHERE id = ? AND last_turn_number = ?
+            "#,
+        )
+        .bind(updated_at.to_rfc3339())
+        .bind(i64::from(turn.turn_number))
+        .bind(turn.thread_id.to_string())
+        .bind(i64::from(previous_last_turn_number))
+        .execute(&mut *tx)
+        .await
+        .context("advance thread turn number")?;
+
+        if result.rows_affected() != 1 {
+            bail!(
+                "thread {} turn sequence changed during startup",
+                turn.thread_id
+            );
+        }
+
+        tx.commit()
+            .await
+            .context("commit turn startup transaction")?;
+        Ok(())
+    }
+
     pub async fn update_turn(&self, turn: &TurnRecord) -> Result<()> {
         sqlx::query(
             r#"
@@ -231,7 +294,10 @@ fn decode_thread_row(row: sqlx::sqlite::SqliteRow) -> Result<ThreadRecord> {
         lifecycle: parse_thread_lifecycle(&row.try_get::<String, _>("lifecycle")?)?,
         created_at: parse_utc(&row.try_get::<String, _>("created_at")?)?,
         updated_at: parse_utc(&row.try_get::<String, _>("updated_at")?)?,
-        last_turn_number: parse_u32(row.try_get::<i64, _>("last_turn_number")?, "last_turn_number")?,
+        last_turn_number: parse_u32(
+            row.try_get::<i64, _>("last_turn_number")?,
+            "last_turn_number",
+        )?,
     })
 }
 
@@ -406,7 +472,8 @@ mod tests {
         };
         store.insert_thread(&thread).await.unwrap();
 
-        for (turn_number, status) in [(1, TurnStatus::Running), (2, TurnStatus::WaitingPermission)] {
+        for (turn_number, status) in [(1, TurnStatus::Running), (2, TurnStatus::WaitingPermission)]
+        {
             let turn = TurnRecord {
                 id: Uuid::new_v4(),
                 thread_id: thread.id,
@@ -426,7 +493,11 @@ mod tests {
         assert_eq!(affected, 2);
 
         let turns = store.list_turns(thread.id).await.unwrap();
-        assert!(turns.iter().all(|turn| turn.status == TurnStatus::Interrupted));
+        assert!(
+            turns
+                .iter()
+                .all(|turn| turn.status == TurnStatus::Interrupted)
+        );
         assert!(turns.iter().all(|turn| turn.finished_at.is_some()));
     }
 }

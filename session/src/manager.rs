@@ -7,17 +7,17 @@ use anyhow::{Context, Result, bail};
 use chrono::Utc;
 use tokio::{sync::broadcast, task::JoinHandle};
 use turn::{
-    ModelRunner, PermissionDecision, ToolAuthorizer, ToolRunner, TurnDriver, TurnEvent,
-    TurnFinishReason, TurnHandle, TurnObserver, TurnOutcome, TurnSeed,
+    ModelRunner, PermissionDecision, StepFinishReason, ToolAuthorizer, ToolOutcome, ToolRunner,
+    TurnDriver, TurnEvent, TurnFinishReason, TurnHandle, TurnObserver, TurnOutcome, TurnSeed,
 };
 use uuid::Uuid;
 
 use crate::{
     store::ThreadStore,
-    thread::{ActiveTurnRuntime, ThreadRuntime, persist_transcript},
+    thread::{ActiveTurnRuntime, ThreadRuntime, persist_tool_call, persist_transcript},
     types::{
-        PersistedMessage, SessionRecord, ThreadEvent, ThreadLifecycle, ThreadRecord, TurnRecord,
-        TurnStatus,
+        PersistedMessage, PersistedToolCall, SessionRecord, ThreadEvent, ThreadLifecycle,
+        ThreadRecord, TurnRecord, TurnStatus,
     },
 };
 
@@ -148,7 +148,7 @@ impl SessionManager {
         content: String,
         deps: TurnDependencies,
     ) -> Result<Uuid> {
-        let mut thread = self
+        let thread = self
             .store
             .get_thread(thread_id)
             .await?
@@ -160,22 +160,34 @@ impl SessionManager {
             );
         }
 
+        let turn_id = Uuid::new_v4();
+        // 先在内存里占坑，保证同一 thread 的 send_message 不会跨过 await 并发启动两个 turn。
+        let mut reservation =
+            ActiveTurnReservation::reserve(Arc::clone(&self.runtime), thread_id, turn_id)?;
+
         let history = self.store.list_turns(thread_id).await?;
-        let (turn_id, turn_number, prior_messages, prior_message_count) = {
+        let thread = self
+            .store
+            .get_thread(thread_id)
+            .await?
+            .with_context(|| format!("thread not found: {thread_id}"))?;
+        if thread.session_id != self.session_id {
+            bail!(
+                "thread {thread_id} does not belong to session {}",
+                self.session_id
+            );
+        }
+
+        let (turn_number, prior_messages, prior_message_count) = {
             let mut runtime = self.runtime.lock().unwrap();
             let thread_runtime = runtime
                 .threads
                 .entry(thread_id)
                 .or_insert_with(|| ThreadRuntime::new(thread_id));
-            if thread_runtime.active_turn.is_some() {
-                bail!("thread {thread_id} already has an active turn");
-            }
-
             let turn_number = thread.last_turn_number + 1;
-            let turn_id = Uuid::new_v4();
             let prior_messages = thread_runtime.build_prior_messages(&history);
             let prior_message_count = prior_messages.len();
-            (turn_id, turn_number, prior_messages, prior_message_count)
+            (turn_number, prior_messages, prior_message_count)
         };
 
         let now = Utc::now();
@@ -193,11 +205,9 @@ impl SessionManager {
             started_at: now,
             finished_at: None,
         };
-        self.store.insert_turn(&turn_record).await?;
-
-        thread.last_turn_number = turn_number;
-        thread.updated_at = now;
-        self.store.update_thread(&thread).await?;
+        self.store
+            .insert_turn_and_advance_thread(&turn_record, thread.last_turn_number, now)
+            .await?;
 
         let seed = TurnSeed {
             session_id: self.session_id.clone(),
@@ -213,19 +223,7 @@ impl SessionManager {
             deps.observer,
         );
 
-        {
-            let mut runtime = self.runtime.lock().unwrap();
-            let thread_runtime = runtime
-                .threads
-                .entry(thread_id)
-                .or_insert_with(|| ThreadRuntime::new(thread_id));
-            thread_runtime.active_turn = Some(ActiveTurnRuntime {
-                turn_id,
-                turn_number,
-                controller: handle.controller(),
-                waiting_permission: None,
-            });
-        }
+        reservation.activate(turn_number, handle.controller())?;
 
         self.spawn_turn_bridge(
             thread_id,
@@ -267,10 +265,15 @@ impl SessionManager {
         let events_tx = self.events_tx.clone();
 
         tokio::spawn(async move {
+            let mut transcript = IncrementalTranscript::new(turn_record.transcript.clone());
+
             while let Some(event) = handle.next_event().await {
+                transcript.apply_event(&event);
+
                 match &event {
                     TurnEvent::ToolCallPermissionRequested { request } => {
                         turn_record.status = TurnStatus::WaitingPermission;
+                        turn_record.transcript = transcript.snapshot();
                         {
                             let mut runtime = runtime.lock().unwrap();
                             if let Some(thread_runtime) = runtime.threads.get_mut(&thread_id)
@@ -284,6 +287,7 @@ impl SessionManager {
                     }
                     TurnEvent::ToolCallPermissionResolved { .. } => {
                         turn_record.status = TurnStatus::Running;
+                        turn_record.transcript = transcript.snapshot();
                         {
                             let mut runtime = runtime.lock().unwrap();
                             if let Some(thread_runtime) = runtime.threads.get_mut(&thread_id)
@@ -311,14 +315,17 @@ impl SessionManager {
                     let _ = store.update_turn(&turn_record).await;
                 }
                 Ok(Err(_turn_err)) => {
+                    // 失败分支拿不到 TurnOutcome，需要把已发给 UI 的增量事件补写回 transcript。
                     turn_record.status = TurnStatus::Failed;
                     turn_record.finish_reason = Some("Failed".into());
+                    turn_record.transcript = transcript.snapshot();
                     turn_record.finished_at = Some(Utc::now());
                     let _ = store.update_turn(&turn_record).await;
                 }
                 Err(_join_err) => {
                     turn_record.status = TurnStatus::Failed;
                     turn_record.finish_reason = Some("Failed".into());
+                    turn_record.transcript = transcript.snapshot();
                     turn_record.finished_at = Some(Utc::now());
                     let _ = store.update_turn(&turn_record).await;
                 }
@@ -345,14 +352,16 @@ impl SessionManager {
     }
 
     fn active_turn_controller(&self, thread_id: Uuid) -> Result<turn::TurnController> {
-        self.runtime
-            .lock()
-            .unwrap()
+        let runtime = self.runtime.lock().unwrap();
+        let active_turn = runtime
             .threads
             .get(&thread_id)
             .and_then(|thread| thread.active_turn.as_ref())
-            .map(|turn| turn.controller.clone())
-            .with_context(|| format!("thread {thread_id} does not have an active turn"))
+            .with_context(|| format!("thread {thread_id} does not have an active turn"))?;
+
+        active_turn.controller.clone().with_context(|| {
+            format!("thread {thread_id} has an active turn that is still starting")
+        })
     }
 
     fn emit_thread_event(&self, thread_id: Uuid, event: ThreadEvent) {
@@ -380,6 +389,182 @@ impl SessionManager {
 pub struct SessionRuntime {
     pub active_thread_id: Option<Uuid>,
     pub threads: HashMap<Uuid, ThreadRuntime>,
+}
+
+struct ActiveTurnReservation {
+    runtime: Arc<Mutex<SessionRuntime>>,
+    thread_id: Uuid,
+    turn_id: Uuid,
+    committed: bool,
+}
+
+impl ActiveTurnReservation {
+    fn reserve(
+        runtime: Arc<Mutex<SessionRuntime>>,
+        thread_id: Uuid,
+        turn_id: Uuid,
+    ) -> Result<Self> {
+        {
+            let mut locked = runtime.lock().unwrap();
+            let thread_runtime = locked
+                .threads
+                .entry(thread_id)
+                .or_insert_with(|| ThreadRuntime::new(thread_id));
+            if thread_runtime.active_turn.is_some() {
+                bail!("thread {thread_id} already has an active turn");
+            }
+            thread_runtime.active_turn = Some(ActiveTurnRuntime::starting(turn_id));
+        }
+
+        Ok(Self {
+            runtime,
+            thread_id,
+            turn_id,
+            committed: false,
+        })
+    }
+
+    fn activate(&mut self, turn_number: u32, controller: turn::TurnController) -> Result<()> {
+        let mut runtime = self.runtime.lock().unwrap();
+        let active_turn = runtime
+            .threads
+            .get_mut(&self.thread_id)
+            .and_then(|thread| thread.active_turn.as_mut())
+            .filter(|turn| turn.turn_id == self.turn_id)
+            .with_context(|| {
+                format!(
+                    "thread {} lost active turn reservation during startup",
+                    self.thread_id
+                )
+            })?;
+
+        active_turn.activate(turn_number, controller);
+        self.committed = true;
+        Ok(())
+    }
+}
+
+impl Drop for ActiveTurnReservation {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+
+        let mut runtime = self.runtime.lock().unwrap();
+        if let Some(thread_runtime) = runtime.threads.get_mut(&self.thread_id)
+            && thread_runtime
+                .active_turn
+                .as_ref()
+                .map(|turn| turn.turn_id == self.turn_id)
+                .unwrap_or(false)
+        {
+            thread_runtime.active_turn = None;
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct IncrementalTranscript {
+    messages: Vec<PersistedMessage>,
+    assistant_text: String,
+    prepared_calls: Vec<PersistedToolCall>,
+    tool_results: HashMap<String, IncrementalToolResult>,
+}
+
+#[derive(Debug, Clone)]
+struct IncrementalToolResult {
+    content: String,
+    is_error: bool,
+}
+
+impl IncrementalTranscript {
+    fn new(initial_messages: Vec<PersistedMessage>) -> Self {
+        Self {
+            messages: initial_messages,
+            assistant_text: String::new(),
+            prepared_calls: Vec::new(),
+            tool_results: HashMap::new(),
+        }
+    }
+
+    fn apply_event(&mut self, event: &TurnEvent) {
+        match event {
+            TurnEvent::LlmTextDelta { text } => self.assistant_text.push_str(text.as_ref()),
+            TurnEvent::ToolCallPrepared { call } => {
+                self.prepared_calls.push(persist_tool_call(call.as_ref()));
+            }
+            TurnEvent::ToolCallCompleted { call_id, result } => {
+                self.tool_results.insert(
+                    call_id.as_ref().to_owned(),
+                    IncrementalToolResult {
+                        content: tool_outcome_content(result),
+                        is_error: tool_outcome_is_error(result),
+                    },
+                );
+            }
+            TurnEvent::StepFinished {
+                reason: StepFinishReason::ToolCalls,
+                ..
+            } => self.flush_pending_messages(),
+            TurnEvent::TurnFinished { reason }
+                if !matches!(reason, TurnFinishReason::Cancelled) =>
+            {
+                self.flush_pending_messages();
+            }
+            _ => {}
+        }
+    }
+
+    fn snapshot(&self) -> Vec<PersistedMessage> {
+        let mut snapshot = self.clone();
+        snapshot.flush_pending_messages();
+        snapshot.messages
+    }
+
+    fn flush_pending_messages(&mut self) {
+        if !self.prepared_calls.is_empty() {
+            let calls = std::mem::take(&mut self.prepared_calls);
+            let tool_results = std::mem::take(&mut self.tool_results);
+            let content =
+                (!self.assistant_text.is_empty()).then(|| std::mem::take(&mut self.assistant_text));
+            self.messages.push(PersistedMessage::AssistantToolCalls {
+                content,
+                calls: calls.clone(),
+            });
+
+            for call in calls {
+                if let Some(result) = tool_results.get(&call.call_id) {
+                    self.messages.push(PersistedMessage::ToolResult {
+                        call_id: call.call_id.clone(),
+                        tool_name: call.tool_name.clone(),
+                        content: result.content.clone(),
+                        is_error: result.is_error,
+                    });
+                }
+            }
+            return;
+        }
+
+        if !self.assistant_text.is_empty() {
+            self.messages.push(PersistedMessage::AssistantText {
+                content: std::mem::take(&mut self.assistant_text),
+            });
+        }
+    }
+}
+
+fn tool_outcome_content(outcome: &ToolOutcome) -> String {
+    match outcome {
+        ToolOutcome::Success(value) => value.to_string(),
+        ToolOutcome::Failed { message, .. } => message.as_ref().to_owned(),
+        ToolOutcome::TimedOut => "tool timed out".into(),
+        ToolOutcome::Denied => "tool call denied".into(),
+        ToolOutcome::Cancelled => "tool call cancelled".into(),
+    }
+}
+
+fn tool_outcome_is_error(outcome: &ToolOutcome) -> bool {
+    !matches!(outcome, ToolOutcome::Success(_))
 }
 
 fn apply_turn_outcome(

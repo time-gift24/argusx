@@ -36,11 +36,26 @@ pub fn spawn_session_event_bridge(app: AppHandle, manager: SharedSessionManager)
     tauri::async_runtime::spawn(async move {
         let mut rx = manager.subscribe();
 
-        while let Ok(event) = rx.recv().await {
+        while let Some(event) = recv_session_event(&mut rx).await {
             let payload = session_event_to_payload(event);
             let _ = app.emit("thread-event", payload);
         }
     });
+}
+
+async fn recv_session_event(
+    rx: &mut tokio::sync::broadcast::Receiver<SessionEvent>,
+) -> Option<SessionEvent> {
+    loop {
+        match rx.recv().await {
+            Ok(event) => return Some(event),
+            // UI bridge 落后时只跳过旧事件，不能把整条事件桥直接停掉。
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                tracing::warn!(skipped, "session event bridge lagged behind producer");
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+        }
+    }
 }
 
 #[tauri::command]
@@ -232,5 +247,42 @@ fn tool_name(call: &ToolCall) -> &str {
         ToolCall::FunctionCall { name, .. } => name,
         ToolCall::Builtin(call) => call.builtin.canonical_name(),
         ToolCall::Mcp(call) => call.name.as_deref().unwrap_or_default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::broadcast;
+
+    #[tokio::test]
+    async fn recv_session_event_recovers_after_lagged_error() {
+        let thread_id = Uuid::new_v4();
+        let (tx, mut rx) = broadcast::channel(2);
+
+        tx.send(SessionEvent::Thread {
+            thread_id,
+            event: session::ThreadEvent::ThreadCreated,
+        })
+        .unwrap();
+        tx.send(SessionEvent::Thread {
+            thread_id,
+            event: session::ThreadEvent::ThreadActivated,
+        })
+        .unwrap();
+        tx.send(SessionEvent::Thread {
+            thread_id,
+            event: session::ThreadEvent::ThreadUpdated,
+        })
+        .unwrap();
+
+        let event = recv_session_event(&mut rx).await;
+        assert!(matches!(
+            event,
+            Some(SessionEvent::Thread {
+                thread_id: observed_thread_id,
+                event: session::ThreadEvent::ThreadActivated,
+            }) if observed_thread_id == thread_id
+        ));
     }
 }
