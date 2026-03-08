@@ -4,6 +4,7 @@
 
 Argusx 当前的会话模型按 `Session -> Thread -> Turn` 三层拆分。
 检视代码或设计时，先按这三个层级判断职责边界，再看具体实现是否越界。
+`docs/plans/2026-03-08-session-thread-turn-*` 删除后，这里就是这套模型的权威摘要。
 
 ### Session
 
@@ -179,3 +180,11 @@ Tauri command 层如果把整个 `SessionManager` 再包一层全局 async mutex
 - `Session` 管理“有哪些对话”
 - `Thread` 管理“这一条对话的连续历史”
 - `Turn` 管理“这一次输入到底怎么执行完”
+
+## 简版设计总结
+
+- `Session` 负责用户级容器、默认配置和 thread 入口，不拥有单轮执行状态机。
+- `Thread` 是多轮对话聚合根，负责有序历史、单 active turn 约束，以及把已落盘 transcript 回放成下一轮 `prior messages`。
+- `Turn` 是唯一的单轮执行引擎：输入是 `TurnSeed`，运行时通过 `TurnEvent` 暴露过程，完成时通过 `TurnOutcome` 交回最终 transcript 和输出。
+- 稳定事实只落 `sessions / threads / turns` 和每轮增量 transcript；前后台、审批等待、controller 这类状态只保存在运行时内存。
+- 切换 active thread 只影响 UI 焦点，不取消后台 turn；应用重启只恢复历史可见性，并把 `Running` / `WaitingPermission` 统一收敛成 `Interrupted`。
