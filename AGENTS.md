@@ -188,3 +188,48 @@ Tauri command 层如果把整个 `SessionManager` 再包一层全局 async mutex
 - `Turn` 是唯一的单轮执行引擎：输入是 `TurnSeed`，运行时通过 `TurnEvent` 暴露过程，完成时通过 `TurnOutcome` 交回最终 transcript 和输出。
 - 稳定事实只落 `sessions / threads / turns` 和每轮增量 transcript；前后台、审批等待、controller 这类状态只保存在运行时内存。
 - 切换 active thread 只影响 UI 焦点，不取消后台 turn；应用重启只恢复历史可见性，并把 `Running` / `WaitingPermission` 统一收敛成 `Interrupted`。
+
+## Desktop Bootstrap 与兼容层
+
+`docs/plans/2026-03-08-runtime-bootstrap-*` 删除后，这里是 desktop 启动边界的权威摘要。
+
+- `runtime` 是启动资源 owner，负责配置、日志、telemetry、SQLite 和 `SessionManager` 初始化与 shutdown。
+- `desktop` 只是接入层：调用 `runtime::build_runtime()`、注入 Tauri state、暴露 commands、桥接事件；不要把启动逻辑重新散回 `desktop`。
+- SQLite / session 是主路径，telemetry 是旁路；ClickHouse 不可达时应用必须降级启动，不能阻断 chat，也不需要向前端暴露 degraded 状态。
+- 本地日志必须先于 telemetry 初始化，这样 telemetry 探测或构造失败时仍然有本地日志可查。
+- `DesktopSessionState` 是 desktop 侧的依赖工厂和兼容状态，不是第二套 runtime，也不应重新持有一套并行 turn 状态机。
+
+## Desktop Chat 兼容契约
+
+`docs/plans/2026-03-08-chat-history-checkpoint-layout-*` 和 `docs/plans/2026-03-08-runtime-bootstrap-*` 删除后，这里是 desktop chat 接入语义的权威摘要。
+
+- 旧的 Tauri chat API 仍保留：`start_turn`、`cancel_turn`、`resolve_turn_permission`、`turn-event` 是兼容层，不要轻易改掉前端契约。
+- 这些 command 的真实后端应是 `SessionManager` + hidden active thread，而不是 desktop 自己再直接驱动一套 `TurnDriver`。
+- `start_turn` 的职责是：确保 active chat thread 存在，优先复用内存中的 active thread，否则回退到最近更新的 open thread，再不然创建新 thread，然后委托 `SessionManager::send_message`。
+- `cancel_turn` 和 `resolve_turn_permission` 必须通过 `turn_id -> thread_id` 映射回到 `SessionManager`，不要在 desktop 层缓存一套独立 controller 真相源。
+- 复用 hidden active thread 时，历史必须先 hydrate 到前端再订阅实时事件；隐藏上下文可以存在于运行时，但不能对 UI 不可见。
+
+## Provider Settings
+
+`docs/plans/2026-03-08-provider-settings-*` 删除后，这里是 provider 配置边界的权威摘要。
+
+- provider profile 是 desktop 级全局配置，真相源在 SQLite，不在前端内存态，也不在 session/thread 持久化模型里。
+- API key 必须密文落库；数据密钥由系统安全存储包装保存。系统安全存储不可用时保存配置必须失败，绝不允许明文退化。
+- 全局只能有一个默认 profile。
+- `Z.ai` 最多允许一条保存配置；`OpenAI-compatible` 可以有多条。
+- chat 运行时解析顺序固定为：SQLite 默认 profile -> 环境变量 fallback -> 明确返回配置错误。
+- 编辑已有 profile 时，空 `api_key` 表示“保持现有密文”，不是清空 secret。
+
+## Desktop Chat UI 与工具语义
+
+`docs/plans/2026-03-08-update-plan-queue-*`、`docs/plans/2026-03-08-streamdown-default-runtime-*`、`docs/plans/2026-03-08-chat-history-checkpoint-layout-*` 删除后，这里是 desktop chat UI 语义的权威摘要。
+
+- `/chat` 必须展示多轮历史，而不是只展示最新一轮；每轮之间用明确 checkpoint 分隔。
+- 用户消息是右侧气泡；助手正文是透明背景的正文流，不要把整轮重新包回厚卡片。
+- composer 是底部悬浮层；滚动区必须给它预留可测量的底部安全留白，避免遮挡最后一轮内容。
+- 运行时 `Streamdown` 默认使用原生行为；历史自定义层只作为 `@deprecated` 参考代码存在，不应再成为当前渲染契约。
+- desktop 当前的一等低风险工具面是 `read`、`glob`、`grep`、`update_plan`；这几项可自动放行，其余工具默认走 permission flow。
+- `update_plan` 是一等 UI 语义，不应只当普通 tool result 文本处理；前端每轮只保留最新的 plan snapshot，并通过 `Queue` 渲染在助手正文之前。
+- `update_plan` 不应在普通 `ToolCallItem` 列表中重复展示；计划可视化统一由 plan queue 负责。
+- 历史 hydrate 时也要从持久化 tool result 中重建最新 plan snapshot；历史 reasoning 目前不持久化，因此回放时保持空字符串是预期行为。
+- 当前系统只保证 `update_plan` 可调用、可校验、可回放、可显示，不保证模型策略一定把所有步骤收敛到 `completed`；这仍是后续 orchestration 问题。
