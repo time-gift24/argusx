@@ -18,8 +18,17 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+argus_core = { package = "core", path = "../../core" }
+async-trait = { workspace = true }
+provider = { path = "../../provider" }
+serde = { workspace = true }
+serde_json = { workspace = true }
 telemetry = { path = "../../telemetry" }
+tokio = { workspace = true, features = ["sync", "rt", "macros", "time"] }
+tool = { path = "../../tool" }
+turn = { path = "../../turn" }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+uuid = { workspace = true }
