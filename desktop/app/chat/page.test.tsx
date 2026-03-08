@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -130,6 +130,7 @@ describe("ChatPage", () => {
     });
 
     await user.click(screen.getByRole("button", { name: /Reasoning/i }));
+    await user.click(screen.getByRole("button", { name: "Summary" }));
     expect(screen.getByText("Reasoning trace")).toBeInTheDocument();
     expect(screen.getByText("glob")).toBeInTheDocument();
 
@@ -204,6 +205,11 @@ describe("ChatPage", () => {
     expect(await screen.findByText("Existing prompt")).toBeInTheDocument();
     expect(screen.getByText("Existing answer")).toBeInTheDocument();
     expect(screen.queryByText("Execution Plan")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Summary" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Summary" }));
+    expect(screen.getByText(".")).toBeInTheDocument();
+    expect(screen.getByText('{"content":"hello"}')).toBeInTheDocument();
 
     await user.type(
       screen.getByRole("textbox", { name: /prompt/i }),
@@ -467,6 +473,24 @@ describe("ChatPage", () => {
     expect(finished.lastResolvedPermission).toBeNull();
   });
 
+  it("does not reopen a finished turn when late llm deltas arrive", () => {
+    const current = createPendingTurn("client-turn-1", "Review this plan");
+    const finished = reduceTurnEventForTurn(current, {
+      data: { reason: "completed" },
+      turnId: "turn-1",
+      type: "turn-finished",
+    });
+    const afterLateDelta = reduceTurnEventForTurn(finished, {
+      data: { text: "late text" },
+      turnId: "turn-1",
+      type: "llm-text-delta",
+    });
+
+    expect(finished.status).toBe("completed");
+    expect(afterLateDelta.status).toBe("completed");
+    expect(afterLateDelta.assistantText).toBe("late text");
+  });
+
   it("renders the active plan above the composer and hides it when the turn finishes", async () => {
     const user = userEvent.setup();
     const { container } = render(<ChatPage />);
@@ -545,6 +569,12 @@ describe("ChatPage", () => {
       document.querySelector('[data-slot="tool-permission-confirmation"]')
     ).not.toBeInTheDocument();
 
+    await waitFor(() => {
+      expect(
+        within(composerShell!).getByText("Execution Plan")
+      ).toBeInTheDocument();
+    });
+
     await act(async () => {
       onTurnEvent?.({
         turnId: "turn-1",
@@ -553,7 +583,14 @@ describe("ChatPage", () => {
       });
     });
 
-    expect(within(composerShell!).queryByText("Execution Plan")).not.toBeInTheDocument();
+    const updatedComposerShell = container.querySelector(
+      '[data-slot="chat-composer-shell"]'
+    ) as HTMLElement | null;
+    await waitFor(() => {
+      expect(
+        within(updatedComposerShell!).queryByText("Execution Plan")
+      ).not.toBeInTheDocument();
+    });
   });
 
   it("groups read tools into a collapsed Summary section and keeps only the latest 3 items", async () => {
@@ -698,8 +735,12 @@ describe("ChatPage", () => {
     await user.click(within(assistantSection!).getByRole("button", { name: "Summary" }));
 
     expect(within(assistantSection!).queryByText("src/old.ts")).not.toBeInTheDocument();
-    expect(within(assistantSection!).getByText("desktop/components")).toBeInTheDocument();
-    expect(within(assistantSection!).getByText("desktop")).toBeInTheDocument();
+    expect(
+      within(assistantSection!).getByText("desktop/components · *.tsx")
+    ).toBeInTheDocument();
+    expect(
+      within(assistantSection!).getByText("desktop · Summary")
+    ).toBeInTheDocument();
     expect(within(assistantSection!).getByText("src/new.ts")).toBeInTheDocument();
   });
 });
