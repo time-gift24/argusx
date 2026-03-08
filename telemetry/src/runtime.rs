@@ -174,6 +174,7 @@ fn init_with_writer(
     let metrics = Arc::new(TelemetryMetricsInner::default());
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     let (shutdown_complete_tx, shutdown_complete_rx) = std_mpsc::channel();
+    let writer_metrics = metrics.clone();
 
     let subscriber = tracing_subscriber::registry().with(TelemetryLayer::new(
         RuntimeSink::new(queue.clone(), notify.clone(), metrics.clone()),
@@ -182,15 +183,30 @@ fn init_with_writer(
     tracing::subscriber::set_global_default(subscriber)
         .map_err(|err| TelemetryError::Initialization(err.to_string()))?;
 
-    tokio::spawn(writer_task(
-        queue,
-        notify,
-        writer,
-        metrics.clone(),
-        config,
-        shutdown_rx,
-        shutdown_complete_tx,
-    ));
+    std::thread::Builder::new()
+        .name("telemetry-writer".to_string())
+        .spawn(move || {
+            match tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+            {
+                Ok(rt) => rt.block_on(writer_task(
+                    queue,
+                    notify,
+                    writer,
+                    writer_metrics,
+                    config,
+                    shutdown_rx,
+                    shutdown_complete_tx,
+                )),
+                Err(err) => {
+                    let _ = shutdown_complete_tx.send(Err(TelemetryError::Initialization(
+                        format!("failed to build telemetry runtime: {err}"),
+                    )));
+                }
+            }
+        })
+        .map_err(|err| TelemetryError::Initialization(err.to_string()))?;
 
     Ok(TelemetryRuntime {
         shutdown_tx: Some(shutdown_tx),
