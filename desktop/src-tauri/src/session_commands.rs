@@ -2,14 +2,13 @@ use std::sync::Arc;
 
 use argus_core::ToolCall;
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use session::manager::{SessionEvent, SessionManager, TurnDependencies};
 use tauri::{AppHandle, Emitter, State};
-use tokio::sync::Mutex;
 use turn::{PermissionDecision, TurnEvent};
 use uuid::Uuid;
 
-pub type SharedSessionManager = Arc<Mutex<SessionManager>>;
+pub type SharedSessionManager = Arc<SessionManager>;
 
 pub struct DesktopSessionState {
     pub manager: SharedSessionManager,
@@ -19,7 +18,7 @@ pub struct DesktopSessionState {
 impl DesktopSessionState {
     pub fn new(manager: SessionManager) -> Self {
         Self {
-            manager: Arc::new(Mutex::new(manager)),
+            manager: Arc::new(manager),
             turn_dependencies: None,
         }
     }
@@ -35,10 +34,7 @@ pub struct ThreadEventPayload {
 
 pub fn spawn_session_event_bridge(app: AppHandle, manager: SharedSessionManager) {
     tauri::async_runtime::spawn(async move {
-        let mut rx = {
-            let manager = manager.lock().await;
-            manager.subscribe()
-        };
+        let mut rx = manager.subscribe();
 
         while let Ok(event) = rx.recv().await {
             let payload = session_event_to_payload(event);
@@ -52,8 +48,8 @@ pub async fn create_thread(
     state: State<'_, DesktopSessionState>,
     title: Option<String>,
 ) -> Result<String, String> {
-    let manager = state.manager.lock().await;
-    manager
+    state
+        .manager
         .create_thread(title)
         .await
         .map(|thread_id| thread_id.to_string())
@@ -64,8 +60,11 @@ pub async fn create_thread(
 pub async fn list_threads(
     state: State<'_, DesktopSessionState>,
 ) -> Result<Vec<session::ThreadRecord>, String> {
-    let manager = state.manager.lock().await;
-    manager.list_threads().await.map_err(|err| err.to_string())
+    state
+        .manager
+        .list_threads()
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -74,8 +73,11 @@ pub async fn switch_thread(
     thread_id: String,
 ) -> Result<(), String> {
     let thread_id = parse_uuid(&thread_id)?;
-    let manager = state.manager.lock().await;
-    manager.switch_thread(thread_id).await.map_err(|err| err.to_string())
+    state
+        .manager
+        .switch_thread(thread_id)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]
@@ -89,8 +91,8 @@ pub async fn send_message(
         .clone()
         .ok_or_else(|| "turn dependencies are not configured in desktop runtime".to_string())?;
     let thread_id = parse_uuid(&thread_id)?;
-    let manager = state.manager.lock().await;
-    manager
+    state
+        .manager
         .send_message(thread_id, content, deps)
         .await
         .map(|_| ())
@@ -111,8 +113,8 @@ pub async fn resolve_thread_permission(
         other => return Err(format!("unsupported permission decision: {other}")),
     };
 
-    let manager = state.manager.lock().await;
-    manager
+    state
+        .manager
         .resolve_permission(thread_id, request_id, decision)
         .await
         .map_err(|err| err.to_string())
@@ -124,8 +126,11 @@ pub async fn cancel_thread_turn(
     thread_id: String,
 ) -> Result<(), String> {
     let thread_id = parse_uuid(&thread_id)?;
-    let manager = state.manager.lock().await;
-    manager.cancel_turn(thread_id).await.map_err(|err| err.to_string())
+    state
+        .manager
+        .cancel_turn(thread_id)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 fn parse_uuid(raw: &str) -> Result<Uuid, String> {

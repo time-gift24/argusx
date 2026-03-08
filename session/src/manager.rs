@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::{Arc, Mutex}};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::{Context, Result, bail};
 use chrono::Utc;
@@ -22,7 +25,10 @@ const DEFAULT_MODEL: &str = "gpt-5";
 
 #[derive(Debug, Clone)]
 pub enum SessionEvent {
-    Thread { thread_id: Uuid, event: ThreadEvent },
+    Thread {
+        thread_id: Uuid,
+        event: ThreadEvent,
+    },
     Turn {
         thread_id: Uuid,
         turn_id: Uuid,
@@ -109,7 +115,10 @@ impl SessionManager {
             .await?
             .with_context(|| format!("thread not found: {thread_id}"))?;
         if thread.session_id != self.session_id {
-            bail!("thread {thread_id} does not belong to session {}", self.session_id);
+            bail!(
+                "thread {thread_id} does not belong to session {}",
+                self.session_id
+            );
         }
 
         {
@@ -145,11 +154,14 @@ impl SessionManager {
             .await?
             .with_context(|| format!("thread not found: {thread_id}"))?;
         if thread.session_id != self.session_id {
-            bail!("thread {thread_id} does not belong to session {}", self.session_id);
+            bail!(
+                "thread {thread_id} does not belong to session {}",
+                self.session_id
+            );
         }
 
         let history = self.store.list_turns(thread_id).await?;
-        let (turn_id, turn_number, prior_messages) = {
+        let (turn_id, turn_number, prior_messages, prior_message_count) = {
             let mut runtime = self.runtime.lock().unwrap();
             let thread_runtime = runtime
                 .threads
@@ -162,7 +174,8 @@ impl SessionManager {
             let turn_number = thread.last_turn_number + 1;
             let turn_id = Uuid::new_v4();
             let prior_messages = thread_runtime.build_prior_messages(&history);
-            (turn_id, turn_number, prior_messages)
+            let prior_message_count = prior_messages.len();
+            (turn_id, turn_number, prior_messages, prior_message_count)
         };
 
         let now = Utc::now();
@@ -214,7 +227,13 @@ impl SessionManager {
             });
         }
 
-        self.spawn_turn_bridge(thread_id, turn_record.clone(), handle, task);
+        self.spawn_turn_bridge(
+            thread_id,
+            turn_record.clone(),
+            prior_message_count,
+            handle,
+            task,
+        );
         Ok(turn_id)
     }
 
@@ -239,6 +258,7 @@ impl SessionManager {
         &self,
         thread_id: Uuid,
         mut turn_record: TurnRecord,
+        prior_message_count: usize,
         handle: TurnHandle,
         task: JoinHandle<Result<TurnOutcome, turn::TurnError>>,
     ) {
@@ -287,7 +307,7 @@ impl SessionManager {
 
             match task.await {
                 Ok(Ok(outcome)) => {
-                    apply_turn_outcome(&mut turn_record, outcome);
+                    apply_turn_outcome(&mut turn_record, prior_message_count, outcome);
                     let _ = store.update_turn(&turn_record).await;
                 }
                 Ok(Err(_turn_err)) => {
@@ -336,7 +356,9 @@ impl SessionManager {
     }
 
     fn emit_thread_event(&self, thread_id: Uuid, event: ThreadEvent) {
-        let _ = self.events_tx.send(SessionEvent::Thread { thread_id, event });
+        let _ = self
+            .events_tx
+            .send(SessionEvent::Thread { thread_id, event });
     }
 
     async fn ensure_session(&self) -> Result<()> {
@@ -360,10 +382,18 @@ pub struct SessionRuntime {
     pub threads: HashMap<Uuid, ThreadRuntime>,
 }
 
-fn apply_turn_outcome(turn_record: &mut TurnRecord, outcome: TurnOutcome) {
+fn apply_turn_outcome(
+    turn_record: &mut TurnRecord,
+    prior_message_count: usize,
+    outcome: TurnOutcome,
+) {
     turn_record.status = map_finish_reason_to_status(&outcome.finish_reason);
     turn_record.finish_reason = Some(format!("{:?}", outcome.finish_reason));
-    turn_record.transcript = persist_transcript(&outcome.transcript);
+    let new_messages = outcome
+        .transcript
+        .get(prior_message_count..)
+        .unwrap_or(&outcome.transcript);
+    turn_record.transcript = persist_transcript(new_messages);
     turn_record.final_output = outcome.final_output;
     turn_record.finished_at = Some(Utc::now());
 }
