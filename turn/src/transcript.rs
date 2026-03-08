@@ -36,6 +36,12 @@ impl TurnTranscript {
         Self::default()
     }
 
+    pub fn from_snapshot(messages: TurnMessageSnapshot) -> Self {
+        Self {
+            messages: messages.iter().cloned().collect(),
+        }
+    }
+
     pub fn push(&mut self, message: TurnMessage) {
         self.messages.push(Arc::new(message));
     }
@@ -46,6 +52,10 @@ impl TurnTranscript {
 
     pub fn snapshot(&self) -> TurnMessageSnapshot {
         Arc::from(self.messages.clone())
+    }
+
+    pub fn into_snapshot(self) -> TurnMessageSnapshot {
+        Arc::from(self.messages)
     }
 }
 
