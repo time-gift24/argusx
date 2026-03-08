@@ -22,7 +22,9 @@ async fn runtime_flushes_high_priority_records_on_shutdown() {
         ..TelemetryConfig::default()
     };
 
-    let runtime = init(config).unwrap();
+    let runtime = std::thread::spawn(move || init(config).unwrap())
+        .join()
+        .expect("telemetry init should not require an existing Tokio runtime");
 
     tracing::info!(
         event_name = "turn_finished",

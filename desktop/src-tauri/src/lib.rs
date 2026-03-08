@@ -1,3 +1,5 @@
+pub mod chat;
+pub mod provider_settings;
 mod session_commands;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -11,7 +13,7 @@ use session_commands::{
 pub fn run() -> Result<(), BoxError> {
     let runtime = tauri::async_runtime::block_on(runtime::build_runtime())?;
     let manager = runtime.session_manager.clone();
-    let session_state = DesktopSessionState::new(manager);
+    let session_state = DesktopSessionState::new(manager).map_err(|err| -> BoxError { Box::new(err) })?;
     let bridge_manager = session_state.manager.clone();
 
     let run_result = tauri::Builder::default()
@@ -28,6 +30,15 @@ pub fn run() -> Result<(), BoxError> {
             send_message,
             resolve_thread_permission,
             cancel_thread_turn,
+            chat::commands::start_turn,
+            chat::commands::cancel_turn,
+            chat::commands::load_active_chat_thread,
+            chat::commands::resolve_turn_permission,
+            provider_settings::commands::list_provider_profiles,
+            provider_settings::commands::save_provider_profile,
+            provider_settings::commands::delete_provider_profile,
+            provider_settings::commands::set_default_provider_profile,
+            provider_settings::commands::test_provider_profile
         ])
         .on_window_event(|_app, event| {
             // Emit window closed event for telemetry

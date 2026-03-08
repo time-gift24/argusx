@@ -23,7 +23,11 @@ function Harness({
       isRunning={isRunning}
       runKey={runKey}
     >
-      <StreamItemTrigger label="Reasoning" status="Thinking" />
+      <StreamItemTrigger
+        icon={<svg data-testid="stream-item-test-icon" viewBox="0 0 10 10" />}
+        label="Reasoning"
+        status="Thinking"
+      />
       <StreamItemContent>stream body</StreamItemContent>
     </StreamItem>
   );
@@ -80,6 +84,28 @@ describe("StreamItem", () => {
     expect(
       container.querySelector('[data-slot="stream-item-shimmer"]')
     ).not.toBeInTheDocument();
+  });
+
+  it("uses the 14px body scale for trigger and status text", () => {
+    const { container } = render(<Harness isRunning runKey={1} />);
+
+    expect(screen.getByRole("button", { name: /reasoning/i }).className).toContain(
+      "text-[14px]"
+    );
+    expect(screen.getByRole("button", { name: /reasoning/i }).className).toContain(
+      "leading-5"
+    );
+    expect(screen.getByText("Thinking").className).toContain("text-[14px]");
+    expect(screen.getByText("Thinking").className).toContain("leading-5");
+    expect(
+      container.querySelector('[data-testid="stream-item-test-icon"]')?.parentElement
+    ).toHaveClass("[&_svg]:size-[14px]");
+    expect(
+      container
+        .querySelector('[data-slot="stream-item-trigger"]')
+        ?.querySelectorAll("svg")
+        .item(1)
+    ).toHaveClass("size-[14px]");
   });
 
   it("does not auto-close after the user reopens the item during the same run", async () => {
