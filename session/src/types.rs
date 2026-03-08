@@ -40,10 +40,21 @@ pub enum TurnStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PersistedToolKind {
+    Function,
+    Builtin,
+    McpCall,
+    McpListTools,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PersistedToolCall {
+    pub sequence: u32,
     pub call_id: String,
     pub tool_name: String,
     pub arguments: String,
+    pub kind: PersistedToolKind,
+    pub server_label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

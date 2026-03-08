@@ -5,6 +5,7 @@ edition = "2024"
 description = "Session management for ArgusX"
 
 [dependencies]
+argus_core = { package = "core", path = "../core" }
 uuid = { workspace = true, features = ["serde", "v4"] }
 chrono = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
@@ -13,6 +14,7 @@ tokio = { workspace = true, features = ["sync"] }
 sqlx = { workspace = true, features = ["runtime-tokio", "sqlite"] }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
+turn = { path = "../turn" }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
