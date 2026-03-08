@@ -66,6 +66,7 @@ pub struct TelemetryRuntime {
     shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
     shutdown_complete_rx: std_mpsc::Receiver<Result<(), TelemetryError>>,
     metrics: Arc<TelemetryMetricsInner>,
+    _runtime: Option<tokio::runtime::Runtime>,
 }
 
 impl TelemetryRuntime {
@@ -84,7 +85,7 @@ impl TelemetryRuntime {
             let _ = shutdown_tx.send(());
         }
 
-        match self.shutdown_complete_rx.recv_timeout(timeout) {
+        let result = match self.shutdown_complete_rx.recv_timeout(timeout) {
             Ok(result) => result,
             Err(std_mpsc::RecvTimeoutError::Timeout) => Err(TelemetryError::Shutdown(
                 "timed out waiting for telemetry flush".into(),
@@ -92,7 +93,22 @@ impl TelemetryRuntime {
             Err(std_mpsc::RecvTimeoutError::Disconnected) => Err(TelemetryError::Shutdown(
                 "telemetry writer task exited without a shutdown result".into(),
             )),
+        };
+
+        self.shutdown_owned_runtime();
+        result
+    }
+
+    fn shutdown_owned_runtime(&mut self) {
+        if let Some(runtime) = self._runtime.take() {
+            runtime.shutdown_background();
         }
+    }
+}
+
+impl Drop for TelemetryRuntime {
+    fn drop(&mut self) {
+        self.shutdown_owned_runtime();
     }
 }
 
@@ -182,7 +198,7 @@ fn init_with_writer(
     tracing::subscriber::set_global_default(subscriber)
         .map_err(|err| TelemetryError::Initialization(err.to_string()))?;
 
-    tokio::spawn(writer_task(
+    let runtime = spawn_writer_task(
         queue,
         notify,
         writer,
@@ -190,13 +206,51 @@ fn init_with_writer(
         config,
         shutdown_rx,
         shutdown_complete_tx,
-    ));
+    )?;
 
     Ok(TelemetryRuntime {
         shutdown_tx: Some(shutdown_tx),
         shutdown_complete_rx,
         metrics,
+        _runtime: runtime,
     })
+}
+
+fn spawn_writer_task(
+    queue: Arc<Mutex<BatchQueue>>,
+    notify: Arc<tokio::sync::Notify>,
+    writer: Arc<dyn BatchWriter>,
+    metrics: Arc<TelemetryMetricsInner>,
+    config: TelemetryConfig,
+    shutdown_rx: tokio::sync::oneshot::Receiver<()>,
+    shutdown_complete_tx: std_mpsc::Sender<Result<(), TelemetryError>>,
+) -> Result<Option<tokio::runtime::Runtime>, TelemetryError> {
+    let task = writer_task(
+        queue,
+        notify,
+        writer,
+        metrics,
+        config,
+        shutdown_rx,
+        shutdown_complete_tx,
+    );
+
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => {
+            handle.spawn(task);
+            Ok(None)
+        }
+        Err(_) => {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .thread_name("telemetry-writer")
+                .build()
+                .map_err(|err| TelemetryError::Initialization(err.to_string()))?;
+            runtime.spawn(task);
+            Ok(Some(runtime))
+        }
+    }
 }
 
 async fn writer_task(

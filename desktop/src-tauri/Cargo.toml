@@ -18,8 +18,26 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+aead = { package = "aes-gcm", version = "0.10.3" }
+argus_core = { package = "core", path = "../../core" }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+directories = "6.0.0"
+futures = { workspace = true }
+keyring = { version = "3.6.2", features = ["apple-native", "windows-native", "linux-native-sync-persistent", "crypto-rust"] }
+provider = { path = "../../provider" }
+reqwest = { workspace = true }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 telemetry = { path = "../../telemetry" }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt", "macros", "time"] }
+tokio-util = { workspace = true }
+tool = { path = "../../tool" }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+turn = { path = "../../turn" }
+uuid = { workspace = true }

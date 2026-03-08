@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * @deprecated Preserved only as legacy Streamdown customization reference.
+ * Runtime callsites now use default Streamdown rendering without this layer.
+ */
+
 import type { Components, ExtraProps } from "streamdown";
 import type { HighlightResult } from "@streamdown/code";
 import type { BundledLanguage } from "streamdown";
@@ -403,6 +408,10 @@ export function StreamdownCode({
   );
 }
 
+/**
+ * @deprecated Preserved only as legacy Streamdown customization reference.
+ * Runtime callsites now use default Streamdown rendering without this layer.
+ */
 export const sharedStreamdownComponents = {
   code: StreamdownCode,
 } satisfies Components;

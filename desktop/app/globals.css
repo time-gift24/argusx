@@ -24,10 +24,11 @@
   animation: stream-item-shimmer 1.8s ease-in-out infinite;
 }
 
+/* Deprecated: legacy Streamdown customization reference. Runtime callsites now use default Streamdown rendering. */
 .ai-streamdown {
   color: var(--foreground);
-  font-size: 12px;
-  line-height: 14px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .ai-streamdown > :not([hidden]) ~ :not([hidden]) {
@@ -37,7 +38,7 @@
 
 .ai-streamdown p {
   margin-block: 6px;
-  line-height: 14px;
+  line-height: 20px;
 }
 
 .ai-streamdown [data-streamdown="heading-1"] {
@@ -84,7 +85,7 @@
 
 .ai-streamdown [data-streamdown="list-item"] {
   padding-block: 2px;
-  line-height: 14px;
+  line-height: 20px;
 }
 
 .ai-streamdown [data-streamdown="strong"] {

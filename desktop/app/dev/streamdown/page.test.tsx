@@ -1,44 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("@/components/ai/streamdown-plugins", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("@/components/ai/streamdown-plugins")>();
-
-  return {
-    ...actual,
-    sharedMermaidPlugin: {
-      ...actual.sharedMermaidPlugin,
-      getMermaid: () => ({
-        initialize: () => undefined,
-        render: vi.fn().mockResolvedValue({
-          svg: '<svg aria-label="Mermaid chart"><text>Rendered Mermaid</text></svg>',
-        }),
-      }),
-    },
-    sharedStreamdownPlugins: {
-      ...actual.sharedStreamdownPlugins,
-      mermaid: {
-        ...actual.sharedMermaidPlugin,
-        getMermaid: () => ({
-          initialize: () => undefined,
-          render: vi.fn().mockResolvedValue({
-            svg: '<svg aria-label="Mermaid chart"><text>Rendered Mermaid</text></svg>',
-          }),
-        }),
-      },
-    },
-  };
-});
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
 import StreamdownPage from "./page";
 
-afterEach(() => {
-  vi.clearAllMocks();
-});
-
 describe("StreamdownPage", () => {
-  it("renders the streamdown playground samples", async () => {
+  it("renders the playground samples with default streamdown output", () => {
     const { container } = render(<StreamdownPage />);
 
     expect(
@@ -55,42 +21,12 @@ describe("StreamdownPage", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Capture screenshots")).toBeInTheDocument();
     expect(screen.getByText("Add lint job")).toBeInTheDocument();
-    expect(document.querySelector(".katex")).toBeInTheDocument();
-    expect(container.querySelector(".ai-streamdown")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(
-        document.querySelector('[data-streamdown="mermaid-block"]')
-      ).toBeInTheDocument();
-    });
-    expect(
-      document.querySelector('[data-streamdown="mermaid-block-actions"]')
-    ).toBeInTheDocument();
+    expect(container).toHaveTextContent("Inline math: $E = mc^2$");
+    expect(container).toHaveTextContent("graph TD");
+    expect(container.querySelector(".katex")).not.toBeInTheDocument();
+    expect(container.querySelector(".ai-streamdown")).not.toBeInTheDocument();
     expect(
       document.querySelector('[data-streamdown="custom-code-panel"]')
-    ).toBeInTheDocument();
-    expect(
-      document
-        .querySelector('[data-streamdown="custom-code-panel"]')
-        ?.closest('[data-slot="stream-item"]')
-    ).toBeInTheDocument();
-    expect(
-      document.querySelector(
-        '[data-streamdown="code-language-icon"][data-language="javascript"]'
-      )
-    ).toBeInTheDocument();
-    expect(
-      document.querySelector(
-        '[data-streamdown="custom-code-panel"] [data-streamdown="code-block-header"]'
-      )
-    ).not.toBeInTheDocument();
-    expect(
-      document.querySelector(
-        '[data-streamdown="custom-code-panel"] [data-streamdown="code-block-body"] [data-streamdown="code-block-actions"]'
-      )
-    ).toBeInTheDocument();
-    expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
-    expect(
-      document.querySelector('[data-slot="runtime-mermaid-surface"]')
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Start" })

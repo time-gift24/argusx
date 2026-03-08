@@ -3,19 +3,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Streamdown } from "streamdown";
 
-import {
-  sharedStreamdownClassName,
-  sharedStreamdownComponents,
-  sharedStreamdownControls,
-  sharedStreamdownIcons,
-  sharedStreamdownPlugins,
-  sharedStreamdownShikiTheme,
-  sharedStreamdownTranslations,
-} from "@/components/ai/streamdown";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
-const proseClassName = sharedStreamdownClassName;
 const streamingTickMs = 28;
 
 type SampleMarkdown = {
@@ -197,20 +186,7 @@ function MarkdownPreview({
   content: string;
   isAnimating?: boolean;
 }) {
-  return (
-    <Streamdown
-      className={proseClassName}
-      components={sharedStreamdownComponents}
-      controls={sharedStreamdownControls}
-      icons={sharedStreamdownIcons}
-      isAnimating={isAnimating}
-      plugins={sharedStreamdownPlugins}
-      shikiTheme={sharedStreamdownShikiTheme}
-      translations={sharedStreamdownTranslations}
-    >
-      {content}
-    </Streamdown>
-  );
+  return <Streamdown isAnimating={isAnimating}>{content}</Streamdown>;
 }
 
 function StreamingDemo() {
