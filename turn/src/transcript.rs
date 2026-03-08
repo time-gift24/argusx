@@ -47,6 +47,10 @@ impl TurnTranscript {
     pub fn snapshot(&self) -> TurnMessageSnapshot {
         Arc::from(self.messages.clone())
     }
+
+    pub fn to_vec(&self) -> Vec<TurnMessage> {
+        self.messages.iter().map(|message| message.as_ref().clone()).collect()
+    }
 }
 
 #[cfg(test)]

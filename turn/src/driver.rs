@@ -12,9 +12,9 @@ use tracing::{Instrument, info, info_span};
 
 use crate::{
     AuthorizationDecision, FinalStepPolicy, LlmStepRequest, ModelRunner, PermissionDecision,
-    StepFinishReason, ToolAuthorizer, ToolOutcome, ToolRunner, TurnContext, TurnError, TurnEvent,
+    StepFinishReason, ToolAuthorizer, ToolOutcome, ToolRunner, TurnError, TurnEvent,
     TurnFailure, TurnFinishReason, TurnHandle, TurnMessage, TurnOptions, TurnState, TurnSummary,
-    TurnTranscript,
+    TurnOutcome, TurnSeed, TurnTranscript,
     state::{ActiveLlmStep, PendingPermissionCall, PermissionPause, ToolBatch},
     transcript::SharedToolCall,
 };
@@ -25,7 +25,7 @@ enum ToolTaskResult {
 }
 
 pub struct TurnDriver {
-    context: TurnContext,
+    seed: TurnSeed,
     model: Arc<dyn ModelRunner>,
     tool_runner: Arc<dyn ToolRunner>,
     authorizer: Arc<dyn ToolAuthorizer>,
@@ -41,14 +41,14 @@ pub struct TurnDriver {
 
 impl TurnDriver {
     pub fn spawn(
-        context: TurnContext,
+        seed: TurnSeed,
         model: Arc<dyn ModelRunner>,
         tool_runner: Arc<dyn ToolRunner>,
         authorizer: Arc<dyn ToolAuthorizer>,
         observer: Arc<dyn crate::TurnObserver>,
-    ) -> (TurnHandle, JoinHandle<Result<(), TurnError>>) {
+    ) -> (TurnHandle, JoinHandle<Result<TurnOutcome, TurnError>>) {
         Self::spawn_with_options(
-            context,
+            seed,
             TurnOptions::default(),
             model,
             tool_runner,
@@ -58,20 +58,20 @@ impl TurnDriver {
     }
 
     pub fn spawn_with_options(
-        context: TurnContext,
+        seed: TurnSeed,
         options: TurnOptions,
         model: Arc<dyn ModelRunner>,
         tool_runner: Arc<dyn ToolRunner>,
         authorizer: Arc<dyn ToolAuthorizer>,
         observer: Arc<dyn crate::TurnObserver>,
-    ) -> (TurnHandle, JoinHandle<Result<(), TurnError>>) {
+    ) -> (TurnHandle, JoinHandle<Result<TurnOutcome, TurnError>>) {
         let (command_tx, command_rx) = mpsc::channel(8);
         let (event_tx, event_rx) = mpsc::channel(32);
 
         let handle = TurnHandle::new(command_tx, event_rx);
         let driver = Self {
             state: TurnState::Ready,
-            context,
+            seed,
             model,
             tool_runner,
             authorizer,
@@ -85,19 +85,22 @@ impl TurnDriver {
         };
         let span = info_span!(
             "turn.run",
-            session_id = %driver.context.session_id,
-            turn_id = %driver.context.turn_id
+            session_id = %driver.seed.session_id,
+            turn_id = %driver.seed.turn_id
         );
 
         let task = task::spawn(async move { driver.run().await }.instrument(span));
         (handle, task)
     }
 
-    async fn run(mut self) -> Result<(), TurnError> {
+    async fn run(mut self) -> Result<TurnOutcome, TurnError> {
         info!("turn started");
         self.emit(TurnEvent::TurnStarted).await?;
+        for message in &self.seed.prior_messages {
+            self.transcript.push(message.clone());
+        }
         self.transcript.push(TurnMessage::User {
-            content: self.context.user_message.as_str().into(),
+            content: self.seed.user_message.as_str().into(),
         });
 
         let mut step_index: u32 = 0;
@@ -127,8 +130,8 @@ impl TurnDriver {
             };
 
             let request = LlmStepRequest {
-                session_id: self.context.session_id.clone(),
-                turn_id: self.context.turn_id.clone(),
+                session_id: self.seed.session_id.clone(),
+                turn_id: self.seed.turn_id.clone(),
                 step_index,
                 messages: self.transcript.snapshot(),
                 allow_tools,
@@ -166,6 +169,7 @@ impl TurnDriver {
                 }
             };
 
+            let mut assistant_text = String::new();
             let terminal_reason = loop {
                 tokio::select! {
                     biased;
@@ -190,6 +194,7 @@ impl TurnDriver {
                             }
                             Ok(Some(event)) => match event {
                                 ResponseEvent::ContentDelta(text) => {
+                                    assistant_text.push_str(text.as_ref());
                                     self.emit(TurnEvent::LlmTextDelta { text }).await?;
                                 }
                                 ResponseEvent::ReasoningDelta(text) => {
@@ -224,8 +229,13 @@ impl TurnDriver {
 
             match terminal_reason {
                 FinishReason::Stop => {
+                    if !assistant_text.is_empty() {
+                        self.transcript.push(TurnMessage::AssistantText {
+                            content: assistant_text.clone().into(),
+                        });
+                    }
                     let summary = TurnSummary {
-                        turn_id: self.context.turn_id.clone(),
+                        turn_id: self.seed.turn_id.clone(),
                     };
                     self.state = TurnState::Completed(summary);
                     return self.finish(TurnFinishReason::Completed).await;
@@ -243,7 +253,7 @@ impl TurnDriver {
 
                     let calls = Arc::from(active_step.tool_calls);
                     self.transcript.push(TurnMessage::AssistantToolCalls {
-                        content: None,
+                        content: (!assistant_text.is_empty()).then(|| assistant_text.clone().into()),
                         calls: Arc::clone(&calls),
                     });
 
@@ -255,7 +265,7 @@ impl TurnDriver {
 
                     let outcomes = self.execute_tool_batch(batch).await?;
                     if matches!(self.state, TurnState::Cancelled(_)) {
-                        return Ok(());
+                        return Ok(self.build_outcome(TurnFinishReason::Cancelled));
                     }
 
                     for (call, outcome) in calls.iter().zip(outcomes.iter()) {
@@ -282,9 +292,11 @@ impl TurnDriver {
         }
     }
 
-    async fn finish(&mut self, reason: TurnFinishReason) -> Result<(), TurnError> {
+    async fn finish(&mut self, reason: TurnFinishReason) -> Result<TurnOutcome, TurnError> {
         info!(reason = ?reason, "turn finished");
-        self.emit(TurnEvent::TurnFinished { reason }).await
+        let outcome = self.build_outcome(reason.clone());
+        self.emit(TurnEvent::TurnFinished { reason }).await?;
+        Ok(outcome)
     }
 
     async fn emit(&self, event: TurnEvent) -> Result<(), TurnError> {
@@ -379,7 +391,7 @@ impl TurnDriver {
                             pending_permissions.clear();
                             cancellation_requested = true;
                             self.state = TurnState::Cancelled(TurnSummary {
-                                turn_id: self.context.turn_id.clone(),
+                                turn_id: self.seed.turn_id.clone(),
                             });
                         }
                         crate::TurnCommand::ResolvePermission { request_id, decision } => {
@@ -474,8 +486,8 @@ impl TurnDriver {
         call: SharedToolCall,
     ) {
         let tool_runner = Arc::clone(&self.tool_runner);
-        let session_id = self.context.session_id.clone();
-        let turn_id = self.context.turn_id.clone();
+        let session_id = self.seed.session_id.clone();
+        let turn_id = self.seed.turn_id.clone();
         let cancel_token = self.cancel_token.child_token();
         let timeout = self.options.tool_timeout;
         join_set.spawn(async move {
@@ -495,11 +507,26 @@ impl TurnDriver {
         });
     }
 
-    async fn finish_cancelled(&mut self) -> Result<(), TurnError> {
+    async fn finish_cancelled(&mut self) -> Result<TurnOutcome, TurnError> {
         self.state = TurnState::Cancelled(TurnSummary {
-            turn_id: self.context.turn_id.clone(),
+            turn_id: self.seed.turn_id.clone(),
         });
         self.finish(TurnFinishReason::Cancelled).await
+    }
+
+    fn build_outcome(&self, finish_reason: TurnFinishReason) -> TurnOutcome {
+        let transcript = self.transcript.to_vec();
+        let final_output = transcript.iter().rev().find_map(|message| match message {
+            TurnMessage::AssistantText { content } => Some(content.as_ref().to_owned()),
+            _ => None,
+        });
+
+        TurnOutcome {
+            turn_id: self.seed.turn_id.clone(),
+            finish_reason,
+            transcript,
+            final_output,
+        }
     }
 
     fn consume_cancel_request(&mut self) -> Result<bool, TurnError> {
