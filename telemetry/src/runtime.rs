@@ -187,6 +187,7 @@ fn init_with_writer(
         .name("telemetry-writer".to_string())
         .spawn(move || {
             match tokio::runtime::Builder::new_current_thread()
+                .enable_io()
                 .enable_time()
                 .build()
             {
