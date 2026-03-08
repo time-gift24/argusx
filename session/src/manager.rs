@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use anyhow::{Context, Result, bail};
@@ -64,7 +64,7 @@ impl SessionManager {
     }
 
     pub fn active_thread_id(&self) -> Option<Uuid> {
-        self.runtime.lock().unwrap().active_thread_id
+        self.lock_runtime().active_thread_id
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<SessionEvent> {
@@ -73,7 +73,7 @@ impl SessionManager {
 
     pub async fn initialize(&self) -> Result<u64> {
         let interrupted = self.store.mark_incomplete_turns_interrupted().await?;
-        let mut runtime = self.runtime.lock().unwrap();
+        let mut runtime = self.lock_runtime();
         runtime.active_thread_id = None;
         runtime.threads.clear();
         Ok(interrupted)
@@ -95,7 +95,7 @@ impl SessionManager {
         self.store.insert_thread(&thread).await?;
 
         {
-            let mut runtime = self.runtime.lock().unwrap();
+            let mut runtime = self.lock_runtime();
             runtime
                 .threads
                 .entry(thread.id)
@@ -122,7 +122,7 @@ impl SessionManager {
         }
 
         {
-            let mut runtime = self.runtime.lock().unwrap();
+            let mut runtime = self.lock_runtime();
             runtime
                 .threads
                 .entry(thread_id)
@@ -179,7 +179,7 @@ impl SessionManager {
         }
 
         let (turn_number, prior_messages, prior_message_count) = {
-            let mut runtime = self.runtime.lock().unwrap();
+            let mut runtime = self.lock_runtime();
             let thread_runtime = runtime
                 .threads
                 .entry(thread_id)
@@ -275,7 +275,7 @@ impl SessionManager {
                         turn_record.status = TurnStatus::WaitingPermission;
                         turn_record.transcript = transcript.snapshot();
                         {
-                            let mut runtime = runtime.lock().unwrap();
+                            let mut runtime = lock_session_runtime(&runtime);
                             if let Some(thread_runtime) = runtime.threads.get_mut(&thread_id)
                                 && let Some(active_turn) = thread_runtime.active_turn.as_mut()
                                 && active_turn.turn_id == turn_record.id
@@ -289,7 +289,7 @@ impl SessionManager {
                         turn_record.status = TurnStatus::Running;
                         turn_record.transcript = transcript.snapshot();
                         {
-                            let mut runtime = runtime.lock().unwrap();
+                            let mut runtime = lock_session_runtime(&runtime);
                             if let Some(thread_runtime) = runtime.threads.get_mut(&thread_id)
                                 && let Some(active_turn) = thread_runtime.active_turn.as_mut()
                                 && active_turn.turn_id == turn_record.id
@@ -332,7 +332,7 @@ impl SessionManager {
             }
 
             {
-                let mut runtime = runtime.lock().unwrap();
+                let mut runtime = lock_session_runtime(&runtime);
                 if let Some(thread_runtime) = runtime.threads.get_mut(&thread_id)
                     && thread_runtime
                         .active_turn
@@ -352,7 +352,7 @@ impl SessionManager {
     }
 
     fn active_turn_controller(&self, thread_id: Uuid) -> Result<turn::TurnController> {
-        let runtime = self.runtime.lock().unwrap();
+        let runtime = self.lock_runtime();
         let active_turn = runtime
             .threads
             .get(&thread_id)
@@ -368,6 +368,10 @@ impl SessionManager {
         let _ = self
             .events_tx
             .send(SessionEvent::Thread { thread_id, event });
+    }
+
+    fn lock_runtime(&self) -> MutexGuard<'_, SessionRuntime> {
+        lock_session_runtime(&self.runtime)
     }
 
     async fn ensure_session(&self) -> Result<()> {
@@ -391,6 +395,14 @@ pub struct SessionRuntime {
     pub threads: HashMap<Uuid, ThreadRuntime>,
 }
 
+fn lock_session_runtime(runtime: &Arc<Mutex<SessionRuntime>>) -> MutexGuard<'_, SessionRuntime> {
+    // SessionRuntime 只有派生性的内存态，真正的稳定真相在 store 里；锁被 poison 时优先恢复而不是把后续所有调用都 panic 掉。
+    runtime.lock().unwrap_or_else(|poisoned| {
+        eprintln!("session runtime mutex poisoned, recovering in-memory state");
+        poisoned.into_inner()
+    })
+}
+
 struct ActiveTurnReservation {
     runtime: Arc<Mutex<SessionRuntime>>,
     thread_id: Uuid,
@@ -405,7 +417,7 @@ impl ActiveTurnReservation {
         turn_id: Uuid,
     ) -> Result<Self> {
         {
-            let mut locked = runtime.lock().unwrap();
+            let mut locked = lock_session_runtime(&runtime);
             let thread_runtime = locked
                 .threads
                 .entry(thread_id)
@@ -425,7 +437,7 @@ impl ActiveTurnReservation {
     }
 
     fn activate(&mut self, turn_number: u32, controller: turn::TurnController) -> Result<()> {
-        let mut runtime = self.runtime.lock().unwrap();
+        let mut runtime = lock_session_runtime(&self.runtime);
         let active_turn = runtime
             .threads
             .get_mut(&self.thread_id)
@@ -450,7 +462,7 @@ impl Drop for ActiveTurnReservation {
             return;
         }
 
-        let mut runtime = self.runtime.lock().unwrap();
+        let mut runtime = lock_session_runtime(&self.runtime);
         if let Some(thread_runtime) = runtime.threads.get_mut(&self.thread_id)
             && thread_runtime
                 .active_turn
@@ -597,6 +609,8 @@ fn map_finish_reason_to_status(reason: &TurnFinishReason) -> TurnStatus {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use super::*;
 
     #[test]
@@ -613,5 +627,21 @@ mod tests {
             map_finish_reason_to_status(&TurnFinishReason::LlmTimeout),
             TurnStatus::Failed
         );
+    }
+
+    #[test]
+    fn lock_session_runtime_recovers_from_poisoned_mutex() {
+        let runtime = Arc::new(Mutex::new(SessionRuntime::default()));
+        let poison_runtime = Arc::clone(&runtime);
+
+        let _ = std::panic::catch_unwind(move || {
+            let _guard = poison_runtime.lock().unwrap();
+            panic!("poison session runtime");
+        });
+
+        assert!(runtime.is_poisoned());
+
+        let guard = lock_session_runtime(&runtime);
+        assert!(guard.active_thread_id.is_none());
     }
 }
