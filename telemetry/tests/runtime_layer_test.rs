@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use telemetry::{build_layer, TelemetryConfig};
+use telemetry::{TelemetryConfig, build_layer};
 use tracing_subscriber::layer::SubscriberExt;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};

@@ -1,12 +1,14 @@
 mod session_commands;
 
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
 use session_commands::{
-    DesktopSessionState, cancel_thread_turn, create_thread, list_threads,
-    resolve_thread_permission, send_message, spawn_session_event_bridge, switch_thread,
+    cancel_thread_turn, create_thread, list_threads, resolve_thread_permission, send_message,
+    spawn_session_event_bridge, switch_thread, DesktopSessionState,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+pub fn run() -> Result<(), BoxError> {
     let runtime = tauri::async_runtime::block_on(runtime::build_runtime())?;
     let manager = runtime.session_manager.clone();
     let session_state = DesktopSessionState::new(manager);
@@ -39,15 +41,57 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         tracing::error!(event_name = "tauri_run_error", error = %err);
     }
 
-    runtime.shutdown(std::time::Duration::from_secs(10))?;
-    run_result?;
-    Ok(())
+    let shutdown_result = runtime
+        .shutdown(std::time::Duration::from_secs(10))
+        .map_err(Into::into);
+    if let Err(ref err) = shutdown_result {
+        tracing::error!(event_name = "runtime_shutdown_error", error = %err);
+    }
+
+    finish_run(run_result.map_err(Into::into), shutdown_result)
+}
+
+fn finish_run(
+    run_result: Result<(), BoxError>,
+    shutdown_result: Result<(), BoxError>,
+) -> Result<(), BoxError> {
+    match (run_result, shutdown_result) {
+        (Err(run_err), _) => Err(run_err),
+        (Ok(()), Err(shutdown_err)) => Err(shutdown_err),
+        (Ok(()), Ok(())) => Ok(()),
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::io::Error;
+
+    use super::finish_run;
+
     #[test]
     fn desktop_builds_against_runtime_crate() {
         let _ = std::any::type_name::<runtime::ArgusxRuntime>();
+    }
+
+    #[test]
+    fn finish_run_preserves_tauri_error_when_shutdown_also_fails() {
+        let err = finish_run(
+            Err(Box::new(Error::other("tauri run failed"))),
+            Err(Box::new(Error::other("telemetry shutdown failed"))),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.to_string(), "tauri run failed");
+    }
+
+    #[test]
+    fn finish_run_returns_shutdown_error_after_successful_run() {
+        let err = finish_run(
+            Ok(()),
+            Err(Box::new(Error::other("telemetry shutdown failed"))),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.to_string(), "telemetry shutdown failed");
     }
 }

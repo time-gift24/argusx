@@ -88,9 +88,15 @@ async fn first_step_receives_prior_messages_before_current_user_input() {
     let requests = model_ref.received_requests().await;
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].messages.len(), 3);
-    assert!(matches!(message_at(&requests[0].messages, 0), TurnMessage::User { content } if content.as_ref() == "hello"));
-    assert!(matches!(message_at(&requests[0].messages, 1), TurnMessage::AssistantText { content } if content.as_ref() == "hi"));
-    assert!(matches!(message_at(&requests[0].messages, 2), TurnMessage::User { content } if content.as_ref() == "continue"));
+    assert!(
+        matches!(message_at(&requests[0].messages, 0), TurnMessage::User { content } if content.as_ref() == "hello")
+    );
+    assert!(
+        matches!(message_at(&requests[0].messages, 1), TurnMessage::AssistantText { content } if content.as_ref() == "hi")
+    );
+    assert!(
+        matches!(message_at(&requests[0].messages, 2), TurnMessage::User { content } if content.as_ref() == "continue")
+    );
 }
 
 // ---------------------------------------------------------------------------

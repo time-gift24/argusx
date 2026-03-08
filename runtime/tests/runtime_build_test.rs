@@ -1,4 +1,4 @@
-use runtime::{build_runtime_from_config, AppConfig, PathsConfig, TelemetrySection};
+use runtime::{AppConfig, PathsConfig, TelemetrySection, build_runtime_from_config};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn build_runtime_with_disabled_telemetry_creates_sqlite_and_initializes_session() {
@@ -32,5 +32,12 @@ async fn build_runtime_with_disabled_telemetry_creates_sqlite_and_initializes_se
     assert!(sqlite.exists());
     assert!(log_file.exists());
     assert!(runtime.telemetry.is_none());
-    assert!(runtime.session_manager.list_threads().await.unwrap().is_empty());
+    assert!(
+        runtime
+            .session_manager
+            .list_threads()
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }

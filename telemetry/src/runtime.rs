@@ -166,11 +166,14 @@ pub fn init(config: TelemetryConfig) -> Result<TelemetryRuntime, TelemetryError>
 }
 
 /// Type alias for a boxed telemetry layer that can be composed into an external subscriber.
-pub type BoxTelemetryLayer = Box<dyn tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync>;
+pub type BoxTelemetryLayer =
+    Box<dyn tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync>;
 
 /// Build a telemetry layer without setting the global default subscriber.
 /// Returns a layer and a runtime handle for graceful shutdown.
-pub fn build_layer(config: TelemetryConfig) -> Result<(BoxTelemetryLayer, TelemetryRuntime), TelemetryError> {
+pub fn build_layer(
+    config: TelemetryConfig,
+) -> Result<(BoxTelemetryLayer, TelemetryRuntime), TelemetryError> {
     let writer = Arc::new(ClickHouseWriter::new(config.clone())?);
     build_layer_with_writer(config, writer)
 }

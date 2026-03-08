@@ -1,4 +1,4 @@
-use runtime::{build_runtime_from_config, AppConfig, PathsConfig, TelemetrySection};
+use runtime::{AppConfig, PathsConfig, TelemetrySection, build_runtime_from_config};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn build_runtime_degrades_when_clickhouse_probe_fails() {

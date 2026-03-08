@@ -1,4 +1,4 @@
-use telemetry::{probe_clickhouse, TelemetryConfig};
+use telemetry::{TelemetryConfig, probe_clickhouse};
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 

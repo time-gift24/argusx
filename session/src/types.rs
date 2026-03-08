@@ -59,8 +59,12 @@ pub struct PersistedToolCall {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PersistedMessage {
-    User { content: String },
-    AssistantText { content: String },
+    User {
+        content: String,
+    },
+    AssistantText {
+        content: String,
+    },
     AssistantToolCalls {
         content: Option<String>,
         calls: Vec<PersistedToolCall>,
@@ -71,7 +75,9 @@ pub enum PersistedMessage {
         content: String,
         is_error: bool,
     },
-    SystemNote { content: String },
+    SystemNote {
+        content: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -231,7 +231,10 @@ fn decode_thread_row(row: sqlx::sqlite::SqliteRow) -> Result<ThreadRecord> {
         lifecycle: parse_thread_lifecycle(&row.try_get::<String, _>("lifecycle")?)?,
         created_at: parse_utc(&row.try_get::<String, _>("created_at")?)?,
         updated_at: parse_utc(&row.try_get::<String, _>("updated_at")?)?,
-        last_turn_number: parse_u32(row.try_get::<i64, _>("last_turn_number")?, "last_turn_number")?,
+        last_turn_number: parse_u32(
+            row.try_get::<i64, _>("last_turn_number")?,
+            "last_turn_number",
+        )?,
     })
 }
 
@@ -406,7 +409,8 @@ mod tests {
         };
         store.insert_thread(&thread).await.unwrap();
 
-        for (turn_number, status) in [(1, TurnStatus::Running), (2, TurnStatus::WaitingPermission)] {
+        for (turn_number, status) in [(1, TurnStatus::Running), (2, TurnStatus::WaitingPermission)]
+        {
             let turn = TurnRecord {
                 id: Uuid::new_v4(),
                 thread_id: thread.id,
@@ -426,7 +430,11 @@ mod tests {
         assert_eq!(affected, 2);
 
         let turns = store.list_turns(thread.id).await.unwrap();
-        assert!(turns.iter().all(|turn| turn.status == TurnStatus::Interrupted));
+        assert!(
+            turns
+                .iter()
+                .all(|turn| turn.status == TurnStatus::Interrupted)
+        );
         assert!(turns.iter().all(|turn| turn.finished_at.is_some()));
     }
 }

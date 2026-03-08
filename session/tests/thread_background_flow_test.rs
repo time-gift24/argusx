@@ -94,7 +94,9 @@ impl ModelRunner for SlowTextModel {
         let output = self.output;
         let producer = task::spawn(async move {
             tokio::time::sleep(delay).await;
-            tx.send(ResponseEvent::ContentDelta(output.into())).await.unwrap();
+            tx.send(ResponseEvent::ContentDelta(output.into()))
+                .await
+                .unwrap();
             tx.send(ResponseEvent::Done {
                 reason: FinishReason::Stop,
                 usage: Some(Usage::zero()),
@@ -110,7 +112,11 @@ struct NoopToolRunner;
 
 #[async_trait]
 impl ToolRunner for NoopToolRunner {
-    async fn execute(&self, _call: argus_core::ToolCall, _ctx: ToolContext) -> Result<ToolResult, TurnError> {
+    async fn execute(
+        &self,
+        _call: argus_core::ToolCall,
+        _ctx: ToolContext,
+    ) -> Result<ToolResult, TurnError> {
         Ok(ToolResult::ok(serde_json::json!({"ok": true})))
     }
 }
@@ -119,7 +125,10 @@ struct AllowAuthorizer;
 
 #[async_trait]
 impl ToolAuthorizer for AllowAuthorizer {
-    async fn authorize(&self, _call: &argus_core::ToolCall) -> Result<AuthorizationDecision, TurnError> {
+    async fn authorize(
+        &self,
+        _call: &argus_core::ToolCall,
+    ) -> Result<AuthorizationDecision, TurnError> {
         Ok(AuthorizationDecision::Allow)
     }
 }
