@@ -14,7 +14,7 @@ use serde_json::json;
 use tool::ToolResult;
 use turn::{
     FinalStepPolicy, LlmStepRequest, TurnContext, TurnDriver, TurnEvent, TurnFinishReason,
-    TurnMessage, TurnOptions,
+    TurnMessage, TurnOptions, TurnOutcome,
 };
 
 fn context() -> TurnContext {
@@ -113,6 +113,64 @@ async fn second_step_receives_tool_calls_and_result_in_messages() {
         ),
         "third message must be a successful tool result"
     );
+}
+
+#[tokio::test]
+async fn recording_turn_replays_seed_history_before_new_user_message() {
+    let step = vec![ResponseEvent::Done {
+        reason: FinishReason::Stop,
+        usage: Some(Usage::zero()),
+    }];
+    let model = Arc::new(support::FakeModelRunner::new(vec![step]));
+    let model_ref = Arc::clone(&model);
+
+    let history = Arc::from([
+        Arc::new(TurnMessage::AssistantText {
+            content: "previous answer".into(),
+        }),
+        Arc::new(TurnMessage::ToolResult {
+            call_id: "call-prev".into(),
+            tool_name: "read".into(),
+            content: "{\"path\":\"README.md\"}".into(),
+            is_error: false,
+        }),
+    ]);
+
+    let (handle, task) = TurnDriver::spawn_recording(
+        TurnContext {
+            session_id: "session-history".into(),
+            turn_id: "turn-history".into(),
+            user_message: "continue".into(),
+        },
+        history,
+        model,
+        Arc::new(support::instant_tool_runner()),
+        Arc::new(support::FakeAuthorizer::default()),
+        Arc::new(support::FakeObserver),
+    );
+
+    collect_events(handle).await;
+
+    let outcome = task.await.unwrap().unwrap();
+    assert!(matches!(outcome, TurnOutcome::Completed(_)));
+
+    let requests = model_ref.received_requests().await;
+    assert_eq!(requests.len(), 1);
+
+    let first = &requests[0].messages;
+    assert_eq!(first.len(), 3);
+    assert!(matches!(
+        message_at(first, 0),
+        TurnMessage::AssistantText { content } if content.as_ref() == "previous answer"
+    ));
+    assert!(matches!(
+        message_at(first, 1),
+        TurnMessage::ToolResult { call_id, .. } if call_id.as_ref() == "call-prev"
+    ));
+    assert!(matches!(
+        message_at(first, 2),
+        TurnMessage::User { content } if content.as_ref() == "continue"
+    ));
 }
 
 #[tokio::test]

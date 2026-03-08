@@ -13,7 +13,7 @@ use tokio::{
 use tool::{ToolContext, ToolResult};
 use turn::{
     LlmStepRequest, ModelRunner, ToolOutcome, ToolRunner, TurnContext, TurnController, TurnDriver,
-    TurnError, TurnEvent, TurnFinishReason, TurnObserver,
+    TurnError, TurnEvent, TurnFinishReason, TurnMessage, TurnObserver, TurnOutcome,
 };
 
 fn builtin_call(sequence: u32, call_id: &str) -> ToolCall {
@@ -168,6 +168,36 @@ async fn cancelling_during_tool_execution_keeps_results_that_finish_after_cancel
             reason: TurnFinishReason::Cancelled
         }
     )));
+}
+
+#[tokio::test]
+async fn recording_turn_cancelled_returns_cancelled_outcome() {
+    let context = TurnContext {
+        session_id: "session-1".into(),
+        turn_id: "turn-recording-cancel".into(),
+        user_message: "cancel before stream".into(),
+    };
+    let model = Arc::new(BlockingStartModelRunner::default());
+
+    let (handle, task) = TurnDriver::spawn_recording(
+        context,
+        Arc::from([Arc::new(TurnMessage::AssistantText {
+            content: "previous answer".into(),
+        })]),
+        model.clone(),
+        Arc::new(support::FakeToolRunner::default()),
+        Arc::new(support::FakeAuthorizer::default()),
+        Arc::new(support::FakeObserver),
+    );
+
+    handle.cancel().await.unwrap();
+
+    while handle.next_event().await.is_some() {}
+
+    model.release();
+
+    let outcome = task.await.unwrap().unwrap();
+    assert!(matches!(outcome, TurnOutcome::Cancelled(_)));
 }
 
 #[derive(Default)]
