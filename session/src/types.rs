@@ -27,11 +27,18 @@ pub struct ToolCallRecord {
     pub is_error: bool,
 }
 
+/// Response from assistant in a turn
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AssistantResponse {
+    pub text: String,
+    pub tool_calls: Vec<ToolCallRecord>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TurnRecord {
     pub turn_number: usize,
     pub user_input: String,
-    pub assistant_response: Option<String>,
+    pub assistant_response: Option<AssistantResponse>,
     pub tool_calls: Vec<ToolCallRecord>,
     pub started_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
@@ -47,10 +54,10 @@ mod tests {
         let record = TurnRecord {
             turn_number: 1,
             user_input: "Hello".to_string(),
-            assistant_response: Some("Hi there!".to_string()),
+            assistant_response: None,
             tool_calls: vec![],
             started_at: Utc::now(),
-            completed_at: Some(Utc::now()),
+            completed_at: None,
             state: TurnRecordState::Completed,
         };
 
@@ -66,20 +73,28 @@ mod tests {
         let record = TurnRecord {
             turn_number: 1,
             user_input: "Search".to_string(),
-            assistant_response: Some("Found 3 results".to_string()),
-            tool_calls: vec![
-                ToolCallRecord {
+            assistant_response: Some(AssistantResponse {
+                text: "Found 3 results".to_string(),
+                tool_calls: vec![ToolCallRecord {
                     call_id: "call-1".to_string(),
                     tool_name: "web_search".to_string(),
                     arguments: r#"{"query": "rust"}"#.to_string(),
                     result: Some("[...]".to_string()),
                     is_error: false,
-                },
-            ],
+                }],
+            }),
+            tool_calls: vec![ToolCallRecord {
+                call_id: "call-1".to_string(),
+                tool_name: "web_search".to_string(),
+                arguments: r#"{"query": "rust"}"#.to_string(),
+                result: Some("[...]".to_string()),
+                is_error: false,
+            }],
             started_at: Utc::now(),
             completed_at: Some(Utc::now()),
             state: TurnRecordState::Completed,
         };
+
         let json = serde_json::to_string(&record).unwrap();
         let deserialized: TurnRecord = serde_json::from_str(&json).unwrap();
 

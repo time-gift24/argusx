@@ -1,6 +1,5 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
-use std::vec::Vec;
 
 use crate::types::{ThreadState, TurnRecord};
 
@@ -51,7 +50,7 @@ mod tests {
     #[test]
     fn thread_creation() {
         let thread = Thread::new("session-1".to_string(), None);
-        assert_eq!(thread.state, ThreadState::Idle);
+        assert!(matches!(thread.state, ThreadState::Idle));
         assert!(thread.id != Uuid::nil());
         assert_eq!(thread.session_id, "session-1");
     }
