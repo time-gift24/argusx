@@ -65,6 +65,14 @@ impl SessionManager {
         self.events_tx.subscribe()
     }
 
+    pub async fn initialize(&self) -> Result<u64> {
+        let interrupted = self.store.mark_incomplete_turns_interrupted().await?;
+        let mut runtime = self.runtime.lock().unwrap();
+        runtime.active_thread_id = None;
+        runtime.threads.clear();
+        Ok(interrupted)
+    }
+
     pub async fn create_thread(&self, title: Option<String>) -> Result<Uuid> {
         self.ensure_session().await?;
 
