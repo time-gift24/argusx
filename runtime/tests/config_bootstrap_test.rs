@@ -1,4 +1,4 @@
-use runtime::{ensure_app_config_at, AppConfig};
+use runtime::ensure_app_config_at;
 
 #[test]
 fn ensure_app_config_creates_default_file_and_expands_paths() {
