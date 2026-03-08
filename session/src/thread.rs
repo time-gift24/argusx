@@ -1,12 +1,13 @@
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use argus_core::{Builtin, BuiltinToolCall, McpCall, McpCallType, ToolCall};
-use turn::TurnMessage;
+use turn::{PermissionRequest, TurnController, TurnMessage};
 use uuid::Uuid;
 
-use crate::types::{PersistedMessage, PersistedToolCall, PersistedToolKind, TurnRecord, TurnStatus};
+use crate::types::{
+    PersistedMessage, PersistedToolCall, PersistedToolKind, TurnRecord, TurnStatus,
+};
 
-#[derive(Debug)]
 pub struct ThreadRuntime {
     pub thread_id: Uuid,
     pub active_turn: Option<ActiveTurnRuntime>,
@@ -29,10 +30,34 @@ impl ThreadRuntime {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ActiveTurnRuntime {
     pub turn_id: Uuid,
     pub turn_number: u32,
+    pub controller: TurnController,
+    pub waiting_permission: Option<PermissionRequest>,
+}
+
+impl fmt::Debug for ThreadRuntime {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ThreadRuntime")
+            .field("thread_id", &self.thread_id)
+            .field("active_turn", &self.active_turn)
+            .finish()
+    }
+}
+
+impl fmt::Debug for ActiveTurnRuntime {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ActiveTurnRuntime")
+            .field("turn_id", &self.turn_id)
+            .field("turn_number", &self.turn_number)
+            .field("waiting_permission", &self.waiting_permission)
+            .finish()
+    }
+}
+
+pub fn persist_transcript(messages: &[TurnMessage]) -> Vec<PersistedMessage> {
+    messages.iter().map(turn_message_to_persisted_message).collect()
 }
 
 fn is_replayable_status(status: &TurnStatus) -> bool {
@@ -78,6 +103,38 @@ fn persisted_message_to_turn_message(message: PersistedMessage) -> TurnMessage {
     }
 }
 
+fn turn_message_to_persisted_message(message: &TurnMessage) -> PersistedMessage {
+    match message {
+        TurnMessage::User { content } => PersistedMessage::User {
+            content: content.as_ref().to_owned(),
+        },
+        TurnMessage::AssistantText { content } => PersistedMessage::AssistantText {
+            content: content.as_ref().to_owned(),
+        },
+        TurnMessage::AssistantToolCalls { content, calls } => PersistedMessage::AssistantToolCalls {
+            content: content.as_ref().map(|value| value.as_ref().to_owned()),
+            calls: calls
+                .iter()
+                .map(|call| turn_tool_call_to_persisted_tool_call(call.as_ref()))
+                .collect(),
+        },
+        TurnMessage::ToolResult {
+            call_id,
+            tool_name,
+            content,
+            is_error,
+        } => PersistedMessage::ToolResult {
+            call_id: call_id.as_ref().to_owned(),
+            tool_name: tool_name.as_ref().to_owned(),
+            content: content.as_ref().to_owned(),
+            is_error: *is_error,
+        },
+        TurnMessage::SystemNote { content } => PersistedMessage::SystemNote {
+            content: content.as_ref().to_owned(),
+        },
+    }
+}
+
 fn persisted_tool_call_to_turn_call(call: PersistedToolCall) -> ToolCall {
     match call.kind {
         PersistedToolKind::Function => ToolCall::FunctionCall {
@@ -118,9 +175,48 @@ fn persisted_tool_call_to_turn_call(call: PersistedToolCall) -> ToolCall {
     }
 }
 
+fn turn_tool_call_to_persisted_tool_call(call: &ToolCall) -> PersistedToolCall {
+    match call {
+        ToolCall::FunctionCall {
+            sequence,
+            call_id,
+            name,
+            arguments_json,
+        } => PersistedToolCall {
+            sequence: *sequence,
+            call_id: call_id.clone(),
+            tool_name: name.clone(),
+            arguments: arguments_json.clone(),
+            kind: PersistedToolKind::Function,
+            server_label: None,
+        },
+        ToolCall::Builtin(call) => PersistedToolCall {
+            sequence: call.sequence,
+            call_id: call.call_id.clone(),
+            tool_name: call.builtin.canonical_name().to_string(),
+            arguments: call.arguments_json.clone(),
+            kind: PersistedToolKind::Builtin,
+            server_label: None,
+        },
+        ToolCall::Mcp(call) => PersistedToolCall {
+            sequence: call.sequence,
+            call_id: call.id.clone(),
+            tool_name: call.name.clone().unwrap_or_default(),
+            arguments: call.arguments_json.clone().unwrap_or_default(),
+            kind: match call.mcp_type {
+                McpCallType::McpCall => PersistedToolKind::McpCall,
+                McpCallType::McpListTools => PersistedToolKind::McpListTools,
+                McpCallType::Unknown(_) => PersistedToolKind::McpCall,
+            },
+            server_label: call.server_label.clone(),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
+    use turn::TurnMessage;
 
     use super::*;
     use crate::types::{PersistedMessage, TurnRecord};
@@ -212,6 +308,42 @@ mod tests {
                                 && call.sequence == 0
                                 && matches!(call.builtin, Builtin::Read)
                     )
+        ));
+    }
+
+    #[test]
+    fn persist_transcript_round_trips_builtin_tool_calls() {
+        let transcript = vec![TurnMessage::AssistantToolCalls {
+            content: Some("planning".into()),
+            calls: Arc::from(vec![Arc::new(ToolCall::Builtin(BuiltinToolCall {
+                sequence: 1,
+                call_id: "call-9".into(),
+                builtin: Builtin::Read,
+                arguments_json: "{}".into(),
+            }))]),
+        }];
+
+        let persisted = persist_transcript(&transcript);
+        let runtime = ThreadRuntime::new(Uuid::new_v4());
+        let turns = vec![TurnRecord {
+            id: Uuid::new_v4(),
+            thread_id: runtime.thread_id,
+            turn_number: 1,
+            user_input: "read".into(),
+            status: TurnStatus::Completed,
+            finish_reason: Some("Completed".into()),
+            transcript: persisted,
+            final_output: None,
+            started_at: Utc::now(),
+            finished_at: Some(Utc::now()),
+        }];
+
+        let replay = runtime.build_prior_messages(&turns);
+        assert!(matches!(
+            &replay[0],
+            TurnMessage::AssistantToolCalls { content: Some(content), calls }
+                if content.as_ref() == "planning"
+                    && matches!(calls[0].as_ref(), ToolCall::Builtin(call) if call.call_id == "call-9")
         ));
     }
 }
