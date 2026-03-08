@@ -88,9 +88,67 @@ pub enum ThreadViewState {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ThreadEvent {
-    ThreadCreated { thread_id: Uuid },
-    ThreadActivated { thread_id: Uuid },
-    ThreadUpdated { thread_id: Uuid },
-    ThreadArchived { thread_id: Uuid },
-    TurnEventForwarded { thread_id: Uuid, turn_id: Uuid },
+    ThreadCreated,
+    ThreadActivated,
+    ThreadUpdated,
+    ThreadArchived,
+    TurnEventForwarded,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ThreadEventEnvelope {
+    pub thread_id: Uuid,
+    pub turn_id: Option<Uuid>,
+    pub event: ThreadEvent,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn turn_record_round_trips_with_transcript() {
+        let record = TurnRecord {
+            id: Uuid::new_v4(),
+            thread_id: Uuid::new_v4(),
+            turn_number: 2,
+            user_input: "continue".into(),
+            status: TurnStatus::Completed,
+            finish_reason: Some("Completed".into()),
+            transcript: vec![
+                PersistedMessage::User {
+                    content: "hello".into(),
+                },
+                PersistedMessage::AssistantText {
+                    content: "hi".into(),
+                },
+            ],
+            final_output: Some("hi".into()),
+            started_at: Utc::now(),
+            finished_at: Some(Utc::now()),
+        };
+
+        let json = serde_json::to_string(&record).unwrap();
+        let decoded: TurnRecord = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(decoded.turn_number, 2);
+        assert_eq!(decoded.transcript.len(), 2);
+        assert_eq!(decoded.final_output.as_deref(), Some("hi"));
+    }
+
+    #[test]
+    fn thread_event_envelope_round_trips() {
+        let envelope = ThreadEventEnvelope {
+            thread_id: Uuid::new_v4(),
+            turn_id: Some(Uuid::new_v4()),
+            event: ThreadEvent::TurnEventForwarded,
+        };
+
+        let json = serde_json::to_string(&envelope).unwrap();
+        let decoded: ThreadEventEnvelope = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(decoded.thread_id, envelope.thread_id);
+        assert_eq!(decoded.turn_id, envelope.turn_id);
+        assert_eq!(decoded.event, ThreadEvent::TurnEventForwarded);
+    }
 }
