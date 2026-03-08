@@ -1,5 +1,5 @@
 [workspace]
-members = ["core", "desktop/src-tauri", "provider", "tool", "turn", "telemetry", "vendor/eventsource_stream"]
+members = ["core", "desktop/src-tauri", "provider", "session", "tool", "turn", "telemetry", "vendor/eventsource_stream"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -39,6 +39,7 @@ tempfile = "3"
 comfy-table = "7"
 rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
+sqlx = { version = "0.8", default-features = false }
 tokio-stream = "0.1"
 rand = "0.8"
 httpdate = "1.0"

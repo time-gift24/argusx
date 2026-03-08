@@ -1,104 +1,96 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum ThreadState {
-    Idle,
-    Processing,
-    BackgroundProcessing,
-    WaitingForPermission,
-    Completed,
-    Failed(String),
+pub struct SessionRecord {
+    pub id: String,
+    pub user_id: Option<String>,
+    pub default_model: String,
+    pub system_prompt: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum TurnRecordState {
+pub enum ThreadLifecycle {
+    Open,
+    Archived,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ThreadRecord {
+    pub id: Uuid,
+    pub session_id: String,
+    pub title: Option<String>,
+    pub lifecycle: ThreadLifecycle,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub last_turn_number: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TurnStatus {
+    Running,
+    WaitingPermission,
     Completed,
+    Cancelled,
     Failed,
     Interrupted,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ToolCallRecord {
+pub struct PersistedToolCall {
     pub call_id: String,
     pub tool_name: String,
     pub arguments: String,
-    pub result: Option<String>,
-    pub is_error: bool,
 }
 
-/// Response from assistant in a turn
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct AssistantResponse {
-    pub text: String,
-    pub tool_calls: Vec<ToolCallRecord>,
+pub enum PersistedMessage {
+    User { content: String },
+    AssistantText { content: String },
+    AssistantToolCalls {
+        content: Option<String>,
+        calls: Vec<PersistedToolCall>,
+    },
+    ToolResult {
+        call_id: String,
+        tool_name: String,
+        content: String,
+        is_error: bool,
+    },
+    SystemNote { content: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TurnRecord {
-    pub turn_number: usize,
+    pub id: Uuid,
+    pub thread_id: Uuid,
+    pub turn_number: u32,
     pub user_input: String,
-    pub assistant_response: Option<AssistantResponse>,
-    pub tool_calls: Vec<ToolCallRecord>,
+    pub status: TurnStatus,
+    pub finish_reason: Option<String>,
+    pub transcript: Vec<PersistedMessage>,
+    pub final_output: Option<String>,
     pub started_at: DateTime<Utc>,
-    pub completed_at: Option<DateTime<Utc>>,
-    pub state: TurnRecordState,
+    pub finished_at: Option<DateTime<Utc>>,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ThreadViewState {
+    Idle,
+    Active,
+    RunningForeground,
+    RunningBackground,
+    WaitingPermission,
+}
 
-    #[test]
-    fn turn_record_serialization() {
-        let record = TurnRecord {
-            turn_number: 1,
-            user_input: "Hello".to_string(),
-            assistant_response: None,
-            tool_calls: vec![],
-            started_at: Utc::now(),
-            completed_at: None,
-            state: TurnRecordState::Completed,
-        };
-
-        let json = serde_json::to_string(&record).unwrap();
-        let deserialized: TurnRecord = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(record.turn_number, deserialized.turn_number);
-        assert_eq!(record.user_input, deserialized.user_input);
-    }
-
-    #[test]
-    fn turn_record_with_tool_calls() {
-        let record = TurnRecord {
-            turn_number: 1,
-            user_input: "Search".to_string(),
-            assistant_response: Some(AssistantResponse {
-                text: "Found 3 results".to_string(),
-                tool_calls: vec![ToolCallRecord {
-                    call_id: "call-1".to_string(),
-                    tool_name: "web_search".to_string(),
-                    arguments: r#"{"query": "rust"}"#.to_string(),
-                    result: Some("[...]".to_string()),
-                    is_error: false,
-                }],
-            }),
-            tool_calls: vec![ToolCallRecord {
-                call_id: "call-1".to_string(),
-                tool_name: "web_search".to_string(),
-                arguments: r#"{"query": "rust"}"#.to_string(),
-                result: Some("[...]".to_string()),
-                is_error: false,
-            }],
-            started_at: Utc::now(),
-            completed_at: Some(Utc::now()),
-            state: TurnRecordState::Completed,
-        };
-
-        let json = serde_json::to_string(&record).unwrap();
-        let deserialized: TurnRecord = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(record.tool_calls.len(), deserialized.tool_calls.len());
-        assert_eq!(record.tool_calls[0].tool_name, deserialized.tool_calls[0].tool_name);
-    }
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ThreadEvent {
+    ThreadCreated { thread_id: Uuid },
+    ThreadActivated { thread_id: Uuid },
+    ThreadUpdated { thread_id: Uuid },
+    ThreadArchived { thread_id: Uuid },
+    TurnEventForwarded { thread_id: Uuid, turn_id: Uuid },
 }
