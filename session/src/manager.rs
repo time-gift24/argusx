@@ -148,6 +148,17 @@ impl SessionManager {
         content: String,
         deps: TurnDependencies,
     ) -> Result<Uuid> {
+        self.send_message_with_turn_id(thread_id, Uuid::new_v4(), content, deps)
+            .await
+    }
+
+    pub async fn send_message_with_turn_id(
+        &self,
+        thread_id: Uuid,
+        turn_id: Uuid,
+        content: String,
+        deps: TurnDependencies,
+    ) -> Result<Uuid> {
         let thread = self
             .store
             .get_thread(thread_id)
@@ -160,7 +171,6 @@ impl SessionManager {
             );
         }
 
-        let turn_id = Uuid::new_v4();
         // 先在内存里占坑，保证同一 thread 的 send_message 不会跨过 await 并发启动两个 turn。
         let mut reservation =
             ActiveTurnReservation::reserve(Arc::clone(&self.runtime), thread_id, turn_id)?;

@@ -14,13 +14,19 @@ import {
   PlanQueue,
   PromptComposer,
   Reasoning,
+  ToolPermissionConfirmation,
   ToolCallItem,
   type PlanSnapshot,
   type PromptComposerSubmitPayload,
 } from "@/components/ai";
 import { Checkpoint } from "@/components/ai-elements/checkpoint";
 import { Separator } from "@/components/ui/separator";
-import { useTurn, type DesktopTurnEvent } from "@/lib/chat";
+import {
+  useTurn,
+  type DesktopTurnEvent,
+  type HydratedChatTurn,
+  type PermissionDecision,
+} from "@/lib/chat";
 
 const AGENTS = [
   {
@@ -54,11 +60,22 @@ type ToolCallView = {
   status: ToolCallStatus;
 };
 
+type PendingPermissionView = {
+  requestId: string;
+  toolCallId: string;
+};
+
+type ResolvedPermissionView = PendingPermissionView & {
+  decision: PermissionDecision;
+};
+
 type ChatTurnView = {
   clientKey: string;
   assistantText: string;
   error: string | null;
+  lastResolvedPermission: ResolvedPermissionView | null;
   latestPlan: PlanSnapshot | null;
+  pendingPermissions: PendingPermissionView[];
   prompt: string;
   reasoningText: string;
   status: TurnStatus;
@@ -69,10 +86,19 @@ type ChatTurnView = {
 const AUTO_SCROLL_THRESHOLD_PX = 96;
 const COMPOSER_SAFE_GAP_PX = 24;
 const MIN_COMPOSER_OFFSET_PX = 220;
+export const PERMISSION_RESOLUTION_FEEDBACK_MS = 1800;
 
 export default function ChatPage() {
-  const { cancelTurn, startTurn, subscribe } = useTurn();
+  const {
+    cancelTurn,
+    loadActiveChatThread,
+    resolveTurnPermission,
+    startTurn,
+    subscribe,
+  } = useTurn();
   const [composerOffset, setComposerOffset] = useState(MIN_COMPOSER_OFFSET_PX);
+  const [permissionActionError, setPermissionActionError] = useState<string | null>(null);
+  const [permissionActionKey, setPermissionActionKey] = useState<string | null>(null);
   const [turns, setTurns] = useState<ChatTurnView[]>([]);
   const composerShellRef = useRef<HTMLDivElement>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
@@ -89,6 +115,30 @@ export default function ChatPage() {
       setTurns((current) => reduceTurnEvent(current, event));
     });
   });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadActiveChatThread()
+      .then((hydratedTurns) => {
+        if (cancelled) {
+          return;
+        }
+
+        startTransition(() => {
+          setTurns((current) =>
+            current.length === 0 ? hydratedTurns.map(hydrateChatTurn) : current
+          );
+        });
+      })
+      .catch((error) => {
+        console.error("Failed to hydrate active chat thread", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadActiveChatThread]);
 
   useEffect(() => {
     let dispose: (() => void) | undefined;
@@ -156,6 +206,60 @@ export default function ChatPage() {
 
     shouldAutoScrollRef.current = isNearBottom(viewport);
   });
+
+  const visiblePermission = selectVisiblePermission(turns);
+  const visiblePermissionKey = visiblePermission
+    ? `${visiblePermission.turnId}:${visiblePermission.requestId}:${visiblePermission.state}`
+    : null;
+  const latestResolvedPermission = findLatestResolvedPermission(turns);
+  const latestResolvedPermissionKey = latestResolvedPermission
+    ? `${latestResolvedPermission.turnId}:${latestResolvedPermission.requestId}`
+    : null;
+
+  useEffect(() => {
+    setPermissionActionError(null);
+    setPermissionActionKey(null);
+  }, [visiblePermissionKey]);
+
+  useEffect(() => {
+    if (!latestResolvedPermission) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      startTransition(() => {
+        setTurns((current) =>
+          clearResolvedPermission(
+            current,
+            latestResolvedPermission.turnId,
+            latestResolvedPermission.requestId
+          )
+        );
+      });
+    }, PERMISSION_RESOLUTION_FEEDBACK_MS);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [latestResolvedPermissionKey]);
+
+  const handlePermissionDecision = async (
+    turnId: string,
+    requestId: string,
+    decision: PermissionDecision
+  ) => {
+    setPermissionActionError(null);
+    setPermissionActionKey(requestId);
+
+    try {
+      await resolveTurnPermission(turnId, requestId, decision);
+    } catch (error) {
+      setPermissionActionError(
+        error instanceof Error ? error.message : "Unable to resolve permission."
+      );
+      setPermissionActionKey(null);
+    }
+  };
 
   const handleSubmit = async (payload: PromptComposerSubmitPayload) => {
     if (payload.category !== "agent") {
@@ -312,6 +416,44 @@ export default function ChatPage() {
           data-slot="chat-composer-shell"
           ref={composerShellRef}
         >
+          {visiblePermission ? (
+            <ToolPermissionConfirmation
+              argumentsSummary={visiblePermission.argumentsSummary}
+              className="pointer-events-auto absolute bottom-[calc(100%+0.75rem)] left-1/2 w-full -translate-x-1/2"
+              error={
+                visiblePermission.state === "requested"
+                  ? permissionActionError
+                  : null
+              }
+              isSubmitting={
+                visiblePermission.state === "requested" &&
+                permissionActionKey === visiblePermission.requestId
+              }
+              onAllow={
+                visiblePermission.state === "requested"
+                  ? () =>
+                      void handlePermissionDecision(
+                        visiblePermission.turnId,
+                        visiblePermission.requestId,
+                        "allow"
+                      )
+                  : undefined
+              }
+              onDeny={
+                visiblePermission.state === "requested"
+                  ? () =>
+                      void handlePermissionDecision(
+                        visiblePermission.turnId,
+                        visiblePermission.requestId,
+                        "deny"
+                      )
+                  : undefined
+              }
+              requestId={visiblePermission.requestId}
+              state={visiblePermission.state}
+              toolName={visiblePermission.toolName}
+            />
+          ) : null}
           <div className="pointer-events-auto">
             <PromptComposer
               agents={[...AGENTS]}
@@ -330,12 +472,37 @@ function createClientTurnKey(sequenceRef: MutableRefObject<number>) {
   return `client-turn-${sequenceRef.current}`;
 }
 
+function hydrateChatTurn(turn: HydratedChatTurn): ChatTurnView {
+  return {
+    assistantText: turn.assistantText,
+    clientKey: turn.turnId,
+    error: turn.error,
+    lastResolvedPermission: null,
+    latestPlan: turn.latestPlan ? parsePlanSnapshot(turn.latestPlan) : null,
+    pendingPermissions: [],
+    prompt: turn.prompt,
+    reasoningText: turn.reasoningText,
+    status: turn.status,
+    toolCalls: turn.toolCalls.map((toolCall) => ({
+      argumentsJson: toolCall.argumentsJson,
+      callId: toolCall.callId,
+      errorSummary: toolCall.errorSummary ?? undefined,
+      name: toolCall.name,
+      outputSummary: toolCall.outputSummary ?? undefined,
+      status: toolCall.status,
+    })),
+    turnId: turn.turnId,
+  };
+}
+
 export function createPendingTurn(clientKey: string, prompt: string): ChatTurnView {
   return {
     assistantText: "",
     clientKey,
     error: null,
+    lastResolvedPermission: null,
     latestPlan: null,
+    pendingPermissions: [],
     prompt,
     reasoningText: "",
     status: "running",
@@ -491,6 +658,48 @@ export function reduceTurnEventForTurn(
         ),
       };
     }
+    case "tool-call-permission-requested": {
+      const requestId = getString(event.data.requestId);
+      const toolCallId = getString(event.data.toolCallId);
+      if (!requestId || !toolCallId) {
+        return current;
+      }
+
+      return {
+        ...current,
+        pendingPermissions: upsertPendingPermission(current.pendingPermissions, {
+          requestId,
+          toolCallId,
+        }),
+        turnId,
+      };
+    }
+    case "tool-call-permission-resolved": {
+      const requestId = getString(event.data.requestId);
+      const decision = getString(event.data.decision);
+      if (!requestId || !isPermissionDecision(decision)) {
+        return current;
+      }
+
+      const resolved = current.pendingPermissions.find(
+        (permission) => permission.requestId === requestId
+      );
+      if (!resolved) {
+        return current;
+      }
+
+      return {
+        ...current,
+        lastResolvedPermission: {
+          ...resolved,
+          decision,
+        },
+        pendingPermissions: current.pendingPermissions.filter(
+          (permission) => permission.requestId !== requestId
+        ),
+        turnId,
+      };
+    }
     case "turn-finished": {
       const reason = getString(event.data.reason);
 
@@ -502,6 +711,8 @@ export function reduceTurnEventForTurn(
           (reason && reason !== "completed" && reason !== "cancelled"
             ? `Turn ended with ${reason}.`
             : null),
+        lastResolvedPermission: null,
+        pendingPermissions: [],
         status: mapTurnStatus(reason),
       };
     }
@@ -512,6 +723,8 @@ export function reduceTurnEventForTurn(
         ...current,
         turnId,
         error: message ?? "Turn failed.",
+        lastResolvedPermission: null,
+        pendingPermissions: [],
         status: "failed",
       };
     }
@@ -550,6 +763,96 @@ function upsertToolCall(toolCalls: ToolCallView[], next: ToolCallView): ToolCall
     ...next,
   };
   return updated;
+}
+
+function upsertPendingPermission(
+  pendingPermissions: PendingPermissionView[],
+  next: PendingPermissionView
+): PendingPermissionView[] {
+  const existingIndex = pendingPermissions.findIndex(
+    (permission) => permission.requestId === next.requestId
+  );
+  if (existingIndex === -1) {
+    return [...pendingPermissions, next];
+  }
+
+  const updated = [...pendingPermissions];
+  updated[existingIndex] = next;
+  return updated;
+}
+
+function clearResolvedPermission(
+  turns: ChatTurnView[],
+  turnId: string,
+  requestId: string
+): ChatTurnView[] {
+  return turns.map((turn) =>
+    turn.turnId === turnId &&
+    turn.lastResolvedPermission?.requestId === requestId
+      ? {
+          ...turn,
+          lastResolvedPermission: null,
+        }
+      : turn
+  );
+}
+
+function selectVisiblePermission(turns: ChatTurnView[]) {
+  const resolved = findLatestResolvedPermission(turns);
+  if (resolved) {
+    return resolved;
+  }
+
+  for (const turn of turns) {
+    const pending = turn.pendingPermissions[0];
+    if (!pending) {
+      continue;
+    }
+
+    const toolCall = turn.toolCalls.find(
+      (candidate) => candidate.callId === pending.toolCallId
+    );
+
+    return {
+      argumentsSummary: toolCall
+        ? formatArgumentsSummary(toolCall.argumentsJson)
+        : undefined,
+      requestId: pending.requestId,
+      state: "requested" as const,
+      toolCallId: pending.toolCallId,
+      toolName: toolCall?.name ?? "tool",
+      turnId: turn.turnId ?? turn.clientKey,
+    };
+  }
+
+  return null;
+}
+
+function findLatestResolvedPermission(turns: ChatTurnView[]) {
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    const resolved = turn.lastResolvedPermission;
+    if (!resolved) {
+      continue;
+    }
+
+    const toolCall = turn.toolCalls.find(
+      (candidate) => candidate.callId === resolved.toolCallId
+    );
+
+    return {
+      argumentsSummary: toolCall
+        ? formatArgumentsSummary(toolCall.argumentsJson)
+        : undefined,
+      requestId: resolved.requestId,
+      state: resolved.decision === "allow" ? ("accepted" as const) : ("rejected" as const),
+      toolCallId: resolved.toolCallId,
+      toolName: toolCall?.name ?? "tool",
+      turnId: turn.turnId ?? turn.clientKey,
+    };
+  }
+
+  return null;
 }
 
 function mapCompletedToolCall(
@@ -595,6 +898,10 @@ function mapToolCallStatus(status: string | null): ToolCallStatus {
     default:
       return "failed";
   }
+}
+
+function isPermissionDecision(value: string | null): value is PermissionDecision {
+  return value === "allow" || value === "deny";
 }
 
 function mapTurnStatus(reason: string | null): TurnStatus {

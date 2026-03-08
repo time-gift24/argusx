@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use turn::TurnController;
+use uuid::Uuid;
 
 #[derive(Default)]
 pub struct TurnManager {
-    controllers: tokio::sync::Mutex<HashMap<String, TurnController>>,
+    thread_ids: tokio::sync::Mutex<HashMap<String, Uuid>>,
 }
 
 impl TurnManager {
@@ -12,117 +12,44 @@ impl TurnManager {
         Self::default()
     }
 
-    pub async fn insert(&self, turn_id: String, controller: TurnController) {
-        self.controllers.lock().await.insert(turn_id, controller);
+    pub async fn insert(&self, turn_id: String, thread_id: Uuid) {
+        self.thread_ids.lock().await.insert(turn_id, thread_id);
     }
 
-    pub async fn take(&self, turn_id: &str) -> Option<TurnController> {
-        self.controllers.lock().await.remove(turn_id)
+    pub async fn get(&self, turn_id: &str) -> Option<Uuid> {
+        self.thread_ids.lock().await.get(turn_id).copied()
+    }
+
+    pub async fn take(&self, turn_id: &str) -> Option<Uuid> {
+        self.thread_ids.lock().await.remove(turn_id)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use async_trait::async_trait;
-    use tokio::{sync::mpsc, task};
-    use turn::{
-        LlmStepRequest, ModelRunner, ToolAuthorizer, ToolRunner, TurnContext, TurnDriver,
-        TurnError, TurnEvent, TurnFinishReason, TurnObserver,
-    };
-
     use super::*;
 
     #[tokio::test(flavor = "current_thread")]
-    async fn turn_manager_inserts_and_takes_controller_once() {
+    async fn turn_manager_inserts_and_takes_thread_id_once() {
         let manager = TurnManager::new();
-        let (handle, task) = TurnDriver::spawn(
-            TurnContext {
-                session_id: "session-1".into(),
-                turn_id: "turn-1".into(),
-                user_message: "hello".into(),
-            },
-            Arc::new(ImmediateStopModelRunner),
-            Arc::new(NoopToolRunner),
-            Arc::new(DenyAllAuthorizer),
-            Arc::new(NoopObserver),
-        );
+        let thread_id = Uuid::new_v4();
 
-        manager.insert("turn-1".into(), handle.controller()).await;
+        manager.insert("turn-1".into(), thread_id).await;
 
         assert!(manager.take("turn-1").await.is_some());
         assert!(manager.take("turn-1").await.is_none());
-
-        while handle.next_event().await.is_some() {}
-        task.await.unwrap().unwrap();
     }
 
-    struct ImmediateStopModelRunner;
+    #[tokio::test(flavor = "current_thread")]
+    async fn turn_manager_peek_returns_thread_id_without_removing_it() {
+        let manager = TurnManager::new();
+        let thread_id = Uuid::new_v4();
 
-    #[async_trait]
-    impl ModelRunner for ImmediateStopModelRunner {
-        async fn start(
-            &self,
-            _request: LlmStepRequest,
-        ) -> Result<argus_core::ResponseStream, TurnError> {
-            let (tx, rx) = mpsc::channel(1);
-            let producer = task::spawn(async move {
-                tx.send(argus_core::ResponseEvent::Done {
-                    reason: argus_core::FinishReason::Stop,
-                    usage: Some(argus_core::Usage::zero()),
-                })
-                .await
-                .unwrap();
-            });
+        manager.insert("turn-1".into(), thread_id).await;
 
-            Ok(argus_core::ResponseStream::from_parts(
-                rx,
-                producer.abort_handle(),
-            ))
-        }
-    }
-
-    struct NoopToolRunner;
-
-    #[async_trait]
-    impl ToolRunner for NoopToolRunner {
-        async fn execute(
-            &self,
-            _call: argus_core::ToolCall,
-            _ctx: tool::ToolContext,
-        ) -> Result<tool::ToolResult, TurnError> {
-            Ok(tool::ToolResult::ok(serde_json::json!({})))
-        }
-    }
-
-    struct DenyAllAuthorizer;
-
-    #[async_trait]
-    impl ToolAuthorizer for DenyAllAuthorizer {
-        async fn authorize(
-            &self,
-            _call: &argus_core::ToolCall,
-        ) -> Result<turn::AuthorizationDecision, TurnError> {
-            Ok(turn::AuthorizationDecision::Deny)
-        }
-    }
-
-    struct NoopObserver;
-
-    #[async_trait]
-    impl TurnObserver for NoopObserver {
-        async fn on_event(&self, event: &TurnEvent) -> Result<(), TurnError> {
-            if matches!(
-                event,
-                TurnEvent::TurnFinished {
-                    reason: TurnFinishReason::Completed
-                }
-            ) {
-                return Ok(());
-            }
-
-            Ok(())
-        }
+        assert_eq!(manager.get("turn-1").await, Some(thread_id));
+        assert_eq!(manager.get("turn-1").await, Some(thread_id));
+        assert_eq!(manager.take("turn-1").await, Some(thread_id));
+        assert!(manager.get("turn-1").await.is_none());
     }
 }

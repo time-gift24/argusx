@@ -1,17 +1,23 @@
 use tauri::State;
 
-use crate::{chat::AppState, provider_settings::{ProviderConnectionResult, ProviderProfileSummary, SaveProviderProfileInput, TestProviderProfileInput}};
+use crate::{
+    provider_settings::{
+        ProviderConnectionResult, ProviderProfileSummary, SaveProviderProfileInput,
+        TestProviderProfileInput,
+    },
+    session_commands::DesktopSessionState,
+};
 
 #[tauri::command]
 pub fn list_provider_profiles(
-    state: State<'_, AppState>,
+    state: State<'_, DesktopSessionState>,
 ) -> Result<Vec<ProviderProfileSummary>, String> {
     state.provider_settings().list_profiles().map_err(stringify)
 }
 
 #[tauri::command]
 pub fn save_provider_profile(
-    state: State<'_, AppState>,
+    state: State<'_, DesktopSessionState>,
     input: SaveProviderProfileInput,
 ) -> Result<ProviderProfileSummary, String> {
     state.provider_settings().save_profile(input).map_err(stringify)
@@ -19,7 +25,7 @@ pub fn save_provider_profile(
 
 #[tauri::command]
 pub fn delete_provider_profile(
-    state: State<'_, AppState>,
+    state: State<'_, DesktopSessionState>,
     profile_id: String,
 ) -> Result<(), String> {
     state
@@ -30,7 +36,7 @@ pub fn delete_provider_profile(
 
 #[tauri::command]
 pub fn set_default_provider_profile(
-    state: State<'_, AppState>,
+    state: State<'_, DesktopSessionState>,
     profile_id: String,
 ) -> Result<ProviderProfileSummary, String> {
     state
@@ -41,7 +47,7 @@ pub fn set_default_provider_profile(
 
 #[tauri::command]
 pub async fn test_provider_profile(
-    state: State<'_, AppState>,
+    state: State<'_, DesktopSessionState>,
     input: TestProviderProfileInput,
 ) -> Result<ProviderConnectionResult, String> {
     state

@@ -41,7 +41,7 @@ pub fn snapshot_from_tool_outcome(
     }
 }
 
-fn snapshot_from_output(call_id: &str, output: &Value) -> Option<DesktopPlanSnapshot> {
+pub fn snapshot_from_output(call_id: &str, output: &Value) -> Option<DesktopPlanSnapshot> {
     let plan = output.get("plan")?.as_object()?;
     let title = plan.get("title")?.as_str()?.trim();
     if title.is_empty() {

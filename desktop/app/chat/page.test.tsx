@@ -3,12 +3,15 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import ChatPage, {
+  PERMISSION_RESOLUTION_FEEDBACK_MS,
   createPendingTurn,
   reduceTurnEventForTurn,
 } from "./page";
 
 const startTurn = vi.fn();
 const cancelTurn = vi.fn();
+const loadActiveChatThread = vi.fn();
+const resolveTurnPermission = vi.fn();
 const subscribe = vi.fn();
 
 let onTurnEvent: ((event: {
@@ -20,6 +23,8 @@ let onTurnEvent: ((event: {
 vi.mock("@/lib/chat", () => ({
   useTurn: () => ({
     cancelTurn,
+    loadActiveChatThread,
+    resolveTurnPermission,
     startTurn,
     subscribe,
   }),
@@ -36,10 +41,14 @@ describe("ChatPage", () => {
     );
     startTurn.mockReset();
     cancelTurn.mockReset();
+    loadActiveChatThread.mockReset();
+    resolveTurnPermission.mockReset();
     subscribe.mockReset();
     onTurnEvent = null;
 
+    loadActiveChatThread.mockResolvedValue([]);
     startTurn.mockResolvedValue({ turnId: "turn-1" });
+    resolveTurnPermission.mockResolvedValue(undefined);
     subscribe.mockImplementation(async (callback) => {
       onTurnEvent = callback;
       return () => {
@@ -49,6 +58,7 @@ describe("ChatPage", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -151,6 +161,72 @@ describe("ChatPage", () => {
     expect(
       container.querySelectorAll('[data-slot="chat-turn"]')
     ).toHaveLength(2);
+  });
+
+  it("hydrates the active chat thread before streaming new turns", async () => {
+    const user = userEvent.setup();
+    loadActiveChatThread.mockResolvedValueOnce([
+      {
+        assistantText: "Existing answer",
+        error: null,
+        latestPlan: {
+          description: "Already in progress",
+          isStreaming: false,
+          sourceCallId: "call-update-plan",
+          tasks: [
+            {
+              id: "task-1",
+              status: "completed",
+              title: "Write failing test",
+            },
+          ],
+          title: "Execution Plan",
+        },
+        prompt: "Existing prompt",
+        reasoningText: "",
+        status: "completed",
+        toolCalls: [
+          {
+            argumentsJson: '{"path":"."}',
+            callId: "call-read",
+            name: "read",
+            outputSummary: "{\"content\":\"hello\"}",
+            status: "success",
+          },
+        ],
+        turnId: "turn-existing",
+      },
+    ]);
+
+    render(<ChatPage />);
+
+    expect(loadActiveChatThread).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Existing prompt")).toBeInTheDocument();
+    expect(screen.getByText("Existing answer")).toBeInTheDocument();
+    expect(screen.getByText("Execution Plan")).toBeInTheDocument();
+
+    await user.type(
+      screen.getByRole("textbox", { name: /prompt/i }),
+      "Review this plan"
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await act(async () => {
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "llm-text-delta",
+        data: { text: "New answer" },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "turn-finished",
+        data: { reason: "completed" },
+      });
+    });
+
+    expect(screen.getByText("Existing prompt")).toBeInTheDocument();
+    expect(screen.getByText("Review this plan")).toBeInTheDocument();
+    expect(screen.getByText("New answer")).toBeInTheDocument();
   });
 
   it("renders a floating composer shell, a right-aligned user bubble, and plain assistant output", async () => {
@@ -276,6 +352,121 @@ describe("ChatPage", () => {
     ]);
   });
 
+  it("shows one pending tool permission at a time and advances after resolution feedback", async () => {
+    const user = userEvent.setup();
+
+    render(<ChatPage />);
+
+    await user.type(
+      screen.getByRole("textbox", { name: /prompt/i }),
+      "Review this plan"
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await act(async () => {
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-prepared",
+        data: {
+          argumentsJson: '{"command":"rm -rf /tmp/demo"}',
+          callId: "call-shell",
+          name: "shell",
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-permission-requested",
+        data: {
+          requestId: "perm-1",
+          toolCallId: "call-shell",
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-prepared",
+        data: {
+          argumentsJson: '{"repo":"origin/main"}',
+          callId: "call-git",
+          name: "git",
+        },
+      });
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-permission-requested",
+        data: {
+          requestId: "perm-2",
+          toolCallId: "call-git",
+        },
+      });
+    });
+
+    const confirmation = document.querySelector(
+      '[data-slot="tool-permission-confirmation"]'
+    ) as HTMLElement | null;
+    expect(confirmation).toBeInTheDocument();
+    expect(within(confirmation!).getByText("shell")).toBeInTheDocument();
+    expect(
+      within(confirmation!).getByText('{"command":"rm -rf /tmp/demo"}')
+    ).toBeInTheDocument();
+    expect(within(confirmation!).queryByText("git")).not.toBeInTheDocument();
+
+    await user.click(within(confirmation!).getByRole("button", { name: "Allow" }));
+    expect(resolveTurnPermission).toHaveBeenCalledWith("turn-1", "perm-1", "allow");
+
+    vi.useFakeTimers();
+
+    await act(async () => {
+      onTurnEvent?.({
+        turnId: "turn-1",
+        type: "tool-call-permission-resolved",
+        data: {
+          decision: "allow",
+          requestId: "perm-1",
+        },
+      });
+    });
+
+    expect(confirmation).toHaveAttribute("data-state", "accepted");
+    expect(within(confirmation!).queryByRole("button", { name: "Allow" })).not.toBeInTheDocument();
+    expect(within(confirmation!).queryByText("git")).not.toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(PERMISSION_RESOLUTION_FEEDBACK_MS + 50);
+    });
+
+    expect(within(confirmation!).getByText("git")).toBeInTheDocument();
+    expect(
+      within(confirmation!).getByText('{"repo":"origin/main"}')
+    ).toBeInTheDocument();
+  });
+
+  it("clears pending permission state when a turn finishes", () => {
+    const current = createPendingTurn("client-turn-1", "Review this plan");
+
+    const requested = reduceTurnEventForTurn(current, {
+      data: {
+        requestId: "perm-1",
+        toolCallId: "call-shell",
+      },
+      turnId: "turn-1",
+      type: "tool-call-permission-requested",
+    });
+    const finished = reduceTurnEventForTurn(requested, {
+      data: { reason: "completed" },
+      turnId: "turn-1",
+      type: "turn-finished",
+    });
+
+    expect(requested.pendingPermissions).toEqual([
+      {
+        requestId: "perm-1",
+        toolCallId: "call-shell",
+      },
+    ]);
+    expect(finished.pendingPermissions).toEqual([]);
+    expect(finished.lastResolvedPermission).toBeNull();
+  });
+
   it("renders the queue before assistant markdown and hides update_plan tool rows", async () => {
     const user = userEvent.setup();
     render(<ChatPage />);
@@ -347,6 +538,9 @@ describe("ChatPage", () => {
     expect(planQueue).toBeInTheDocument();
     expect(within(assistantSection!).getByText("Write failing test")).toBeInTheDocument();
     expect(within(assistantSection!).queryByText("update_plan")).not.toBeInTheDocument();
+    expect(
+      document.querySelector('[data-slot="tool-permission-confirmation"]')
+    ).not.toBeInTheDocument();
     expect(planQueue?.compareDocumentPosition(assistantText)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING
     );

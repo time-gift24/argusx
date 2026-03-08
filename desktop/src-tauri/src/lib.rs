@@ -13,13 +13,11 @@ use session_commands::{
 pub fn run() -> Result<(), BoxError> {
     let runtime = tauri::async_runtime::block_on(runtime::build_runtime())?;
     let manager = runtime.session_manager.clone();
-    let session_state = DesktopSessionState::new(manager);
+    let session_state = DesktopSessionState::new(manager).map_err(|err| -> BoxError { Box::new(err) })?;
     let bridge_manager = session_state.manager.clone();
-    let chat_state = chat::AppState::new().map_err(Into::into)?;
 
     let run_result = tauri::Builder::default()
         .manage(session_state)
-        .manage(chat_state)
         .setup(move |app| {
             spawn_session_event_bridge(app.handle().clone(), bridge_manager.clone());
             Ok(())
@@ -34,6 +32,8 @@ pub fn run() -> Result<(), BoxError> {
             cancel_thread_turn,
             chat::commands::start_turn,
             chat::commands::cancel_turn,
+            chat::commands::load_active_chat_thread,
+            chat::commands::resolve_turn_permission,
             provider_settings::commands::list_provider_profiles,
             provider_settings::commands::save_provider_profile,
             provider_settings::commands::delete_provider_profile,

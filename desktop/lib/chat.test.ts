@@ -9,6 +9,39 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 describe("desktop turn client", () => {
+  it("loads the active chat thread from the tauri command layer", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { loadActiveChatThread } = await import("./chat");
+    vi.mocked(invoke).mockResolvedValue([
+      {
+        assistantText: "Existing answer",
+        error: null,
+        latestPlan: null,
+        prompt: "Existing prompt",
+        reasoningText: "",
+        status: "completed",
+        toolCalls: [],
+        turnId: "turn-existing",
+      },
+    ]);
+
+    const out = await loadActiveChatThread();
+
+    expect(out).toEqual([
+      {
+        assistantText: "Existing answer",
+        error: null,
+        latestPlan: null,
+        prompt: "Existing prompt",
+        reasoningText: "",
+        status: "completed",
+        toolCalls: [],
+        turnId: "turn-existing",
+      },
+    ]);
+    expect(invoke).toHaveBeenCalledWith("load_active_chat_thread");
+  });
+
   it("delegates startTurn to the tauri command layer", async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     const { startTurn } = await import("./chat");
@@ -54,5 +87,18 @@ describe("desktop turn client", () => {
     await subscribe(callback);
 
     expect(callback).toHaveBeenCalledWith(payload);
+  });
+
+  it("delegates resolveTurnPermission to the tauri command layer", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { resolveTurnPermission } = await import("./chat");
+
+    await resolveTurnPermission("turn-1", "perm-1", "allow");
+
+    expect(invoke).toHaveBeenCalledWith("resolve_turn_permission", {
+      decision: "allow",
+      requestId: "perm-1",
+      turnId: "turn-1",
+    });
   });
 });

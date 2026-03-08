@@ -243,6 +243,7 @@ fn build_layer_with_writer(
             shutdown_tx: Some(shutdown_tx),
             shutdown_complete_rx,
             metrics,
+            _runtime: None,
         },
     ))
 }
