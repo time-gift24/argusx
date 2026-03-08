@@ -90,3 +90,57 @@ async fn tool_batch_emits_each_result_immediately_then_finishes_step_once() {
         }
     )));
 }
+
+#[tokio::test]
+async fn completed_tool_turn_returns_transcript_and_final_output() {
+    let first_step = vec![
+        ResponseEvent::ToolDone(builtin_call(0, "call-1")),
+        ResponseEvent::Done {
+            reason: FinishReason::ToolCalls,
+            usage: Some(Usage::zero()),
+        },
+    ];
+    let second_step = vec![
+        ResponseEvent::ContentDelta("done".into()),
+        ResponseEvent::Done {
+            reason: FinishReason::Stop,
+            usage: Some(Usage::zero()),
+        },
+    ];
+
+    let (handle, task) = TurnDriver::spawn(
+        TurnSeed {
+            session_id: "session-1".into(),
+            turn_id: "turn-1".into(),
+            prior_messages: vec![],
+            user_message: "read files".into(),
+        },
+        Arc::new(support::multi_step_model(vec![first_step, second_step])),
+        Arc::new(support::delayed_tool_runner([(
+            "call-1",
+            0,
+            ToolResult::ok(json!({"source":"fast"})),
+        )])),
+        Arc::new(support::FakeAuthorizer::default()),
+        Arc::new(support::FakeObserver),
+    );
+
+    while handle.next_event().await.is_some() {}
+    let outcome = task.await.unwrap().unwrap();
+
+    assert_eq!(outcome.finish_reason, TurnFinishReason::Completed);
+    assert_eq!(outcome.final_output.as_deref(), Some("done"));
+    assert_eq!(outcome.transcript.len(), 4);
+    assert!(matches!(
+        outcome.transcript[1],
+        turn::TurnMessage::AssistantToolCalls { .. }
+    ));
+    assert!(matches!(
+        outcome.transcript[2],
+        turn::TurnMessage::ToolResult { .. }
+    ));
+    assert!(matches!(
+        outcome.transcript[3],
+        turn::TurnMessage::AssistantText { ref content } if content.as_ref() == "done"
+    ));
+}
