@@ -17,4 +17,6 @@ thiserror = { workspace = true }
 turn = { path = "../turn" }
 
 [dev-dependencies]
+async-trait = { workspace = true }
+tool = { path = "../tool" }
 tokio = { workspace = true, features = ["test-util", "macros"] }

@@ -253,12 +253,11 @@ impl SessionManager {
                         turn_record.status = TurnStatus::WaitingPermission;
                         {
                             let mut runtime = runtime.lock().unwrap();
-                            if let Some(thread_runtime) = runtime.threads.get_mut(&thread_id) {
-                                if let Some(active_turn) = thread_runtime.active_turn.as_mut() {
-                                    if active_turn.turn_id == turn_record.id {
-                                        active_turn.waiting_permission = Some(request.clone());
-                                    }
-                                }
+                            if let Some(thread_runtime) = runtime.threads.get_mut(&thread_id)
+                                && let Some(active_turn) = thread_runtime.active_turn.as_mut()
+                                && active_turn.turn_id == turn_record.id
+                            {
+                                active_turn.waiting_permission = Some(request.clone());
                             }
                         }
                         let _ = store.update_turn(&turn_record).await;
@@ -267,12 +266,11 @@ impl SessionManager {
                         turn_record.status = TurnStatus::Running;
                         {
                             let mut runtime = runtime.lock().unwrap();
-                            if let Some(thread_runtime) = runtime.threads.get_mut(&thread_id) {
-                                if let Some(active_turn) = thread_runtime.active_turn.as_mut() {
-                                    if active_turn.turn_id == turn_record.id {
-                                        active_turn.waiting_permission = None;
-                                    }
-                                }
+                            if let Some(thread_runtime) = runtime.threads.get_mut(&thread_id)
+                                && let Some(active_turn) = thread_runtime.active_turn.as_mut()
+                                && active_turn.turn_id == turn_record.id
+                            {
+                                active_turn.waiting_permission = None;
                             }
                         }
                         let _ = store.update_turn(&turn_record).await;
@@ -308,15 +306,14 @@ impl SessionManager {
 
             {
                 let mut runtime = runtime.lock().unwrap();
-                if let Some(thread_runtime) = runtime.threads.get_mut(&thread_id) {
-                    if thread_runtime
+                if let Some(thread_runtime) = runtime.threads.get_mut(&thread_id)
+                    && thread_runtime
                         .active_turn
                         .as_ref()
                         .map(|active| active.turn_id == turn_record.id)
                         .unwrap_or(false)
-                    {
-                        thread_runtime.active_turn = None;
-                    }
+                {
+                    thread_runtime.active_turn = None;
                 }
             }
 
