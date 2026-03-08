@@ -13,14 +13,15 @@ use argus_core::{Builtin, BuiltinToolCall, FinishReason, ResponseEvent, ToolCall
 use serde_json::json;
 use tool::ToolResult;
 use turn::{
-    FinalStepPolicy, LlmStepRequest, TurnContext, TurnDriver, TurnEvent, TurnFinishReason,
-    TurnMessage, TurnOptions,
+    FinalStepPolicy, LlmStepRequest, TurnDriver, TurnEvent, TurnFinishReason, TurnMessage,
+    TurnOptions, TurnSeed,
 };
 
-fn context() -> TurnContext {
-    TurnContext {
+fn context() -> TurnSeed {
+    TurnSeed {
         session_id: "session-1".into(),
         turn_id: "turn-1".into(),
+        prior_messages: vec![],
         user_message: "do tools".into(),
     }
 }
@@ -46,6 +47,50 @@ fn expect_shared_messages(_: &Arc<[Arc<TurnMessage>]>) {}
 
 fn message_at(messages: &Arc<[Arc<TurnMessage>]>, index: usize) -> &TurnMessage {
     messages[index].as_ref()
+}
+
+#[tokio::test]
+async fn first_step_receives_prior_messages_before_current_user_input() {
+    let model = Arc::new(support::FakeModelRunner::new(vec![vec![
+        ResponseEvent::ContentDelta("done".into()),
+        ResponseEvent::Done {
+            reason: FinishReason::Stop,
+            usage: Some(Usage::zero()),
+        },
+    ]]));
+    let model_ref = Arc::clone(&model);
+
+    let seed = TurnSeed {
+        session_id: "session-1".into(),
+        turn_id: "turn-2".into(),
+        prior_messages: vec![
+            TurnMessage::User {
+                content: "hello".into(),
+            },
+            TurnMessage::AssistantText {
+                content: "hi".into(),
+            },
+        ],
+        user_message: "continue".into(),
+    };
+
+    let (handle, task) = TurnDriver::spawn(
+        seed,
+        model,
+        Arc::new(support::instant_tool_runner()),
+        Arc::new(support::FakeAuthorizer::default()),
+        Arc::new(support::FakeObserver),
+    );
+
+    collect_events(handle).await;
+    task.await.unwrap().unwrap();
+
+    let requests = model_ref.received_requests().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].messages.len(), 3);
+    assert!(matches!(message_at(&requests[0].messages, 0), TurnMessage::User { content } if content.as_ref() == "hello"));
+    assert!(matches!(message_at(&requests[0].messages, 1), TurnMessage::AssistantText { content } if content.as_ref() == "hi"));
+    assert!(matches!(message_at(&requests[0].messages, 2), TurnMessage::User { content } if content.as_ref() == "continue"));
 }
 
 // ---------------------------------------------------------------------------

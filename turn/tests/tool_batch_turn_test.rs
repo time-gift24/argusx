@@ -5,7 +5,7 @@ use std::sync::Arc;
 use argus_core::{Builtin, BuiltinToolCall, FinishReason, ResponseEvent, ToolCall, Usage};
 use serde_json::json;
 use tool::ToolResult;
-use turn::{StepFinishReason, ToolOutcome, TurnContext, TurnDriver, TurnEvent, TurnFinishReason};
+use turn::{StepFinishReason, ToolOutcome, TurnDriver, TurnEvent, TurnFinishReason, TurnSeed};
 
 fn builtin_call(sequence: u32, call_id: &str) -> ToolCall {
     ToolCall::Builtin(BuiltinToolCall {
@@ -18,9 +18,10 @@ fn builtin_call(sequence: u32, call_id: &str) -> ToolCall {
 
 #[tokio::test]
 async fn tool_batch_emits_each_result_immediately_then_finishes_step_once() {
-    let context = TurnContext {
+    let context = TurnSeed {
         session_id: "session-1".into(),
         turn_id: "turn-1".into(),
+        prior_messages: vec![],
         user_message: "read files".into(),
     };
 

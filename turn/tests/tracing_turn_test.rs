@@ -7,7 +7,7 @@ use std::{
 
 use argus_core::ResponseEvent;
 use tracing_subscriber::fmt::MakeWriter;
-use turn::{TurnContext, TurnDriver};
+use turn::{TurnDriver, TurnSeed};
 
 #[derive(Clone, Default)]
 struct SharedBuf(Arc<Mutex<Vec<u8>>>);
@@ -43,9 +43,10 @@ async fn turn_tracing_emits_step_and_finish_markers() {
         .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
 
-    let context = TurnContext {
+    let context = TurnSeed {
         session_id: "session-1".into(),
         turn_id: "turn-1".into(),
+        prior_messages: vec![],
         user_message: "hello".into(),
     };
 
@@ -77,9 +78,10 @@ async fn turn_tracing_reports_failed_turn_completion() {
         .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
 
-    let context = TurnContext {
+    let context = TurnSeed {
         session_id: "session-1".into(),
         turn_id: "turn-1".into(),
+        prior_messages: vec![],
         user_message: "hello".into(),
     };
 

@@ -2,15 +2,16 @@ mod support;
 
 use std::sync::Arc;
 
-use turn::{TurnContext, TurnDriver, TurnEvent, TurnFinishReason};
+use turn::{TurnDriver, TurnEvent, TurnFinishReason, TurnSeed};
 
 fn expect_shared_text(_: &Arc<str>) {}
 
 #[tokio::test]
 async fn text_only_turn_streams_text_and_completes() {
-    let context = TurnContext {
+    let context = TurnSeed {
         session_id: "session-1".into(),
         turn_id: "turn-1".into(),
+        prior_messages: vec![],
         user_message: "hello".into(),
     };
 

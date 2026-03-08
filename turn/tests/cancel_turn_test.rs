@@ -12,8 +12,8 @@ use tokio::{
 };
 use tool::{ToolContext, ToolResult};
 use turn::{
-    LlmStepRequest, ModelRunner, ToolOutcome, ToolRunner, TurnContext, TurnController, TurnDriver,
-    TurnError, TurnEvent, TurnFinishReason, TurnObserver,
+    LlmStepRequest, ModelRunner, ToolOutcome, ToolRunner, TurnController, TurnDriver, TurnError,
+    TurnEvent, TurnFinishReason, TurnObserver, TurnSeed,
 };
 
 fn builtin_call(sequence: u32, call_id: &str) -> ToolCall {
@@ -27,9 +27,10 @@ fn builtin_call(sequence: u32, call_id: &str) -> ToolCall {
 
 #[tokio::test]
 async fn cancelling_before_next_model_invocation_stops_at_step_boundary() {
-    let context = TurnContext {
+    let context = TurnSeed {
         session_id: "session-1".into(),
         turn_id: "turn-1".into(),
+        prior_messages: vec![],
         user_message: "cancel me".into(),
     };
 
@@ -77,9 +78,10 @@ async fn cancelling_before_next_model_invocation_stops_at_step_boundary() {
 
 #[tokio::test]
 async fn cancelling_during_model_start_finishes_without_waiting_for_stream_creation() {
-    let context = TurnContext {
+    let context = TurnSeed {
         session_id: "session-1".into(),
         turn_id: "turn-1".into(),
+        prior_messages: vec![],
         user_message: "cancel before stream".into(),
     };
     let model = Arc::new(BlockingStartModelRunner::default());
@@ -117,9 +119,10 @@ async fn cancelling_during_model_start_finishes_without_waiting_for_stream_creat
 
 #[tokio::test]
 async fn cancelling_during_tool_execution_keeps_results_that_finish_after_cancel() {
-    let context = TurnContext {
+    let context = TurnSeed {
         session_id: "session-1".into(),
         turn_id: "turn-1".into(),
+        prior_messages: vec![],
         user_message: "cancel me".into(),
     };
 

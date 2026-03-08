@@ -15,7 +15,7 @@ pub mod transcript;
 pub mod vercel;
 
 pub use command::{PermissionDecision, TurnCommand};
-pub use context::TurnContext;
+pub use context::TurnSeed;
 pub use driver::TurnDriver;
 pub use error::TurnError;
 pub use event::{StepFinishReason, ToolOutcome, TurnEvent, TurnFinishReason};

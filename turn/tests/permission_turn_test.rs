@@ -5,7 +5,7 @@ use std::sync::Arc;
 use argus_core::{Builtin, BuiltinToolCall, FinishReason, ResponseEvent, ToolCall, Usage};
 use serde_json::json;
 use tool::ToolResult;
-use turn::{PermissionDecision, TurnContext, TurnDriver, TurnEvent, TurnFinishReason};
+use turn::{PermissionDecision, TurnDriver, TurnEvent, TurnFinishReason, TurnSeed};
 
 fn builtin_call(sequence: u32, call_id: &str) -> ToolCall {
     ToolCall::Builtin(BuiltinToolCall {
@@ -18,9 +18,10 @@ fn builtin_call(sequence: u32, call_id: &str) -> ToolCall {
 
 #[tokio::test]
 async fn turn_waits_for_permission_and_resumes_after_allow() {
-    let context = TurnContext {
+    let context = TurnSeed {
         session_id: "session-1".into(),
         turn_id: "turn-1".into(),
+        prior_messages: vec![],
         user_message: "read file".into(),
     };
 
