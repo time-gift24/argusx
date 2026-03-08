@@ -14,12 +14,10 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 argus_core = { package = "core", path = "../../core" }
+runtime = { path = "../../runtime" }
 session = { path = "../../session" }
-sqlx = { workspace = true, features = ["runtime-tokio", "sqlite"] }
-telemetry = { path = "../../telemetry" }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 turn = { path = "../../turn" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

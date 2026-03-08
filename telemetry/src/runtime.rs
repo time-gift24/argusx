@@ -165,6 +165,72 @@ pub fn init(config: TelemetryConfig) -> Result<TelemetryRuntime, TelemetryError>
     init_with_writer(config, writer)
 }
 
+/// Type alias for a boxed telemetry layer that can be composed into an external subscriber.
+pub type BoxTelemetryLayer =
+    Box<dyn tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync>;
+
+/// Build a telemetry layer without setting the global default subscriber.
+/// Returns a layer and a runtime handle for graceful shutdown.
+pub fn build_layer(
+    config: TelemetryConfig,
+) -> Result<(BoxTelemetryLayer, TelemetryRuntime), TelemetryError> {
+    let writer = Arc::new(ClickHouseWriter::new(config.clone())?);
+    build_layer_with_writer(config, writer)
+}
+
+/// Build a telemetry layer with a custom writer (for testing).
+fn build_layer_with_writer(
+    config: TelemetryConfig,
+    writer: Arc<dyn BatchWriter>,
+) -> Result<(BoxTelemetryLayer, TelemetryRuntime), TelemetryError> {
+    let queue = Arc::new(Mutex::new(BatchQueue::new(config.clone())));
+    let notify = Arc::new(tokio::sync::Notify::new());
+    let metrics = Arc::new(TelemetryMetricsInner::default());
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let (shutdown_complete_tx, shutdown_complete_rx) = std_mpsc::channel();
+    let writer_metrics = metrics.clone();
+
+    let layer = TelemetryLayer::new(
+        RuntimeSink::new(queue.clone(), notify.clone(), metrics.clone()),
+        config.clone(),
+    );
+
+    std::thread::Builder::new()
+        .name("telemetry-writer".to_string())
+        .spawn(move || {
+            match tokio::runtime::Builder::new_current_thread()
+                .enable_io()
+                .enable_time()
+                .build()
+            {
+                Ok(rt) => rt.block_on(writer_task(
+                    queue,
+                    notify,
+                    writer,
+                    writer_metrics,
+                    config,
+                    shutdown_rx,
+                    shutdown_complete_tx,
+                )),
+                Err(err) => {
+                    let _ = shutdown_complete_tx.send(Err(TelemetryError::Initialization(
+                        format!("failed to build telemetry runtime: {err}"),
+                    )));
+                }
+            }
+        })
+        .map_err(|err| TelemetryError::Initialization(err.to_string()))?;
+
+    Ok((
+        Box::new(layer),
+        TelemetryRuntime {
+            shutdown_tx: Some(shutdown_tx),
+            shutdown_complete_rx,
+            metrics,
+        },
+    ))
+}
+
 fn init_with_writer(
     config: TelemetryConfig,
     writer: Arc<dyn BatchWriter>,

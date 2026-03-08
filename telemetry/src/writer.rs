@@ -150,3 +150,24 @@ impl BatchWriter for ClickHouseWriter {
         }
     }
 }
+
+/// Probe ClickHouse availability during startup.
+pub async fn probe_clickhouse(config: &TelemetryConfig) -> Result<(), TelemetryError> {
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&config.clickhouse_url)
+        .query(&[("query", "SELECT 1")])
+        .send()
+        .await?;
+
+    let status = response.status();
+    if status.is_success() {
+        Ok(())
+    } else {
+        let body = response.text().await.unwrap_or_default();
+        Err(TelemetryError::Write(format!(
+            "ClickHouse probe failed: {} - {}",
+            status, body
+        )))
+    }
+}

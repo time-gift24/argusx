@@ -12,9 +12,9 @@ use tracing::{Instrument, info, info_span};
 
 use crate::{
     AuthorizationDecision, FinalStepPolicy, LlmStepRequest, ModelRunner, PermissionDecision,
-    StepFinishReason, ToolAuthorizer, ToolOutcome, ToolRunner, TurnError, TurnEvent,
-    TurnFailure, TurnFinishReason, TurnHandle, TurnMessage, TurnOptions, TurnState, TurnSummary,
-    TurnOutcome, TurnSeed, TurnTranscript,
+    StepFinishReason, ToolAuthorizer, ToolOutcome, ToolRunner, TurnError, TurnEvent, TurnFailure,
+    TurnFinishReason, TurnHandle, TurnMessage, TurnOptions, TurnOutcome, TurnSeed, TurnState,
+    TurnSummary, TurnTranscript,
     state::{ActiveLlmStep, PendingPermissionCall, PermissionPause, ToolBatch},
     transcript::SharedToolCall,
 };
@@ -253,7 +253,8 @@ impl TurnDriver {
 
                     let calls = Arc::from(active_step.tool_calls);
                     self.transcript.push(TurnMessage::AssistantToolCalls {
-                        content: (!assistant_text.is_empty()).then(|| assistant_text.clone().into()),
+                        content: (!assistant_text.is_empty())
+                            .then(|| assistant_text.clone().into()),
                         calls: Arc::clone(&calls),
                     });
 

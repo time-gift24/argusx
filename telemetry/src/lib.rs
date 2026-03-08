@@ -11,7 +11,9 @@ pub use batch::{BatchEnqueueResult, BatchQueue};
 pub use config::TelemetryConfig;
 pub use error::TelemetryError;
 pub use layer::{RecordingSink, TelemetryLayer, TelemetrySink};
-pub use runtime::{DegradationPolicy, TelemetryMetrics, TelemetryRuntime, init};
+pub use runtime::{
+    BoxTelemetryLayer, DegradationPolicy, TelemetryMetrics, TelemetryRuntime, build_layer, init,
+};
 pub use schema::{EventPriority, TelemetryRecord, TelemetryRecordBuilder};
 pub use sensitive::redact_preview;
-pub use writer::ClickHouseWriter;
+pub use writer::{BatchWriter, ClickHouseWriter, probe_clickhouse};

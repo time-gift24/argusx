@@ -1,7 +1,7 @@
-pub mod types;
+pub mod manager;
 pub mod store;
 pub mod thread;
-pub mod manager;
+pub mod types;
 
 #[cfg(test)]
 mod tests;
@@ -11,6 +11,5 @@ pub use serde::{Deserialize, Serialize};
 pub use serde_json;
 pub use types::{
     PersistedMessage, PersistedToolCall, PersistedToolKind, SessionRecord, ThreadEvent,
-    ThreadEventEnvelope,
-    ThreadLifecycle, ThreadRecord, ThreadViewState, TurnRecord, TurnStatus,
+    ThreadEventEnvelope, ThreadLifecycle, ThreadRecord, ThreadViewState, TurnRecord, TurnStatus,
 };

@@ -13,10 +13,7 @@ pub enum StepFinishReason {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ToolOutcome {
     Success(Value),
-    Failed {
-        message: Arc<str>,
-        retryable: bool,
-    },
+    Failed { message: Arc<str>, retryable: bool },
     TimedOut,
     Denied,
     Cancelled,

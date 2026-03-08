@@ -11,8 +11,12 @@ pub type TurnMessageSnapshot = Arc<[SharedTurnMessage]>;
 // ToolCall (in AssistantToolCalls) derives Eq in argus_core.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TurnMessage {
-    User { content: Arc<str> },
-    AssistantText { content: Arc<str> },
+    User {
+        content: Arc<str>,
+    },
+    AssistantText {
+        content: Arc<str>,
+    },
     AssistantToolCalls {
         content: Option<Arc<str>>,
         calls: SharedToolCalls,
@@ -23,7 +27,9 @@ pub enum TurnMessage {
         content: Arc<str>,
         is_error: bool,
     },
-    SystemNote { content: Arc<str> },
+    SystemNote {
+        content: Arc<str>,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -49,7 +55,10 @@ impl TurnTranscript {
     }
 
     pub fn to_vec(&self) -> Vec<TurnMessage> {
-        self.messages.iter().map(|message| message.as_ref().clone()).collect()
+        self.messages
+            .iter()
+            .map(|message| message.as_ref().clone())
+            .collect()
     }
 }
 

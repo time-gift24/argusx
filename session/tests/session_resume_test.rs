@@ -2,7 +2,9 @@ use chrono::Utc;
 use session::{
     manager::SessionManager,
     store::ThreadStore,
-    types::{PersistedMessage, SessionRecord, ThreadLifecycle, ThreadRecord, TurnRecord, TurnStatus},
+    types::{
+        PersistedMessage, SessionRecord, ThreadLifecycle, ThreadRecord, TurnRecord, TurnStatus,
+    },
 };
 use sqlx::sqlite::SqlitePoolOptions;
 use uuid::Uuid;
