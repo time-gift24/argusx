@@ -190,6 +190,22 @@ impl SessionManager {
         self.store.list_threads(&self.session_id).await
     }
 
+    pub async fn load_session(&self) -> Result<Option<SessionRecord>> {
+        self.store.get_session(&self.session_id).await
+    }
+
+    pub async fn load_thread(&self, thread_id: Uuid) -> Result<Option<ThreadRecord>> {
+        let thread = self.store.get_thread(thread_id).await?;
+        match thread {
+            Some(thread) if thread.session_id == self.session_id => Ok(Some(thread)),
+            Some(_thread) => bail!(
+                "thread {thread_id} does not belong to session {}",
+                self.session_id
+            ),
+            None => Ok(None),
+        }
+    }
+
     pub async fn load_thread_history(&self, thread_id: Uuid) -> Result<Vec<TurnRecord>> {
         self.store.list_turns(thread_id).await
     }
@@ -457,6 +473,10 @@ impl SessionManager {
     }
 
     async fn ensure_session(&self) -> Result<()> {
+        if self.store.get_session(&self.session_id).await?.is_some() {
+            return Ok(());
+        }
+
         let now = Utc::now();
         self.store
             .upsert_session(&SessionRecord {

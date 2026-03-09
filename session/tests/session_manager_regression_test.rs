@@ -33,6 +33,7 @@ async fn concurrent_send_message_rejects_second_turn_for_same_thread() {
         let manager = SessionManager::new("session-1".into(), store);
         let thread_id = manager.create_thread(Some("A".into())).await.unwrap();
         let deps = TurnDependencies {
+            system_prompt: None,
             model: Arc::new(SlowTextModel::new(Duration::from_millis(120), "done")),
             tool_runner: Arc::new(NoopToolRunner),
             authorizer: Arc::new(AllowAuthorizer),
@@ -100,6 +101,7 @@ async fn failed_turn_persists_incremental_transcript_messages() {
     let mut events = manager.subscribe();
 
     let deps = TurnDependencies {
+        system_prompt: None,
         model: Arc::new(FailingAfterTextModel::new("partial", "boom")),
         tool_runner: Arc::new(NoopToolRunner),
         authorizer: Arc::new(AllowAuthorizer),

@@ -135,21 +135,18 @@ fn builtin_main_profile() -> AgentProfileRecord {
         id: "builtin-main".into(),
         kind: AgentProfileKind::BuiltinMain,
         display_name: "Planner".into(),
-        description: "System planning and dispatch agent".into(),
+        description: "System planning agent".into(),
         system_prompt: builtin_main_profile_prompt().into(),
         tool_policy_json: serde_json::json!({
             "builtins": [
                 "read",
                 "glob",
                 "grep",
-                "update_plan",
-                "dispatch_subagent",
-                "list_subagent_dispatches",
-                "get_subagent_dispatch"
+                "update_plan"
             ]
         }),
         model_config_json: serde_json::Value::Null,
-        allow_subagent_dispatch: true,
+        allow_subagent_dispatch: false,
         is_active: true,
         created_at: now,
         updated_at: now,

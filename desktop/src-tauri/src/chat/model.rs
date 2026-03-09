@@ -3,7 +3,6 @@ use std::{env, path::PathBuf};
 use agent::AgentToolSurface;
 use async_trait::async_trait;
 use provider::{
-    Dialect, ProviderClient, ProviderConfig, ProviderDevOptions, ReplayTiming, Request,
     dialect::openai::schema::{
         common::{
             FunctionCall, FunctionDefinition, Role, Tool as ProviderTool,
@@ -11,6 +10,7 @@ use provider::{
         },
         request::{ChatCompletionsOptions, ChatMessage},
     },
+    Dialect, ProviderClient, ProviderConfig, ProviderDevOptions, ReplayTiming, Request,
 };
 use serde_json::{Map, Value};
 use tool::ToolSpec;
@@ -96,7 +96,11 @@ impl ProviderModelRunner {
         )
     }
 
-    fn new(model: String, config: ProviderConfig, surface: &AgentToolSurface) -> Result<Self, TurnError> {
+    fn new(
+        model: String,
+        config: ProviderConfig,
+        surface: &AgentToolSurface,
+    ) -> Result<Self, TurnError> {
         Ok(Self {
             client: ProviderClient::new(config).map_err(map_provider_error)?,
             model,
@@ -105,15 +109,14 @@ impl ProviderModelRunner {
     }
 
     fn build_request(&self, request: &LlmStepRequest) -> Request {
+        let include_tools = request.allow_tools && !self.tools.is_empty();
         ChatCompletionsOptions {
             model: self.model.clone(),
             messages: map_messages(&request.messages, request.system_prompt.as_deref()),
             stream: Some(true),
-            tools: request.allow_tools.then(|| self.tools.clone()),
-            tool_choice: request
-                .allow_tools
-                .then(|| ToolChoice::String("auto".to_string())),
-            parallel_tool_calls: request.allow_tools.then_some(true),
+            tools: include_tools.then(|| self.tools.clone()),
+            tool_choice: include_tools.then(|| ToolChoice::String("auto".to_string())),
+            parallel_tool_calls: include_tools.then_some(true),
             ..Default::default()
         }
     }
@@ -128,7 +131,10 @@ impl ProviderModelRunner {
 
 #[async_trait]
 impl ModelRunner for ProviderModelRunner {
-    async fn start(&self, request: LlmStepRequest) -> Result<argus_core::ResponseStream, TurnError> {
+    async fn start(
+        &self,
+        request: LlmStepRequest,
+    ) -> Result<argus_core::ResponseStream, TurnError> {
         self.client
             .stream(self.build_request(&request))
             .map_err(map_provider_error)
@@ -177,7 +183,12 @@ fn map_message(message: &TurnMessage) -> ChatMessage {
             role: Role::Assistant,
             content: content.as_ref().map(ToString::to_string),
             name: None,
-            tool_calls: Some(calls.iter().map(|call| map_tool_call(call.as_ref())).collect()),
+            tool_calls: Some(
+                calls
+                    .iter()
+                    .map(|call| map_tool_call(call.as_ref()))
+                    .collect(),
+            ),
             tool_call_id: None,
             extra: Map::default(),
         },
@@ -213,9 +224,11 @@ fn map_tool_call(call: &argus_core::ToolCall) -> ProviderToolCall {
             arguments_json,
             ..
         } => provider_tool_call(call_id, name, arguments_json),
-        argus_core::ToolCall::Builtin(call) => {
-            provider_tool_call(&call.call_id, call.builtin.canonical_name(), &call.arguments_json)
-        }
+        argus_core::ToolCall::Builtin(call) => provider_tool_call(
+            &call.call_id,
+            call.builtin.canonical_name(),
+            &call.arguments_json,
+        ),
         argus_core::ToolCall::Mcp(call) => provider_tool_call(
             &call.id,
             call.name.as_deref().unwrap_or_default(),
@@ -344,12 +357,12 @@ mod tests {
         assert_eq!(built.messages.len(), 3);
         assert!(matches!(built.messages[0].role, Role::User));
         assert!(matches!(built.messages[1].role, Role::Assistant));
-        assert_eq!(built.messages[1].tool_calls.as_ref().unwrap()[0].id, "call-1");
-        assert!(matches!(built.messages[2].role, Role::Tool));
         assert_eq!(
-            built.messages[2].tool_call_id.as_deref(),
-            Some("call-1")
+            built.messages[1].tool_calls.as_ref().unwrap()[0].id,
+            "call-1"
         );
+        assert!(matches!(built.messages[2].role, Role::Tool));
+        assert_eq!(built.messages[2].tool_call_id.as_deref(), Some("call-1"));
     }
 
     #[test]
@@ -437,8 +450,38 @@ mod tests {
 
         assert_eq!(built.messages.len(), 2);
         assert!(matches!(built.messages[0].role, Role::System));
-        assert_eq!(built.messages[0].content.as_deref(), Some("You are a planner."));
+        assert_eq!(
+            built.messages[0].content.as_deref(),
+            Some("You are a planner.")
+        );
         assert!(matches!(built.messages[1].role, Role::User));
         assert_eq!(request.messages.len(), 1);
+    }
+
+    #[test]
+    fn build_request_omits_tool_fields_when_surface_is_empty() {
+        let surface = agent::build_agent_tool_surface(serde_json::json!({
+            "builtins": ["dispatch_subagent"]
+        }))
+        .unwrap();
+        let runner =
+            ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"), &surface)
+                .unwrap();
+        let request = LlmStepRequest {
+            session_id: "session-1".into(),
+            turn_id: "turn-1".into(),
+            step_index: 0,
+            messages: Arc::from([Arc::new(TurnMessage::User {
+                content: "hello".into(),
+            })]),
+            system_prompt: None,
+            allow_tools: true,
+        };
+
+        let built = runner.build_request(&request);
+
+        assert!(built.tools.is_none());
+        assert!(built.tool_choice.is_none());
+        assert!(built.parallel_tool_calls.is_none());
     }
 }

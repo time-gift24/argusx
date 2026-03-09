@@ -37,6 +37,7 @@ async fn completed_turns_persist_only_incremental_transcript_messages() {
     let mut events = manager.subscribe();
 
     let deps = TurnDependencies {
+        system_prompt: None,
         model: Arc::new(QueuedTextModel::new(["first", "second"])),
         tool_runner: Arc::new(NoopToolRunner),
         authorizer: Arc::new(AllowAuthorizer),

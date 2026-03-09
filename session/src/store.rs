@@ -66,6 +66,22 @@ impl ThreadStore {
         Ok(())
     }
 
+    pub async fn get_session(&self, session_id: &str) -> Result<Option<SessionRecord>> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, user_id, default_model, system_prompt, created_at, updated_at
+            FROM sessions
+            WHERE id = ?
+            "#,
+        )
+        .bind(session_id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("fetch session")?;
+
+        row.map(decode_session_row).transpose()
+    }
+
     pub async fn insert_thread(&self, thread: &ThreadRecord) -> Result<()> {
         sqlx::query(
             r#"
@@ -456,6 +472,17 @@ fn decode_thread_row(row: sqlx::sqlite::SqliteRow) -> Result<ThreadRecord> {
     })
 }
 
+fn decode_session_row(row: sqlx::sqlite::SqliteRow) -> Result<SessionRecord> {
+    Ok(SessionRecord {
+        id: row.try_get("id")?,
+        user_id: row.try_get("user_id")?,
+        default_model: row.try_get("default_model")?,
+        system_prompt: row.try_get("system_prompt")?,
+        created_at: parse_utc(&row.try_get::<String, _>("created_at")?)?,
+        updated_at: parse_utc(&row.try_get::<String, _>("updated_at")?)?,
+    })
+}
+
 fn decode_thread_agent_snapshot_row(
     row: sqlx::sqlite::SqliteRow,
 ) -> Result<ThreadAgentSnapshotRecord> {
@@ -662,6 +689,9 @@ mod tests {
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].final_output.as_deref(), Some("hi"));
         assert_eq!(history[0].transcript.len(), 1);
+
+        let loaded_session = store.get_session(&session.id).await.unwrap().unwrap();
+        assert_eq!(loaded_session.system_prompt, None);
     }
 
     #[tokio::test]

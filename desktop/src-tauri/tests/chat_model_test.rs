@@ -6,7 +6,7 @@ use turn::{LlmStepRequest, ModelRunner, TurnMessage};
 #[tokio::test(flavor = "current_thread")]
 async fn provider_model_runner_streams_replay_fixture() {
     let surface = desktop_lib::chat::build_agent_tool_surface(serde_json::json!({
-        "builtins": ["read", "update_plan", "dispatch_subagent"]
+        "builtins": ["read", "update_plan"]
     }))
     .unwrap();
     let runner = desktop_lib::chat::ProviderModelRunner::from_replay(
@@ -35,7 +35,7 @@ async fn provider_model_runner_streams_replay_fixture() {
 #[test]
 fn provider_model_runner_emits_only_agent_allowed_tool_definitions() {
     let surface = desktop_lib::chat::build_agent_tool_surface(serde_json::json!({
-        "builtins": ["read", "update_plan", "dispatch_subagent"]
+        "builtins": ["read", "update_plan"]
     }))
     .unwrap();
     let runner = desktop_lib::chat::ProviderModelRunner::from_replay(
@@ -48,7 +48,7 @@ fn provider_model_runner_emits_only_agent_allowed_tool_definitions() {
 
     assert!(tool_names.iter().any(|name| name == "read"));
     assert!(tool_names.iter().any(|name| name == "update_plan"));
-    assert!(tool_names.iter().any(|name| name == "dispatch_subagent"));
+    assert!(!tool_names.iter().any(|name| name == "dispatch_subagent"));
     assert!(!tool_names.iter().any(|name| name == "shell"));
 }
 

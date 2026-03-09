@@ -11,9 +11,9 @@ use uuid::Uuid;
 
 use crate::{
     chat::{
-        AllowListedToolAuthorizer, HydratedChatTurn, HydratedChatTurnStatus, HydratedToolCall,
-        HydratedToolCallStatus, ProviderModelRunner, ScheduledToolRunner,
-        plan::snapshot_from_output,
+        plan::snapshot_from_output, AllowListedToolAuthorizer, HydratedChatTurn,
+        HydratedChatTurnStatus, HydratedToolCall, HydratedToolCallStatus, ProviderModelRunner,
+        ScheduledToolRunner,
     },
     provider_settings::ProviderSettingsService,
 };
@@ -68,31 +68,22 @@ impl DesktopSessionState {
         thread_id: Uuid,
         observer: Arc<dyn TurnObserver>,
     ) -> Result<TurnDependencies, TurnError> {
-        let snapshot = self
-            .manager
-            .load_thread_agent_snapshot(thread_id)
-            .await
-            .map_err(|err| TurnError::Runtime(err.to_string()))?
-            .ok_or_else(|| TurnError::Runtime(format!("thread `{thread_id}` is missing an agent snapshot")))?;
+        let (session_prompt, snapshot) = load_thread_execution_snapshot(
+            self.manager.as_ref(),
+            self.agent_profiles.as_ref(),
+            thread_id,
+        )
+        .await?;
         let resolved = self
             .agent_execution_resolver
-            .resolve(
-                "",
-                &agent::ThreadAgentSnapshot {
-                    profile_id: snapshot.profile_id,
-                    display_name_snapshot: snapshot.display_name_snapshot,
-                    system_prompt_snapshot: snapshot.system_prompt_snapshot,
-                    tool_policy_snapshot_json: snapshot.tool_policy_snapshot_json,
-                    model_config_snapshot_json: snapshot.model_config_snapshot_json,
-                    allow_subagent_dispatch_snapshot: snapshot.allow_subagent_dispatch_snapshot,
-                },
-            )
+            .resolve(&session_prompt, &snapshot)
             .map_err(|err| TurnError::Runtime(err.to_string()))?;
         let surface = crate::chat::build_agent_tool_surface(resolved.tool_policy.clone())?;
-        let model: Arc<dyn turn::ModelRunner> = Arc::new(ProviderModelRunner::from_provider_settings(
-            Some(self.provider_settings.as_ref()),
-            &surface,
-        )?);
+        let model: Arc<dyn turn::ModelRunner> =
+            Arc::new(ProviderModelRunner::from_provider_settings(
+                Some(self.provider_settings.as_ref()),
+                &surface,
+            )?);
         let tool_runner: Arc<dyn turn::ToolRunner> =
             Arc::new(ScheduledToolRunner::from_tool_surface(&surface)?);
         let authorizer: Arc<dyn turn::ToolAuthorizer> =
@@ -161,7 +152,9 @@ impl DesktopSessionState {
             .get_profile(agent_profile_id)
             .await
             .map_err(|err| TurnError::Runtime(err.to_string()))?
-            .ok_or_else(|| TurnError::Runtime(format!("agent profile `{agent_profile_id}` not found")))?;
+            .ok_or_else(|| {
+                TurnError::Runtime(format!("agent profile `{agent_profile_id}` not found"))
+            })?;
 
         self.manager
             .create_thread_with_agent_binding(
@@ -179,6 +172,89 @@ impl DesktopSessionState {
             )
             .await
             .map_err(|err| TurnError::Runtime(err.to_string()))
+    }
+}
+
+async fn load_thread_execution_snapshot(
+    manager: &SessionManager,
+    agent_profiles: &agent::AgentProfileStore,
+    thread_id: Uuid,
+) -> Result<(String, agent::ThreadAgentSnapshot), TurnError> {
+    let session_prompt = manager
+        .load_session()
+        .await
+        .map_err(|err| TurnError::Runtime(err.to_string()))?
+        .and_then(|session| session.system_prompt)
+        .unwrap_or_default();
+
+    if let Some(snapshot) = manager
+        .load_thread_agent_snapshot(thread_id)
+        .await
+        .map_err(|err| TurnError::Runtime(err.to_string()))?
+    {
+        return Ok((
+            session_prompt,
+            snapshot_record_to_execution_snapshot(snapshot),
+        ));
+    }
+
+    let thread = manager
+        .load_thread(thread_id)
+        .await
+        .map_err(|err| TurnError::Runtime(err.to_string()))?
+        .ok_or_else(|| TurnError::Runtime(format!("thread `{thread_id}` not found")))?;
+    let profile_id = thread.agent_profile_id.as_deref().unwrap_or("builtin-main");
+    let profile = load_fallback_agent_profile(agent_profiles, profile_id).await?;
+
+    Ok((session_prompt, profile_to_execution_snapshot(profile)))
+}
+
+async fn load_fallback_agent_profile(
+    agent_profiles: &agent::AgentProfileStore,
+    profile_id: &str,
+) -> Result<agent::AgentProfileRecord, TurnError> {
+    if let Some(profile) = agent_profiles
+        .get_profile(profile_id)
+        .await
+        .map_err(|err| TurnError::Runtime(err.to_string()))?
+    {
+        return Ok(profile);
+    }
+
+    if profile_id != "builtin-main" {
+        return agent_profiles
+            .get_profile("builtin-main")
+            .await
+            .map_err(|err| TurnError::Runtime(err.to_string()))?
+            .ok_or_else(|| TurnError::Runtime("agent profile `builtin-main` not found".into()));
+    }
+
+    Err(TurnError::Runtime(format!(
+        "agent profile `{profile_id}` not found"
+    )))
+}
+
+fn snapshot_record_to_execution_snapshot(
+    snapshot: session::ThreadAgentSnapshotRecord,
+) -> agent::ThreadAgentSnapshot {
+    agent::ThreadAgentSnapshot {
+        profile_id: snapshot.profile_id,
+        display_name_snapshot: snapshot.display_name_snapshot,
+        system_prompt_snapshot: snapshot.system_prompt_snapshot,
+        tool_policy_snapshot_json: snapshot.tool_policy_snapshot_json,
+        model_config_snapshot_json: snapshot.model_config_snapshot_json,
+        allow_subagent_dispatch_snapshot: snapshot.allow_subagent_dispatch_snapshot,
+    }
+}
+
+fn profile_to_execution_snapshot(profile: agent::AgentProfileRecord) -> agent::ThreadAgentSnapshot {
+    agent::ThreadAgentSnapshot {
+        profile_id: profile.id,
+        display_name_snapshot: profile.display_name,
+        system_prompt_snapshot: profile.system_prompt,
+        tool_policy_snapshot_json: profile.tool_policy_json,
+        model_config_snapshot_json: profile.model_config_json,
+        allow_subagent_dispatch_snapshot: profile.allow_subagent_dispatch,
     }
 }
 
@@ -347,7 +423,9 @@ pub(crate) fn hydrate_chat_turn(turn: &session::TurnRecord) -> HydratedChatTurn 
 
     for message in &turn.transcript {
         match message {
-            session::PersistedMessage::AssistantText { content } => assistant_text.push_str(content),
+            session::PersistedMessage::AssistantText { content } => {
+                assistant_text.push_str(content)
+            }
             session::PersistedMessage::AssistantToolCalls { content, calls } => {
                 if let Some(content) = content {
                     assistant_text.push_str(content);
@@ -403,7 +481,8 @@ pub(crate) fn hydrate_chat_turn(turn: &session::TurnRecord) -> HydratedChatTurn 
                     }
                 }
             }
-            session::PersistedMessage::User { .. } | session::PersistedMessage::SystemNote { .. } => {}
+            session::PersistedMessage::User { .. }
+            | session::PersistedMessage::SystemNote { .. } => {}
         }
     }
 
@@ -559,7 +638,11 @@ fn tool_name(call: &ToolCall) -> &str {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use session::{PersistedMessage, PersistedToolCall, PersistedToolKind, ThreadLifecycle, ThreadRecord, TurnRecord, TurnStatus};
+    use session::{
+        PersistedMessage, PersistedToolCall, PersistedToolKind, ThreadLifecycle, ThreadRecord,
+        TurnRecord, TurnStatus,
+    };
+    use sqlx::sqlite::SqlitePoolOptions;
 
     use super::*;
     use tokio::sync::broadcast;
@@ -744,7 +827,9 @@ mod tests {
                         sequence: 0,
                         call_id: "call-update-plan".into(),
                         tool_name: "update_plan".into(),
-                        arguments: r#"{"plan":[{"step":"Write failing test","status":"completed"}]}"#.into(),
+                        arguments:
+                            r#"{"plan":[{"step":"Write failing test","status":"completed"}]}"#
+                                .into(),
                         kind: PersistedToolKind::Builtin,
                         server_label: None,
                     }],
@@ -786,10 +871,52 @@ mod tests {
         assert_eq!(hydrated.status, HydratedChatTurnStatus::Completed);
         assert_eq!(hydrated.tool_calls.len(), 1);
         assert_eq!(hydrated.tool_calls[0].call_id, "call-update-plan");
-        assert_eq!(hydrated.tool_calls[0].status, HydratedToolCallStatus::Success);
         assert_eq!(
-            hydrated.latest_plan.as_ref().map(|plan| plan.title.as_str()),
+            hydrated.tool_calls[0].status,
+            HydratedToolCallStatus::Success
+        );
+        assert_eq!(
+            hydrated
+                .latest_plan
+                .as_ref()
+                .map(|plan| plan.title.as_str()),
             Some("Execution Plan")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn load_thread_execution_snapshot_falls_back_to_builtin_profile_for_legacy_threads() {
+        let thread_pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let thread_store = session::store::ThreadStore::new(thread_pool);
+        thread_store.init_schema().await.unwrap();
+
+        let agent_pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let agent_store = agent::AgentProfileStore::new(agent_pool);
+        agent_store.init_schema().await.unwrap();
+        agent_store.seed_builtin_profiles().await.unwrap();
+
+        let manager = SessionManager::new("session-1".into(), thread_store);
+        let thread_id = manager.create_thread(Some("Legacy".into())).await.unwrap();
+
+        let (session_prompt, snapshot) =
+            load_thread_execution_snapshot(&manager, &agent_store, thread_id)
+                .await
+                .unwrap();
+
+        assert_eq!(session_prompt, "");
+        assert_eq!(snapshot.profile_id, "builtin-main");
+        assert_eq!(snapshot.display_name_snapshot, "Planner");
+        assert_eq!(
+            snapshot.tool_policy_snapshot_json,
+            serde_json::json!({ "builtins": ["read", "glob", "grep", "update_plan"] })
         );
     }
 }

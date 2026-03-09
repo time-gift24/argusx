@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use argus_core::Builtin;
-use async_trait::async_trait;
-use serde_json::json;
 use tool::{
-    GlobTool, GrepTool, ReadTool, Tool, ToolContext, ToolError, ToolResult, ToolSpec,
-    UpdatePlanTool,
     scheduler::{BuiltinRegistration, EffectiveToolPolicy},
+    GlobTool, GrepTool, ReadTool, Tool, ToolSpec, UpdatePlanTool,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,7 +20,9 @@ impl AgentToolSurface {
     pub fn from_policy(tool_policy_json: &serde_json::Value) -> Result<Self> {
         let mut builtins = Vec::new();
 
-        if let Some(entries) = tool_policy_json.get("builtins").and_then(serde_json::Value::as_array)
+        if let Some(entries) = tool_policy_json
+            .get("builtins")
+            .and_then(serde_json::Value::as_array)
         {
             for entry in entries {
                 let name = entry
@@ -31,7 +30,7 @@ impl AgentToolSurface {
                     .ok_or_else(|| anyhow::anyhow!("builtin names must be strings"))?;
                 let builtin = Builtin::from_name(name)
                     .ok_or_else(|| anyhow::anyhow!("unsupported builtin `{name}`"))?;
-                if !builtins.contains(&builtin) {
+                if is_executable_builtin(&builtin) && !builtins.contains(&builtin) {
                     builtins.push(builtin);
                 }
             }
@@ -45,7 +44,9 @@ impl AgentToolSurface {
     }
 
     pub fn has_builtin(&self, name: &str) -> bool {
-        self.builtins.iter().any(|builtin| builtin.canonical_name() == name)
+        self.builtins
+            .iter()
+            .any(|builtin| builtin.canonical_name() == name)
     }
 
     pub fn allows_builtin(&self, builtin: &Builtin) -> bool {
@@ -84,96 +85,16 @@ fn materialize_builtin_tool(builtin: &Builtin) -> Result<Arc<dyn Tool>> {
         Builtin::Glob => Arc::new(GlobTool::from_current_dir()?) as Arc<dyn Tool>,
         Builtin::Grep => Arc::new(GrepTool::from_current_dir()?) as Arc<dyn Tool>,
         Builtin::UpdatePlan => Arc::new(UpdatePlanTool) as Arc<dyn Tool>,
-        Builtin::DispatchSubagent => Arc::new(PendingBuiltinTool::dispatch_subagent()) as Arc<dyn Tool>,
-        Builtin::ListSubagentDispatches => {
-            Arc::new(PendingBuiltinTool::list_subagent_dispatches()) as Arc<dyn Tool>
-        }
-        Builtin::GetSubagentDispatch => {
-            Arc::new(PendingBuiltinTool::get_subagent_dispatch()) as Arc<dyn Tool>
-        }
-        other => bail!("unsupported builtin in agent tool surface: {}", other.canonical_name()),
+        other => bail!(
+            "unsupported builtin in agent tool surface: {}",
+            other.canonical_name()
+        ),
     })
 }
 
-struct PendingBuiltinTool {
-    spec: ToolSpec,
-}
-
-impl PendingBuiltinTool {
-    fn dispatch_subagent() -> Self {
-        Self {
-            spec: ToolSpec {
-                name: "dispatch_subagent".into(),
-                description: "Dispatch a task to another agent thread and wait for the child turn to reach a terminal state.".into(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "agent_profile_id": { "type": "string" },
-                        "task": { "type": "string" },
-                        "context": { "type": "object" },
-                        "title": { "type": "string" }
-                    },
-                    "required": ["agent_profile_id", "task"]
-                }),
-            },
-        }
-    }
-
-    fn list_subagent_dispatches() -> Self {
-        Self {
-            spec: ToolSpec {
-                name: "list_subagent_dispatches".into(),
-                description: "List tracked subagent dispatches for the current session or parent thread.".into(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "parent_thread_id": { "type": "string" },
-                        "status": { "type": "string" }
-                    }
-                }),
-            },
-        }
-    }
-
-    fn get_subagent_dispatch() -> Self {
-        Self {
-            spec: ToolSpec {
-                name: "get_subagent_dispatch".into(),
-                description: "Read the latest status and summary for a tracked subagent dispatch.".into(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "dispatch_id": { "type": "string" }
-                    },
-                    "required": ["dispatch_id"]
-                }),
-            },
-        }
-    }
-}
-
-#[async_trait]
-impl Tool for PendingBuiltinTool {
-    fn name(&self) -> &str {
-        &self.spec.name
-    }
-
-    fn description(&self) -> &str {
-        &self.spec.description
-    }
-
-    fn spec(&self) -> ToolSpec {
-        self.spec.clone()
-    }
-
-    async fn execute(
-        &self,
-        _ctx: ToolContext,
-        _args: serde_json::Value,
-    ) -> Result<ToolResult, ToolError> {
-        Err(ToolError::ExecutionFailed(format!(
-            "{} is not implemented yet",
-            self.spec.name
-        )))
-    }
+fn is_executable_builtin(builtin: &Builtin) -> bool {
+    matches!(
+        builtin,
+        Builtin::Read | Builtin::Glob | Builtin::Grep | Builtin::UpdatePlan
+    )
 }

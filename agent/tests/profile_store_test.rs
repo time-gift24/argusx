@@ -8,7 +8,7 @@ async fn store_seeds_builtin_main_agent_and_round_trips_custom_profile() {
 
     let builtin = store.get_profile("builtin-main").await.unwrap().unwrap();
     assert!(matches!(builtin.kind, agent::AgentProfileKind::BuiltinMain));
-    assert!(builtin.allow_subagent_dispatch);
+    assert!(!builtin.allow_subagent_dispatch);
 
     let custom = agent::AgentProfileRecord::custom(
         "reviewer",

@@ -25,7 +25,7 @@ async fn scheduled_tool_runner_executes_read_only_builtin() {
 #[tokio::test(flavor = "current_thread")]
 async fn allowlisted_authorizer_allows_low_risk_tools_and_prompts_for_others() {
     let surface = desktop_lib::chat::build_agent_tool_surface(serde_json::json!({
-        "builtins": ["read", "update_plan", "dispatch_subagent"]
+        "builtins": ["read", "update_plan"]
     }))
     .unwrap();
     let authorizer = desktop_lib::chat::AllowListedToolAuthorizer::new(surface);
@@ -84,6 +84,7 @@ fn agent_tool_surface_only_registers_allowed_builtins() {
     }))
     .unwrap();
 
-    assert!(surface.has_builtin("dispatch_subagent"));
+    assert!(!surface.has_builtin("dispatch_subagent"));
+    assert!(surface.has_builtin("update_plan"));
     assert!(!surface.has_builtin("shell"));
 }

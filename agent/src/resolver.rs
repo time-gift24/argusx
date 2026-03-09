@@ -1,8 +1,8 @@
 use anyhow::Result;
 
 use crate::{
-    ResolvedAgentExecution, ThreadAgentSnapshot,
     prompts::{builtin_main_prompt_block, platform_rules_block, tool_surface_block},
+    AgentToolSurface, ResolvedAgentExecution, ThreadAgentSnapshot,
 };
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -34,9 +34,12 @@ impl AgentExecutionResolver {
             blocks.push(profile_prompt.to_string());
         }
 
+        let surface = AgentToolSurface::from_policy(&snapshot.tool_policy_snapshot_json)?;
+        let allow_subagent_dispatch =
+            snapshot.allow_subagent_dispatch_snapshot && surface.has_builtin("dispatch_subagent");
         blocks.push(tool_surface_block(
             &snapshot.tool_policy_snapshot_json,
-            snapshot.allow_subagent_dispatch_snapshot,
+            allow_subagent_dispatch,
         )?);
 
         Ok(ResolvedAgentExecution {
@@ -44,7 +47,7 @@ impl AgentExecutionResolver {
             tool_policy: snapshot.tool_policy_snapshot_json.clone(),
             model_override: (!snapshot.model_config_snapshot_json.is_null())
                 .then(|| snapshot.model_config_snapshot_json.clone()),
-            allow_subagent_dispatch: snapshot.allow_subagent_dispatch_snapshot,
+            allow_subagent_dispatch,
         })
     }
 }
