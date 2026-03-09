@@ -1,3 +1,4 @@
+pub mod agent_profiles;
 pub mod chat;
 pub mod provider_settings;
 mod session_commands;
@@ -41,6 +42,7 @@ pub fn run() -> Result<(), BoxError> {
             chat::commands::cancel_turn,
             chat::commands::load_active_chat_thread,
             chat::commands::resolve_turn_permission,
+            agent_profiles::commands::list_agent_profiles,
             provider_settings::commands::list_provider_profiles,
             provider_settings::commands::save_provider_profile,
             provider_settings::commands::delete_provider_profile,

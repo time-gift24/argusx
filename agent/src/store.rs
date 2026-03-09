@@ -107,6 +107,26 @@ impl AgentProfileStore {
 
         row.map(decode_profile_row).transpose()
     }
+
+    pub async fn list_profiles(&self) -> Result<Vec<AgentProfileRecord>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, kind, display_name, description, system_prompt, tool_policy_json,
+                   model_config_json, allow_subagent_dispatch, is_active, created_at, updated_at
+            FROM agent_profiles
+            WHERE is_active = 1
+            ORDER BY CASE kind
+                WHEN 'BuiltinMain' THEN 0
+                ELSE 1
+            END, display_name ASC, id ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("list agent profiles")?;
+
+        rows.into_iter().map(decode_profile_row).collect()
+    }
 }
 
 fn builtin_main_profile() -> AgentProfileRecord {

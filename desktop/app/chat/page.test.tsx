@@ -10,6 +10,7 @@ import ChatPage, {
 
 const startTurn = vi.fn();
 const cancelTurn = vi.fn();
+const listAgentProfiles = vi.fn();
 const loadActiveChatThread = vi.fn();
 const resolveTurnPermission = vi.fn();
 const subscribe = vi.fn();
@@ -23,6 +24,7 @@ let onTurnEvent: ((event: {
 vi.mock("@/lib/chat", () => ({
   useTurn: () => ({
     cancelTurn,
+    listAgentProfiles,
     loadActiveChatThread,
     resolveTurnPermission,
     startTurn,
@@ -41,11 +43,24 @@ describe("ChatPage", () => {
     );
     startTurn.mockReset();
     cancelTurn.mockReset();
+    listAgentProfiles.mockReset();
     loadActiveChatThread.mockReset();
     resolveTurnPermission.mockReset();
     subscribe.mockReset();
     onTurnEvent = null;
 
+    listAgentProfiles.mockResolvedValue([
+      {
+        description: "Break ambiguous work into concrete steps",
+        id: "builtin-main",
+        label: "Planner",
+      },
+      {
+        description: "Review a change set with an engineering lens",
+        id: "reviewer",
+        label: "Code Reviewer",
+      },
+    ]);
     loadActiveChatThread.mockResolvedValue([]);
     startTurn.mockResolvedValue({ turnId: "turn-1" });
     resolveTurnPermission.mockResolvedValue(undefined);
@@ -62,9 +77,15 @@ describe("ChatPage", () => {
     vi.unstubAllGlobals();
   });
 
+  async function renderReadyChatPage() {
+    const rendered = render(<ChatPage />);
+    await screen.findByRole("button", { name: "Agents" });
+    return rendered;
+  }
+
   it("keeps multi-turn history and separates turns with numbered checkpoints", async () => {
     const user = userEvent.setup();
-    const { container } = render(<ChatPage />);
+    const { container } = await renderReadyChatPage();
 
     startTurn
       .mockResolvedValueOnce({ turnId: "turn-1" })
@@ -81,8 +102,11 @@ describe("ChatPage", () => {
       screen.getByRole("textbox", { name: /prompt/i }),
       "Review this plan"
     );
+    await user.click(screen.getByRole("button", { name: "Planner" }));
+    await user.click(await screen.findByText("Code Reviewer"));
     await user.click(screen.getByRole("button", { name: "Send" }));
 
+    expect(listAgentProfiles).toHaveBeenCalledTimes(1);
     expect(startTurn).toHaveBeenCalledWith({
       prompt: "Review this plan",
       targetId: "reviewer",
@@ -198,7 +222,7 @@ describe("ChatPage", () => {
       },
     ]);
 
-    render(<ChatPage />);
+    await renderReadyChatPage();
 
     expect(loadActiveChatThread).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("Existing prompt")).toBeInTheDocument();
@@ -231,7 +255,7 @@ describe("ChatPage", () => {
 
   it("renders a floating composer shell, a right-aligned user bubble, and plain assistant output", async () => {
     const user = userEvent.setup();
-    const { container } = render(<ChatPage />);
+    const { container } = await renderReadyChatPage();
 
     await user.type(
       screen.getByRole("textbox", { name: /prompt/i }),
@@ -282,7 +306,7 @@ describe("ChatPage", () => {
   it("marks the pending turn as failed when cancelling the previous running turn rejects", async () => {
     const user = userEvent.setup();
 
-    render(<ChatPage />);
+    await renderReadyChatPage();
 
     await user.type(
       screen.getByRole("textbox", { name: /prompt/i }),
@@ -355,7 +379,7 @@ describe("ChatPage", () => {
   it("shows one pending tool permission at a time and advances after resolution feedback", async () => {
     const user = userEvent.setup();
 
-    render(<ChatPage />);
+    await renderReadyChatPage();
 
     await user.type(
       screen.getByRole("textbox", { name: /prompt/i }),
@@ -469,7 +493,7 @@ describe("ChatPage", () => {
 
   it("renders the queue before assistant markdown and hides update_plan tool rows", async () => {
     const user = userEvent.setup();
-    render(<ChatPage />);
+    await renderReadyChatPage();
 
     await user.type(
       screen.getByRole("textbox", { name: /prompt/i }),

@@ -39,3 +39,6 @@ turn = { path = "../../turn" }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 uuid = { workspace = true, features = ["v4"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

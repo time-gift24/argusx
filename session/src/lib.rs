@@ -11,6 +11,6 @@ pub use serde::{Deserialize, Serialize};
 pub use serde_json;
 pub use types::{
     PersistedMessage, PersistedToolCall, PersistedToolKind, SessionRecord, SubagentDispatchRecord,
-    SubagentDispatchStatus, ThreadAgentSnapshotRecord, ThreadEvent, ThreadEventEnvelope,
-    ThreadLifecycle, ThreadRecord, ThreadViewState, TurnRecord, TurnStatus,
+    SubagentDispatchStatus, ThreadAgentSnapshotRecord, ThreadAgentSnapshotSeed, ThreadEvent,
+    ThreadEventEnvelope, ThreadLifecycle, ThreadRecord, ThreadViewState, TurnRecord, TurnStatus,
 };

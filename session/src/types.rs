@@ -108,6 +108,16 @@ pub struct ThreadAgentSnapshotRecord {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ThreadAgentSnapshotSeed {
+    pub profile_id: String,
+    pub display_name_snapshot: String,
+    pub system_prompt_snapshot: String,
+    pub tool_policy_snapshot_json: serde_json::Value,
+    pub model_config_snapshot_json: serde_json::Value,
+    pub allow_subagent_dispatch_snapshot: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SubagentDispatchStatus {
     Running,

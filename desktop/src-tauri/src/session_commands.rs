@@ -108,6 +108,59 @@ impl DesktopSessionState {
             .await
             .map_err(|err| TurnError::Runtime(err.to_string()))
     }
+
+    pub async fn ensure_chat_thread_for_agent(
+        &self,
+        agent_profile_id: &str,
+    ) -> Result<Uuid, TurnError> {
+        let threads = self
+            .manager
+            .list_threads()
+            .await
+            .map_err(|err| TurnError::Runtime(err.to_string()))?;
+
+        if let Some(active_thread_id) = self.manager.active_thread_id() {
+            if threads
+                .iter()
+                .find(|thread| thread.id == active_thread_id)
+                .is_some_and(|thread| thread_matches_agent(thread, agent_profile_id))
+            {
+                return Ok(active_thread_id);
+            }
+        }
+
+        if let Some(thread_id) = choose_chat_thread_for_agent(agent_profile_id, &threads) {
+            self.manager
+                .switch_thread(thread_id)
+                .await
+                .map_err(|err| TurnError::Runtime(err.to_string()))?;
+            return Ok(thread_id);
+        }
+
+        let profile = self
+            .agent_profiles
+            .get_profile(agent_profile_id)
+            .await
+            .map_err(|err| TurnError::Runtime(err.to_string()))?
+            .ok_or_else(|| TurnError::Runtime(format!("agent profile `{agent_profile_id}` not found")))?;
+
+        self.manager
+            .create_thread_with_agent_binding(
+                None,
+                session::ThreadAgentSnapshotSeed {
+                    profile_id: profile.id.clone(),
+                    display_name_snapshot: profile.display_name,
+                    system_prompt_snapshot: profile.system_prompt,
+                    tool_policy_snapshot_json: profile.tool_policy_json,
+                    model_config_snapshot_json: profile.model_config_json,
+                    allow_subagent_dispatch_snapshot: profile.allow_subagent_dispatch,
+                },
+                false,
+                true,
+            )
+            .await
+            .map_err(|err| TurnError::Runtime(err.to_string()))
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -244,9 +297,27 @@ pub(crate) fn choose_active_chat_thread(
     active_thread_id.or_else(|| {
         threads
             .iter()
-            .find(|thread| matches!(thread.lifecycle, session::ThreadLifecycle::Open))
+            .find(|thread| {
+                matches!(thread.lifecycle, session::ThreadLifecycle::Open) && !thread.is_subagent
+            })
             .map(|thread| thread.id)
     })
+}
+
+pub(crate) fn choose_chat_thread_for_agent(
+    agent_profile_id: &str,
+    threads: &[session::ThreadRecord],
+) -> Option<Uuid> {
+    threads
+        .iter()
+        .find(|thread| thread_matches_agent(thread, agent_profile_id))
+        .map(|thread| thread.id)
+}
+
+fn thread_matches_agent(thread: &session::ThreadRecord, agent_profile_id: &str) -> bool {
+    matches!(thread.lifecycle, session::ThreadLifecycle::Open)
+        && !thread.is_subagent
+        && thread.agent_profile_id.as_deref() == Some(agent_profile_id)
 }
 
 pub(crate) fn hydrate_chat_turn(turn: &session::TurnRecord) -> HydratedChatTurn {
@@ -560,6 +631,76 @@ mod tests {
         let selected = choose_active_chat_thread(None, &threads);
 
         assert_eq!(selected, Some(latest_open_id));
+    }
+
+    #[test]
+    fn choose_active_chat_thread_skips_subagent_threads() {
+        let root_thread_id = Uuid::new_v4();
+        let now = Utc::now();
+
+        let threads = vec![
+            ThreadRecord {
+                id: Uuid::new_v4(),
+                session_id: "default-session".into(),
+                agent_profile_id: Some("reviewer".into()),
+                is_subagent: true,
+                title: Some("Background reviewer".into()),
+                lifecycle: ThreadLifecycle::Open,
+                created_at: now,
+                updated_at: now,
+                last_turn_number: 1,
+            },
+            ThreadRecord {
+                id: root_thread_id,
+                session_id: "default-session".into(),
+                agent_profile_id: Some("builtin-main".into()),
+                is_subagent: false,
+                title: Some("Planner".into()),
+                lifecycle: ThreadLifecycle::Open,
+                created_at: now,
+                updated_at: now,
+                last_turn_number: 2,
+            },
+        ];
+
+        let selected = choose_active_chat_thread(None, &threads);
+
+        assert_eq!(selected, Some(root_thread_id));
+    }
+
+    #[test]
+    fn choose_chat_thread_for_agent_reuses_matching_root_thread() {
+        let reviewer_thread_id = Uuid::new_v4();
+        let now = Utc::now();
+
+        let threads = vec![
+            ThreadRecord {
+                id: Uuid::new_v4(),
+                session_id: "default-session".into(),
+                agent_profile_id: Some("builtin-main".into()),
+                is_subagent: false,
+                title: Some("Planner".into()),
+                lifecycle: ThreadLifecycle::Open,
+                created_at: now,
+                updated_at: now,
+                last_turn_number: 1,
+            },
+            ThreadRecord {
+                id: reviewer_thread_id,
+                session_id: "default-session".into(),
+                agent_profile_id: Some("reviewer".into()),
+                is_subagent: false,
+                title: Some("Reviewer".into()),
+                lifecycle: ThreadLifecycle::Open,
+                created_at: now,
+                updated_at: now,
+                last_turn_number: 3,
+            },
+        ];
+
+        let selected = choose_chat_thread_for_agent("reviewer", &threads);
+
+        assert_eq!(selected, Some(reviewer_thread_id));
     }
 
     #[test]

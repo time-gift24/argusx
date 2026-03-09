@@ -35,7 +35,10 @@ pub async fn start_turn(
         return Err("workflow turns are not implemented yet".to_string());
     }
 
-    let thread_id = state.ensure_active_chat_thread().await.map_err(stringify)?;
+    let thread_id = state
+        .ensure_chat_thread_for_agent(&input.target_id)
+        .await
+        .map_err(stringify)?;
     let turn_id = Uuid::new_v4();
     let observer: Arc<dyn turn::TurnObserver> = Arc::new(TauriTurnObserver::new(
         app,

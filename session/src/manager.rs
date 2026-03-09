@@ -16,8 +16,9 @@ use crate::{
     store::ThreadStore,
     thread::{ActiveTurnRuntime, ThreadRuntime, persist_tool_call, persist_transcript},
     types::{
-        PersistedMessage, PersistedToolCall, SessionRecord, ThreadEvent, ThreadLifecycle,
-        ThreadRecord, TurnRecord, TurnStatus,
+        PersistedMessage, PersistedToolCall, SessionRecord, ThreadAgentSnapshotRecord,
+        ThreadAgentSnapshotSeed, ThreadEvent, ThreadLifecycle, ThreadRecord, TurnRecord,
+        TurnStatus,
     },
 };
 
@@ -80,14 +81,44 @@ impl SessionManager {
     }
 
     pub async fn create_thread(&self, title: Option<String>) -> Result<Uuid> {
+        self.create_thread_with_binding(title, None, false, true, None)
+            .await
+    }
+
+    pub async fn create_thread_with_agent_binding(
+        &self,
+        title: Option<String>,
+        snapshot: ThreadAgentSnapshotSeed,
+        is_subagent: bool,
+        activate: bool,
+    ) -> Result<Uuid> {
+        let agent_profile_id = snapshot.profile_id.clone();
+        self.create_thread_with_binding(
+            title,
+            Some(agent_profile_id),
+            is_subagent,
+            activate,
+            Some(snapshot),
+        )
+        .await
+    }
+
+    async fn create_thread_with_binding(
+        &self,
+        title: Option<String>,
+        agent_profile_id: Option<String>,
+        is_subagent: bool,
+        activate: bool,
+        snapshot: Option<ThreadAgentSnapshotSeed>,
+    ) -> Result<Uuid> {
         self.ensure_session().await?;
 
         let now = Utc::now();
         let thread = ThreadRecord {
             id: Uuid::new_v4(),
             session_id: self.session_id.clone(),
-            agent_profile_id: None,
-            is_subagent: false,
+            agent_profile_id,
+            is_subagent,
             title,
             lifecycle: ThreadLifecycle::Open,
             created_at: now,
@@ -95,6 +126,20 @@ impl SessionManager {
             last_turn_number: 0,
         };
         self.store.insert_thread(&thread).await?;
+        if let Some(snapshot) = snapshot {
+            self.store
+                .insert_thread_agent_snapshot(&ThreadAgentSnapshotRecord {
+                    thread_id: thread.id,
+                    profile_id: snapshot.profile_id,
+                    display_name_snapshot: snapshot.display_name_snapshot,
+                    system_prompt_snapshot: snapshot.system_prompt_snapshot,
+                    tool_policy_snapshot_json: snapshot.tool_policy_snapshot_json,
+                    model_config_snapshot_json: snapshot.model_config_snapshot_json,
+                    allow_subagent_dispatch_snapshot: snapshot.allow_subagent_dispatch_snapshot,
+                    created_at: now,
+                })
+                .await?;
+        }
 
         {
             let mut runtime = self.lock_runtime();
@@ -102,11 +147,15 @@ impl SessionManager {
                 .threads
                 .entry(thread.id)
                 .or_insert_with(|| ThreadRuntime::new(thread.id));
-            runtime.active_thread_id = Some(thread.id);
+            if activate {
+                runtime.active_thread_id = Some(thread.id);
+            }
         }
 
         self.emit_thread_event(thread.id, ThreadEvent::ThreadCreated);
-        self.emit_thread_event(thread.id, ThreadEvent::ThreadActivated);
+        if activate {
+            self.emit_thread_event(thread.id, ThreadEvent::ThreadActivated);
+        }
         Ok(thread.id)
     }
 
