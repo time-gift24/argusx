@@ -21,9 +21,11 @@ async fn desktop_bootstrap_routes_provider_settings_and_tool_roots_through_runti
     let bootstrap =
         build_desktop_bootstrap_with_workspace_root(runtime, workspace_root.clone()).unwrap();
     let expected_db = root.join("app").join("desktop.sqlite3");
+    let expected_browser_db = root.join("app").join("browser.sqlite3");
 
     assert_eq!(bootstrap.provider_settings_db_path, expected_db);
     assert!(expected_db.exists());
+    assert_eq!(bootstrap.browser_config_db_path, expected_browser_db);
 
     let output = bootstrap
         .session_state
@@ -45,6 +47,27 @@ async fn desktop_bootstrap_routes_provider_settings_and_tool_roots_through_runti
         .unwrap();
 
     assert_eq!(output.output["content"], "bootstrap-root");
+
+    let browser_output = bootstrap
+        .session_state
+        .tool_runner()
+        .execute(
+            ToolCall::Builtin(BuiltinToolCall {
+                sequence: 1,
+                call_id: "call-browser".into(),
+                builtin: Builtin::Browser,
+                arguments_json: serde_json::json!({
+                    "action": "get_config",
+                })
+                .to_string(),
+            }),
+            tool::ToolContext::new("session-1", "turn-1", CancellationToken::new()),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(browser_output.output["config"]["is_enabled"], false);
+    assert!(expected_browser_db.exists());
 }
 
 fn test_config(root: &PathBuf) -> AppConfig {

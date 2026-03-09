@@ -1,14 +1,21 @@
-use chromiumoxide::{Browser, BrowserConfig};
+use chromiumoxide::{Browser, BrowserConfig, Handler};
+use futures::StreamExt;
 use std::net::TcpStream;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
+
+pub struct BrowserSession {
+    browser: Arc<Mutex<Browser>>,
+    handler_task: JoinHandle<()>,
+}
 
 pub enum ChromeState {
     NotInitialized,
     WaitingForUserConfirm,
     Starting,
-    Ready(Arc<Mutex<Browser>>),
+    Ready(BrowserSession),
     Error(String),
 }
 
@@ -39,27 +46,39 @@ impl ChromeManager {
     }
 
     pub fn set_waiting_for_confirmation(&mut self) {
-        self.state = ChromeState::WaitingForUserConfirm;
+        self.replace_state(ChromeState::WaitingForUserConfirm);
     }
 
     pub fn set_starting(&mut self) {
-        self.state = ChromeState::Starting;
+        self.replace_state(ChromeState::Starting);
+    }
+
+    pub fn current_config(&self) -> Result<super::config::BrowserConfig, String> {
+        self.config_manager
+            .get_config()
+            .map_err(|err| format!("Failed to load browser config: {err}"))
+    }
+
+    pub fn set_headless(&mut self, enabled: bool) -> Result<(), String> {
+        self.config.headless = enabled;
+        let mut config = self.current_config()?;
+        config.headless = enabled;
+        self.config_manager
+            .update_config(&config)
+            .map_err(|err| format!("Failed to update browser config: {err}"))
     }
 
     pub async fn connect_or_launch(&mut self) -> Result<Arc<Mutex<Browser>>, String> {
+        if let ChromeState::Ready(session) = &self.state {
+            return Ok(session.browser.clone());
+        }
+
         let port = self.config.port;
 
         // Try to connect to existing Chrome
         if Self::is_port_open(port) {
             match Browser::connect(format!("http://localhost:{}", port)).await {
-                Ok((browser, _)) => {
-                    self.state = ChromeState::Ready(Arc::new(Mutex::new(browser)));
-                    if let Ok(mut cfg) = self.config_manager.get_config() {
-                        cfg.is_enabled = true;
-                        let _ = self.config_manager.update_config(&cfg);
-                    }
-                    return self.get_browser();
-                }
+                Ok((browser, handler)) => return self.set_ready(browser, handler),
                 Err(e) => {
                     tracing::warn!("Port open but connection failed: {}", e);
                 }
@@ -97,25 +116,50 @@ impl ChromeManager {
             Err(e) => return Err(format!("Failed to build config: {}", e)),
         };
 
-        let (browser, _handler) = Browser::launch(config)
+        let (browser, handler) = Browser::launch(config)
             .await
             .map_err(|e| format!("Failed to launch Chrome: {}", e))?;
 
-        self.state = ChromeState::Ready(Arc::new(Mutex::new(browser)));
-
-        // Update config as enabled
-        if let Ok(mut cfg) = self.config_manager.get_config() {
-            cfg.is_enabled = true;
-            let _ = self.config_manager.update_config(&cfg);
-        }
-
-        self.get_browser()
+        self.set_ready(browser, handler)
     }
 
     fn get_browser(&self) -> Result<Arc<Mutex<Browser>>, String> {
         match &self.state {
-            ChromeState::Ready(browser) => Ok(browser.clone()),
+            ChromeState::Ready(session) => Ok(session.browser.clone()),
             _ => Err("Browser not ready".to_string()),
+        }
+    }
+
+    fn set_ready(&mut self, browser: Browser, handler: Handler) -> Result<Arc<Mutex<Browser>>, String> {
+        let browser = Arc::new(Mutex::new(browser));
+        let mut handler = handler;
+        let handler_task = tokio::spawn(async move {
+            while let Some(event) = handler.next().await {
+                if let Err(err) = event {
+                    tracing::warn!("browser handler stopped: {}", err);
+                    break;
+                }
+            }
+        });
+
+        self.config.is_enabled = true;
+        let mut config = self.current_config()?;
+        config.is_enabled = true;
+        self.config_manager
+            .update_config(&config)
+            .map_err(|err| format!("Failed to update browser config: {err}"))?;
+
+        self.replace_state(ChromeState::Ready(BrowserSession {
+            browser: browser.clone(),
+            handler_task,
+        }));
+
+        self.get_browser()
+    }
+
+    fn replace_state(&mut self, next_state: ChromeState) {
+        if let ChromeState::Ready(session) = std::mem::replace(&mut self.state, next_state) {
+            session.handler_task.abort();
         }
     }
 }

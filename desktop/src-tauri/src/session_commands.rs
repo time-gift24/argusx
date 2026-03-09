@@ -27,6 +27,7 @@ pub struct DesktopSessionState {
     tool_authorizer: Arc<AllowListedToolAuthorizer>,
     turn_manager: Arc<crate::chat::TurnManager>,
     allowed_tool_roots: Vec<PathBuf>,
+    browser_config_db_path: PathBuf,
 }
 
 impl DesktopSessionState {
@@ -34,8 +35,10 @@ impl DesktopSessionState {
         manager: SessionManager,
         provider_settings: ProviderSettingsService,
         allowed_tool_roots: Vec<PathBuf>,
+        browser_config_db_path: PathBuf,
     ) -> Result<Self, TurnError> {
-        let tool_runner = ScheduledToolRunner::new(allowed_tool_roots.clone())?;
+        let tool_runner =
+            ScheduledToolRunner::new(allowed_tool_roots.clone(), browser_config_db_path.clone())?;
         Ok(Self {
             manager: Arc::new(manager),
             provider_settings: Arc::new(provider_settings),
@@ -43,6 +46,7 @@ impl DesktopSessionState {
             tool_authorizer: Arc::new(AllowListedToolAuthorizer),
             turn_manager: Arc::new(crate::chat::TurnManager::new()),
             allowed_tool_roots,
+            browser_config_db_path,
         })
     }
 
@@ -63,9 +67,10 @@ impl DesktopSessionState {
         observer: Arc<dyn TurnObserver>,
     ) -> Result<TurnDependencies, TurnError> {
         let model: Arc<dyn turn::ModelRunner> = Arc::new(
-            ProviderModelRunner::from_provider_settings_with_allowed_roots(
+            ProviderModelRunner::from_provider_settings_with_allowed_roots_and_browser_config(
                 Some(self.provider_settings.as_ref()),
                 &self.allowed_tool_roots,
+                &self.browser_config_db_path,
             )?,
         );
         let tool_runner: Arc<dyn turn::ToolRunner> = self.tool_runner.clone();

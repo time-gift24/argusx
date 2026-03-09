@@ -7,7 +7,7 @@ use chromiumoxide::page::ScreenshotParams;
 use chromiumoxide::Page;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::sync::Arc;
+use std::{future::Future, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
 use crate::context::{ToolContext, ToolResult};
@@ -74,7 +74,6 @@ impl From<BrowserConfig> for BrowserConfigInfo {
 
 pub struct BrowserTool {
     chrome_manager: Arc<Mutex<ChromeManager>>,
-    config: BrowserConfig,
 }
 
 impl BrowserTool {
@@ -85,7 +84,6 @@ impl BrowserTool {
         let chrome_manager = ChromeManager::new(config.clone(), config_manager);
         Self {
             chrome_manager: Arc::new(Mutex::new(chrome_manager)),
-            config,
         }
     }
 
@@ -302,31 +300,31 @@ impl BrowserTool {
         timeout_ms: Option<u64>,
     ) -> Result<ToolResult, ToolError> {
         let page = self.get_page().await?;
-        let timeout = std::time::Duration::from_millis(timeout_ms.unwrap_or(30000));
+        let timeout = Duration::from_millis(timeout_ms.unwrap_or(30_000));
 
-        // Try to find the element within the timeout
-        let result = tokio::time::timeout(
-            timeout,
-            page.find_element(&selector)
-        ).await;
+        let result = wait_for_condition(timeout, Duration::from_millis(100), {
+            let page = page.clone();
+            let selector = selector.clone();
+            move || {
+                let page = page.clone();
+                let selector = selector.clone();
+                async move { page.find_element(selector).await.map(|_| ()) }
+            }
+        })
+        .await;
 
         match result {
-            Ok(Ok(_)) => Ok(ToolResult::ok(json!({
+            Ok(()) => Ok(ToolResult::ok(json!({
                 "success": true,
                 "selector": selector,
                 "found": true,
             }))),
-            Ok(Err(e)) => Ok(ToolResult::ok(json!({
-                "success": true,
-                "selector": selector,
-                "found": false,
-                "error": e.to_string(),
-            }))),
-            Err(_) => Ok(ToolResult::ok(json!({
+            Err(err) => Ok(ToolResult::ok(json!({
                 "success": true,
                 "selector": selector,
                 "found": false,
                 "error": "timeout",
+                "last_error": err.to_string(),
             }))),
         }
     }
@@ -445,6 +443,11 @@ impl BrowserTool {
 
     /// Set headless mode
     async fn action_set_headless(&self, enabled: bool) -> Result<ToolResult, ToolError> {
+        let mut chrome_manager = self.chrome_manager.lock().await;
+        chrome_manager
+            .set_headless(enabled)
+            .map_err(ToolError::ExecutionFailed)?;
+
         Ok(ToolResult::ok(json!({
             "success": true,
             "action": "set_headless",
@@ -455,11 +458,42 @@ impl BrowserTool {
 
     /// Get current browser config
     async fn action_get_config(&self) -> Result<ToolResult, ToolError> {
-        let config_info: BrowserConfigInfo = self.config.clone().into();
+        let chrome_manager = self.chrome_manager.lock().await;
+        let config_info: BrowserConfigInfo = chrome_manager
+            .current_config()
+            .map(BrowserConfigInfo::from)
+            .map_err(ToolError::ExecutionFailed)?;
         Ok(ToolResult::ok(json!({
             "success": true,
             "config": config_info,
         })))
+    }
+}
+
+async fn wait_for_condition<F, Fut, T, E>(
+    timeout: Duration,
+    poll_interval: Duration,
+    mut check: F,
+) -> Result<T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    let deadline = tokio::time::Instant::now() + timeout;
+
+    loop {
+        match check().await {
+            Ok(value) => return Ok(value),
+            Err(err) => {
+                let now = tokio::time::Instant::now();
+                if now >= deadline {
+                    return Err(err);
+                }
+
+                let delay = poll_interval.min(deadline.saturating_duration_since(now));
+                tokio::time::sleep(delay).await;
+            }
+        }
     }
 }
 
@@ -644,5 +678,107 @@ impl Tool for BrowserTool {
             BrowserAction::SetHeadless { enabled } => self.action_set_headless(enabled).await,
             BrowserAction::GetConfig => self.action_get_config().await,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        path::PathBuf,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use serde_json::json;
+    use tokio::time::Duration;
+    use tokio_util::sync::CancellationToken;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn set_headless_persists_and_get_config_reads_latest_value() {
+        let db_path = temp_db_path("browser-config");
+        let tool = BrowserTool::new(
+            BrowserConfig::default(),
+            config::BrowserConfigManager::new(db_path.clone()).unwrap(),
+        );
+
+        Tool::execute(
+            &tool,
+            test_context(),
+            json!({
+                "action": "set_headless",
+                "enabled": true,
+            }),
+        )
+        .await
+        .unwrap();
+
+        let config_manager = config::BrowserConfigManager::new(db_path).unwrap();
+        let stored = config_manager.get_config().unwrap();
+        assert!(stored.headless);
+
+        let config_result = Tool::execute(&tool, test_context(), json!({ "action": "get_config" }))
+            .await
+            .unwrap();
+        assert_eq!(config_result.output["config"]["headless"], json!(true));
+    }
+
+    #[tokio::test]
+    async fn wait_for_condition_retries_until_success() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+
+        wait_for_condition(Duration::from_millis(50), Duration::from_millis(1), {
+            let attempts = Arc::clone(&attempts);
+            move || {
+                let attempts = Arc::clone(&attempts);
+                async move {
+                    if attempts.fetch_add(1, Ordering::SeqCst) >= 2 {
+                        Ok(())
+                    } else {
+                        Err("missing")
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn wait_for_condition_times_out_after_retrying() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+
+        let err = wait_for_condition(Duration::from_millis(10), Duration::from_millis(1), {
+            let attempts = Arc::clone(&attempts);
+            move || {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                async { Err::<(), _>("still missing") }
+            }
+        })
+        .await
+        .unwrap_err();
+
+        assert_eq!(err, "still missing");
+        assert!(attempts.load(Ordering::SeqCst) > 1);
+    }
+
+    fn test_context() -> ToolContext {
+        ToolContext::new("session-1", "turn-1", CancellationToken::new())
+    }
+
+    fn temp_db_path(prefix: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("{prefix}-{unique}.sqlite3"));
+        let _ = std::fs::remove_file(&dir);
+        dir
     }
 }

@@ -8,6 +8,7 @@ pub struct DesktopBootstrap {
     pub runtime: runtime::ArgusxRuntime,
     pub session_state: DesktopSessionState,
     pub provider_settings_db_path: PathBuf,
+    pub browser_config_db_path: PathBuf,
     pub workspace_root: PathBuf,
 }
 
@@ -24,6 +25,7 @@ pub fn build_desktop_bootstrap_with_workspace_root(
     workspace_root: PathBuf,
 ) -> Result<DesktopBootstrap, TurnError> {
     let provider_settings_db_path = provider_settings_db_path(runtime.config.as_ref());
+    let browser_config_db_path = browser_config_db_path(runtime.config.as_ref());
     let provider_settings =
         ProviderSettingsService::from_db_path(provider_settings_db_path.clone())
             .map_err(|err| TurnError::Runtime(err.to_string()))?;
@@ -31,18 +33,24 @@ pub fn build_desktop_bootstrap_with_workspace_root(
         runtime.session_manager.clone(),
         provider_settings,
         vec![workspace_root.clone()],
+        browser_config_db_path.clone(),
     )?;
 
     Ok(DesktopBootstrap {
         runtime,
         session_state,
         provider_settings_db_path,
+        browser_config_db_path,
         workspace_root,
     })
 }
 
 fn provider_settings_db_path(config: &runtime::AppConfig) -> PathBuf {
     config_dir_for(&config.paths.sqlite).join("desktop.sqlite3")
+}
+
+fn browser_config_db_path(config: &runtime::AppConfig) -> PathBuf {
+    config_dir_for(&config.paths.sqlite).join("browser.sqlite3")
 }
 
 fn config_dir_for(path: &Path) -> PathBuf {

@@ -12,7 +12,13 @@ use provider::{
     Dialect, ProviderClient, ProviderConfig, ProviderDevOptions, ReplayTiming, Request,
 };
 use serde_json::{Map, Value};
-use tool::{GlobTool, GrepTool, ReadTool, Tool as RuntimeTool, UpdatePlanTool};
+use tool::{
+    builtin::browser::{
+        BrowserTool,
+        config::{BrowserConfig, BrowserConfigManager},
+    },
+    GlobTool, GrepTool, ReadTool, Tool as RuntimeTool, UpdatePlanTool,
+};
 use turn::{LlmStepRequest, ModelRunner, TurnError, TurnMessage};
 
 use crate::provider_settings::ProviderSettingsService;
@@ -27,36 +33,66 @@ impl ProviderModelRunner {
     pub fn from_provider_settings(
         settings: Option<&ProviderSettingsService>,
     ) -> Result<Self, TurnError> {
-        Self::from_provider_settings_with_allowed_roots(settings, &default_allowed_tool_roots())
+        Self::from_provider_settings_with_allowed_roots_and_browser_config(
+            settings,
+            &default_allowed_tool_roots(),
+            &default_browser_config_db_path(),
+        )
     }
 
     pub fn from_provider_settings_with_allowed_roots(
         settings: Option<&ProviderSettingsService>,
         allowed_roots: &[PathBuf],
     ) -> Result<Self, TurnError> {
+        Self::from_provider_settings_with_allowed_roots_and_browser_config(
+            settings,
+            allowed_roots,
+            &default_browser_config_db_path(),
+        )
+    }
+
+    pub fn from_provider_settings_with_allowed_roots_and_browser_config(
+        settings: Option<&ProviderSettingsService>,
+        allowed_roots: &[PathBuf],
+        browser_config_db_path: &PathBuf,
+    ) -> Result<Self, TurnError> {
         if let Some(settings) = settings {
             if let Some(runtime) = settings
                 .load_default_runtime_config()
                 .map_err(map_settings_error)?
             {
-                return Self::from_runtime_config_with_allowed_roots(
+                return Self::from_runtime_config_with_allowed_roots_and_browser_config(
                     runtime.provider_kind,
                     runtime.model,
                     runtime.base_url,
                     runtime.api_key,
                     allowed_roots,
+                    browser_config_db_path,
                 );
             }
         }
 
-        Self::from_env_with_allowed_roots(allowed_roots)
+        Self::from_env_with_allowed_roots_and_browser_config(allowed_roots, browser_config_db_path)
     }
 
     pub fn from_env() -> Result<Self, TurnError> {
-        Self::from_env_with_allowed_roots(&default_allowed_tool_roots())
+        Self::from_env_with_allowed_roots_and_browser_config(
+            &default_allowed_tool_roots(),
+            &default_browser_config_db_path(),
+        )
     }
 
     pub fn from_env_with_allowed_roots(allowed_roots: &[PathBuf]) -> Result<Self, TurnError> {
+        Self::from_env_with_allowed_roots_and_browser_config(
+            allowed_roots,
+            &default_browser_config_db_path(),
+        )
+    }
+
+    pub fn from_env_with_allowed_roots_and_browser_config(
+        allowed_roots: &[PathBuf],
+        browser_config_db_path: &PathBuf,
+    ) -> Result<Self, TurnError> {
         let model = required_env("ARGUSX_MODEL")?;
         let dialect = optional_env("ARGUSX_PROVIDER_DIALECT")
             .as_deref()
@@ -75,7 +111,7 @@ impl ProviderModelRunner {
             ),
         };
 
-        Self::new(model, config, allowed_roots)
+        Self::new(model, config, allowed_roots, browser_config_db_path)
     }
 
     pub fn from_runtime_config(
@@ -84,12 +120,13 @@ impl ProviderModelRunner {
         base_url: String,
         api_key: String,
     ) -> Result<Self, TurnError> {
-        Self::from_runtime_config_with_allowed_roots(
+        Self::from_runtime_config_with_allowed_roots_and_browser_config(
             provider_kind,
             model,
             base_url,
             api_key,
             &default_allowed_tool_roots(),
+            &default_browser_config_db_path(),
         )
     }
 
@@ -100,15 +137,39 @@ impl ProviderModelRunner {
         api_key: String,
         allowed_roots: &[PathBuf],
     ) -> Result<Self, TurnError> {
+        Self::from_runtime_config_with_allowed_roots_and_browser_config(
+            provider_kind,
+            model,
+            base_url,
+            api_key,
+            allowed_roots,
+            &default_browser_config_db_path(),
+        )
+    }
+
+    pub fn from_runtime_config_with_allowed_roots_and_browser_config(
+        provider_kind: crate::provider_settings::ProviderKind,
+        model: String,
+        base_url: String,
+        api_key: String,
+        allowed_roots: &[PathBuf],
+        browser_config_db_path: &PathBuf,
+    ) -> Result<Self, TurnError> {
         Self::new(
             model,
             ProviderConfig::new(provider_kind.dialect(), base_url, api_key),
             allowed_roots,
+            browser_config_db_path,
         )
     }
 
     pub fn from_replay(model: &str, path: PathBuf) -> Result<Self, TurnError> {
-        Self::from_replay_with_allowed_roots(model, path, &default_allowed_tool_roots())
+        Self::from_replay_with_allowed_roots_and_browser_config(
+            model,
+            path,
+            &default_allowed_tool_roots(),
+            &default_browser_config_db_path(),
+        )
     }
 
     pub fn from_replay_with_allowed_roots(
@@ -116,11 +177,26 @@ impl ProviderModelRunner {
         path: PathBuf,
         allowed_roots: &[PathBuf],
     ) -> Result<Self, TurnError> {
+        Self::from_replay_with_allowed_roots_and_browser_config(
+            model,
+            path,
+            allowed_roots,
+            &default_browser_config_db_path(),
+        )
+    }
+
+    pub fn from_replay_with_allowed_roots_and_browser_config(
+        model: &str,
+        path: PathBuf,
+        allowed_roots: &[PathBuf],
+        browser_config_db_path: &PathBuf,
+    ) -> Result<Self, TurnError> {
         Self::new(
             model.to_string(),
             ProviderConfig::new(Dialect::Openai, "http://unused", "test-key")
                 .with_dev_options(ProviderDevOptions::replay(path, ReplayTiming::Fast)),
             allowed_roots,
+            browser_config_db_path,
         )
     }
 
@@ -128,11 +204,12 @@ impl ProviderModelRunner {
         model: String,
         config: ProviderConfig,
         allowed_roots: &[PathBuf],
+        browser_config_db_path: &PathBuf,
     ) -> Result<Self, TurnError> {
         Ok(Self {
             client: ProviderClient::new(config).map_err(map_provider_error)?,
             model,
-            tools: read_only_tool_definitions(allowed_roots)?,
+            tools: tool_definitions(allowed_roots, browser_config_db_path)?,
         })
     }
 
@@ -259,17 +336,28 @@ fn provider_tool_call(call_id: &str, name: &str, arguments_json: &str) -> Provid
     }
 }
 
-fn read_only_tool_definitions(allowed_roots: &[PathBuf]) -> Result<Vec<ProviderTool>, TurnError> {
+fn tool_definitions(
+    allowed_roots: &[PathBuf],
+    browser_config_db_path: &PathBuf,
+) -> Result<Vec<ProviderTool>, TurnError> {
     Ok(vec![
         to_provider_tool(&ReadTool::new(allowed_roots.to_vec()).map_err(map_tool_init_error)?),
         to_provider_tool(&GlobTool::new(allowed_roots.to_vec()).map_err(map_tool_init_error)?),
         to_provider_tool(&GrepTool::new(allowed_roots.to_vec()).map_err(map_tool_init_error)?),
+        to_provider_tool(&BrowserTool::new(
+            BrowserConfig::default(),
+            BrowserConfigManager::new(browser_config_db_path.clone()).map_err(map_tool_init_error)?,
+        )),
         to_provider_tool(&UpdatePlanTool),
     ])
 }
 
 fn default_allowed_tool_roots() -> Vec<PathBuf> {
     vec![env::current_dir().unwrap_or_else(|_| PathBuf::from("."))]
+}
+
+fn default_browser_config_db_path() -> PathBuf {
+    std::env::temp_dir().join("argusx-browser.sqlite3")
 }
 
 fn to_provider_tool(tool: &dyn RuntimeTool) -> ProviderTool {
@@ -375,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn build_request_includes_read_only_tools_when_allowed() {
+    fn build_request_includes_desktop_tools_when_allowed() {
         let runner =
             ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse")).unwrap();
         let request = LlmStepRequest {
@@ -391,11 +479,12 @@ mod tests {
         let built = runner.build_request(&request);
         let tools = built.tools.expect("tools should be present");
 
-        assert_eq!(tools.len(), 4);
+        assert_eq!(tools.len(), 5);
         assert_eq!(tools[0].function.name, "read");
         assert_eq!(tools[1].function.name, "glob");
         assert_eq!(tools[2].function.name, "grep");
-        assert_eq!(tools[3].function.name, "update_plan");
+        assert_eq!(tools[3].function.name, "browser");
+        assert_eq!(tools[4].function.name, "update_plan");
         assert!(matches!(
             built.tool_choice,
             Some(ToolChoice::String(ref choice)) if choice == "auto"
@@ -421,5 +510,25 @@ mod tests {
         let tools = built.tools.expect("tools should be present");
 
         assert!(tools.iter().any(|tool| tool.function.name == "update_plan"));
+    }
+
+    #[test]
+    fn build_request_includes_browser_tool_when_allowed() {
+        let runner =
+            ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse")).unwrap();
+        let request = LlmStepRequest {
+            session_id: "session-1".into(),
+            turn_id: "turn-1".into(),
+            step_index: 0,
+            messages: Arc::from([Arc::new(TurnMessage::User {
+                content: "open a page".into(),
+            })]),
+            allow_tools: true,
+        };
+
+        let built = runner.build_request(&request);
+        let tools = built.tools.expect("tools should be present");
+
+        assert!(tools.iter().any(|tool| tool.function.name == "browser"));
     }
 }
