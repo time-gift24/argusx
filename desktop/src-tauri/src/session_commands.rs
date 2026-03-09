@@ -27,8 +27,6 @@ pub struct DesktopSessionState {
     agent_profiles: SharedAgentProfileStore,
     agent_execution_resolver: SharedAgentExecutionResolver,
     provider_settings: Arc<ProviderSettingsService>,
-    tool_runner: Arc<ScheduledToolRunner>,
-    tool_authorizer: Arc<AllowListedToolAuthorizer>,
     turn_manager: Arc<crate::chat::TurnManager>,
 }
 
@@ -45,8 +43,6 @@ impl DesktopSessionState {
             agent_profiles,
             agent_execution_resolver,
             provider_settings: Arc::new(provider_settings),
-            tool_runner: Arc::new(ScheduledToolRunner::from_current_dir()?),
-            tool_authorizer: Arc::new(AllowListedToolAuthorizer),
             turn_manager: Arc::new(crate::chat::TurnManager::new()),
         })
     }
@@ -67,17 +63,43 @@ impl DesktopSessionState {
         Arc::clone(&self.turn_manager)
     }
 
-    pub fn build_turn_dependencies(
+    pub async fn build_turn_dependencies(
         &self,
+        thread_id: Uuid,
         observer: Arc<dyn TurnObserver>,
     ) -> Result<TurnDependencies, TurnError> {
+        let snapshot = self
+            .manager
+            .load_thread_agent_snapshot(thread_id)
+            .await
+            .map_err(|err| TurnError::Runtime(err.to_string()))?
+            .ok_or_else(|| TurnError::Runtime(format!("thread `{thread_id}` is missing an agent snapshot")))?;
+        let resolved = self
+            .agent_execution_resolver
+            .resolve(
+                "",
+                &agent::ThreadAgentSnapshot {
+                    profile_id: snapshot.profile_id,
+                    display_name_snapshot: snapshot.display_name_snapshot,
+                    system_prompt_snapshot: snapshot.system_prompt_snapshot,
+                    tool_policy_snapshot_json: snapshot.tool_policy_snapshot_json,
+                    model_config_snapshot_json: snapshot.model_config_snapshot_json,
+                    allow_subagent_dispatch_snapshot: snapshot.allow_subagent_dispatch_snapshot,
+                },
+            )
+            .map_err(|err| TurnError::Runtime(err.to_string()))?;
+        let surface = crate::chat::build_agent_tool_surface(resolved.tool_policy.clone())?;
         let model: Arc<dyn turn::ModelRunner> = Arc::new(ProviderModelRunner::from_provider_settings(
             Some(self.provider_settings.as_ref()),
+            &surface,
         )?);
-        let tool_runner: Arc<dyn turn::ToolRunner> = self.tool_runner.clone();
-        let authorizer: Arc<dyn turn::ToolAuthorizer> = self.tool_authorizer.clone();
+        let tool_runner: Arc<dyn turn::ToolRunner> =
+            Arc::new(ScheduledToolRunner::from_tool_surface(&surface)?);
+        let authorizer: Arc<dyn turn::ToolAuthorizer> =
+            Arc::new(AllowListedToolAuthorizer::new(surface));
 
         Ok(TurnDependencies {
+            system_prompt: Some(resolved.system_prompt),
             model,
             tool_runner,
             authorizer,
@@ -103,10 +125,7 @@ impl DesktopSessionState {
             return Ok(thread_id);
         }
 
-        self.manager
-            .create_thread(None)
-            .await
-            .map_err(|err| TurnError::Runtime(err.to_string()))
+        self.ensure_chat_thread_for_agent("builtin-main").await
     }
 
     pub async fn ensure_chat_thread_for_agent(
@@ -240,10 +259,11 @@ pub async fn send_message(
     thread_id: String,
     content: String,
 ) -> Result<(), String> {
-    let deps = state
-        .build_turn_dependencies(Arc::new(NoopTurnObserver))
-        .map_err(|err| err.to_string())?;
     let thread_id = parse_uuid(&thread_id)?;
+    let deps = state
+        .build_turn_dependencies(thread_id, Arc::new(NoopTurnObserver))
+        .await
+        .map_err(|err| err.to_string())?;
     state
         .manager
         .send_message(thread_id, content, deps)

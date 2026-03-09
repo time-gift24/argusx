@@ -5,9 +5,11 @@ edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
+argus_core = { package = "core", path = "../core" }
+async-trait = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sqlx = { workspace = true, default-features = false, features = ["sqlite", "runtime-tokio-rustls"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-
+tool = { path = "../tool" }

@@ -46,7 +46,10 @@ pub async fn start_turn(
         input.target_kind,
         input.target_id,
     ));
-    let deps = state.build_turn_dependencies(observer).map_err(stringify)?;
+    let deps = state
+        .build_turn_dependencies(thread_id, observer)
+        .await
+        .map_err(stringify)?;
 
     state
         .manager

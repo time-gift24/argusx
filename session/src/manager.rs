@@ -39,6 +39,7 @@ pub enum SessionEvent {
 
 #[derive(Clone)]
 pub struct TurnDependencies {
+    pub system_prompt: Option<String>,
     pub model: Arc<dyn ModelRunner>,
     pub tool_runner: Arc<dyn ToolRunner>,
     pub authorizer: Arc<dyn ToolAuthorizer>,
@@ -193,6 +194,25 @@ impl SessionManager {
         self.store.list_turns(thread_id).await
     }
 
+    pub async fn load_thread_agent_snapshot(
+        &self,
+        thread_id: Uuid,
+    ) -> Result<Option<ThreadAgentSnapshotRecord>> {
+        let thread = self
+            .store
+            .get_thread(thread_id)
+            .await?
+            .with_context(|| format!("thread not found: {thread_id}"))?;
+        if thread.session_id != self.session_id {
+            bail!(
+                "thread {thread_id} does not belong to session {}",
+                self.session_id
+            );
+        }
+
+        self.store.get_thread_agent_snapshot(thread_id).await
+    }
+
     pub async fn send_message(
         &self,
         thread_id: Uuid,
@@ -275,7 +295,7 @@ impl SessionManager {
             turn_id: turn_id.to_string(),
             prior_messages,
             user_message: content,
-            system_prompt: None,
+            system_prompt: deps.system_prompt,
         };
         let (handle, task) = TurnDriver::spawn(
             seed,

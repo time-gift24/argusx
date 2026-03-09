@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
-use argus_core::Builtin;
+use agent::AgentToolSurface;
 use async_trait::async_trait;
 use tool::{
-    GlobTool, GrepTool, ReadTool, ToolContext, ToolError, ToolResult, UpdatePlanTool,
-    scheduler::{BuiltinRegistration, EffectiveToolPolicy, ToolScheduler},
+    ToolContext, ToolError, ToolResult,
+    scheduler::ToolScheduler,
 };
 use turn::{ToolRunner, TurnError};
 
@@ -13,34 +11,20 @@ pub struct ScheduledToolRunner {
 }
 
 impl ScheduledToolRunner {
-    pub fn from_current_dir() -> Result<Self, TurnError> {
-        let policy = EffectiveToolPolicy {
-            allow_parallel: true,
-            max_concurrency: 4,
-        };
-
-        let scheduler = ToolScheduler::new([
-            BuiltinRegistration::new(
-                Builtin::Read,
-                Arc::new(ReadTool::from_current_dir().map_err(map_init_error)?),
-                policy,
-            ),
-            BuiltinRegistration::new(
-                Builtin::Glob,
-                Arc::new(GlobTool::from_current_dir().map_err(map_init_error)?),
-                policy,
-            ),
-            BuiltinRegistration::new(
-                Builtin::Grep,
-                Arc::new(GrepTool::from_current_dir().map_err(map_init_error)?),
-                policy,
-            ),
-            BuiltinRegistration::new(Builtin::UpdatePlan, Arc::new(UpdatePlanTool), policy),
-        ])
+    pub fn from_tool_surface(surface: &AgentToolSurface) -> Result<Self, TurnError> {
+        let scheduler = ToolScheduler::new(
+            surface
+                .builtin_registrations_from_current_dir()
+                .map_err(map_init_error)?,
+        )
         .map_err(map_tool_error)?;
 
         Ok(Self { scheduler })
     }
+}
+
+pub fn build_agent_tool_surface(tool_policy_json: serde_json::Value) -> Result<AgentToolSurface, TurnError> {
+    agent::build_agent_tool_surface(tool_policy_json).map_err(map_init_error)
 }
 
 #[async_trait]

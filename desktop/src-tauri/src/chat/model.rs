@@ -1,5 +1,6 @@
 use std::{env, path::PathBuf};
 
+use agent::AgentToolSurface;
 use async_trait::async_trait;
 use provider::{
     Dialect, ProviderClient, ProviderConfig, ProviderDevOptions, ReplayTiming, Request,
@@ -12,7 +13,7 @@ use provider::{
     },
 };
 use serde_json::{Map, Value};
-use tool::{GlobTool, GrepTool, ReadTool, Tool as RuntimeTool, UpdatePlanTool};
+use tool::ToolSpec;
 use turn::{LlmStepRequest, ModelRunner, TurnError, TurnMessage};
 
 use crate::provider_settings::ProviderSettingsService;
@@ -26,6 +27,7 @@ pub struct ProviderModelRunner {
 impl ProviderModelRunner {
     pub fn from_provider_settings(
         settings: Option<&ProviderSettingsService>,
+        surface: &AgentToolSurface,
     ) -> Result<Self, TurnError> {
         if let Some(settings) = settings {
             if let Some(runtime) = settings
@@ -37,14 +39,15 @@ impl ProviderModelRunner {
                     runtime.model,
                     runtime.base_url,
                     runtime.api_key,
+                    surface,
                 );
             }
         }
 
-        Self::from_env()
+        Self::from_env(surface)
     }
 
-    pub fn from_env() -> Result<Self, TurnError> {
+    pub fn from_env(surface: &AgentToolSurface) -> Result<Self, TurnError> {
         let model = required_env("ARGUSX_MODEL")?;
         let dialect = optional_env("ARGUSX_PROVIDER_DIALECT")
             .as_deref()
@@ -63,7 +66,7 @@ impl ProviderModelRunner {
             ),
         };
 
-        Self::new(model, config)
+        Self::new(model, config, surface)
     }
 
     pub fn from_runtime_config(
@@ -71,26 +74,33 @@ impl ProviderModelRunner {
         model: String,
         base_url: String,
         api_key: String,
+        surface: &AgentToolSurface,
     ) -> Result<Self, TurnError> {
         Self::new(
             model,
             ProviderConfig::new(provider_kind.dialect(), base_url, api_key),
+            surface,
         )
     }
 
-    pub fn from_replay(model: &str, path: PathBuf) -> Result<Self, TurnError> {
+    pub fn from_replay(
+        model: &str,
+        path: PathBuf,
+        surface: &AgentToolSurface,
+    ) -> Result<Self, TurnError> {
         Self::new(
             model.to_string(),
             ProviderConfig::new(Dialect::Openai, "http://unused", "test-key")
                 .with_dev_options(ProviderDevOptions::replay(path, ReplayTiming::Fast)),
+            surface,
         )
     }
 
-    fn new(model: String, config: ProviderConfig) -> Result<Self, TurnError> {
+    fn new(model: String, config: ProviderConfig, surface: &AgentToolSurface) -> Result<Self, TurnError> {
         Ok(Self {
             client: ProviderClient::new(config).map_err(map_provider_error)?,
             model,
-            tools: read_only_tool_definitions()?,
+            tools: tool_definitions(surface)?,
         })
     }
 
@@ -106,6 +116,13 @@ impl ProviderModelRunner {
             parallel_tool_calls: request.allow_tools.then_some(true),
             ..Default::default()
         }
+    }
+
+    pub fn tool_names(&self) -> Vec<String> {
+        self.tools
+            .iter()
+            .map(|tool| tool.function.name.clone())
+            .collect()
     }
 }
 
@@ -220,19 +237,17 @@ fn provider_tool_call(call_id: &str, name: &str, arguments_json: &str) -> Provid
     }
 }
 
-fn read_only_tool_definitions() -> Result<Vec<ProviderTool>, TurnError> {
-    Ok(vec![
-        to_provider_tool(&ReadTool::from_current_dir().map_err(map_tool_init_error)?),
-        to_provider_tool(&GlobTool::from_current_dir().map_err(map_tool_init_error)?),
-        to_provider_tool(&GrepTool::from_current_dir().map_err(map_tool_init_error)?),
-        to_provider_tool(&UpdatePlanTool),
-    ])
+fn tool_definitions(surface: &AgentToolSurface) -> Result<Vec<ProviderTool>, TurnError> {
+    surface
+        .tool_specs_from_current_dir()
+        .map_err(map_tool_init_error)?
+        .into_iter()
+        .map(to_provider_tool)
+        .collect()
 }
 
-fn to_provider_tool(tool: &dyn RuntimeTool) -> ProviderTool {
-    let spec = tool.spec();
-
-    ProviderTool {
+fn to_provider_tool(spec: ToolSpec) -> Result<ProviderTool, TurnError> {
+    Ok(ProviderTool {
         type_: "function".to_string(),
         function: FunctionDefinition {
             name: spec.name,
@@ -242,7 +257,7 @@ fn to_provider_tool(tool: &dyn RuntimeTool) -> ProviderTool {
             extra: Map::<String, Value>::default(),
         },
         extra: Map::<String, Value>::default(),
-    }
+    })
 }
 
 fn parse_dialect(raw: &str) -> Result<Dialect, TurnError> {
@@ -288,8 +303,13 @@ mod tests {
 
     #[test]
     fn build_request_maps_turn_messages() {
-        let runner = ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"))
-            .unwrap();
+        let surface = agent::build_agent_tool_surface(serde_json::json!({
+            "builtins": ["read", "update_plan"]
+        }))
+        .unwrap();
+        let runner =
+            ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"), &surface)
+                .unwrap();
         let request = LlmStepRequest {
             session_id: "session-1".into(),
             turn_id: "turn-1".into(),
@@ -334,8 +354,13 @@ mod tests {
 
     #[test]
     fn build_request_includes_read_only_tools_when_allowed() {
-        let runner = ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"))
-            .unwrap();
+        let surface = agent::build_agent_tool_surface(serde_json::json!({
+            "builtins": ["read", "glob", "grep", "update_plan"]
+        }))
+        .unwrap();
+        let runner =
+            ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"), &surface)
+                .unwrap();
         let request = LlmStepRequest {
             session_id: "session-1".into(),
             turn_id: "turn-1".into(),
@@ -364,8 +389,13 @@ mod tests {
 
     #[test]
     fn build_request_includes_update_plan_tool_when_allowed() {
-        let runner = ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"))
-            .unwrap();
+        let surface = agent::build_agent_tool_surface(serde_json::json!({
+            "builtins": ["read", "update_plan"]
+        }))
+        .unwrap();
+        let runner =
+            ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"), &surface)
+                .unwrap();
         let request = LlmStepRequest {
             session_id: "session-1".into(),
             turn_id: "turn-1".into(),
@@ -385,8 +415,13 @@ mod tests {
 
     #[test]
     fn build_request_prepends_system_prompt() {
-        let runner = ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"))
-            .unwrap();
+        let surface = agent::build_agent_tool_surface(serde_json::json!({
+            "builtins": ["read"]
+        }))
+        .unwrap();
+        let runner =
+            ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"), &surface)
+                .unwrap();
         let request = LlmStepRequest {
             session_id: "session-1".into(),
             turn_id: "turn-1".into(),
