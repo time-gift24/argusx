@@ -16,7 +16,7 @@ use crate::{
     TurnFinishReason, TurnHandle, TurnMessage, TurnOptions, TurnOutcome, TurnSeed, TurnState,
     TurnSummary, TurnTranscript,
     state::{ActiveLlmStep, PendingPermissionCall, PermissionPause, ToolBatch},
-    transcript::SharedToolCall,
+    transcript::{call_id_arc, tool_name_arc, SharedToolCall},
 };
 
 enum ToolTaskResult {
@@ -240,16 +240,19 @@ impl TurnDriver {
                         return self.finish_cancelled().await;
                     }
 
-                    let calls = Arc::from(active_step.tool_calls);
+                    // Convert to Arc once, then clone for transcript and batch
+                    let calls: Arc<[SharedToolCall]> = Arc::from(active_step.tool_calls);
+                    let calls_for_transcript = Arc::clone(&calls);
+                    let calls_for_batch = Arc::clone(&calls);
                     self.transcript.push(TurnMessage::AssistantToolCalls {
                         content: (!assistant_text.is_empty())
-                            .then(|| assistant_text.clone().into()),
-                        calls: Arc::clone(&calls),
+                            .then(|| std::mem::take(&mut assistant_text).into()),
+                        calls: calls_for_transcript,
                     });
 
                     let batch = ToolBatch {
                         step_index,
-                        calls: Arc::clone(&calls),
+                        calls: calls_for_batch,
                     };
                     self.state = TurnState::WaitingTools(batch.clone());
 
@@ -551,30 +554,6 @@ impl TurnDriver {
             )),
         }
     }
-}
-
-fn call_id_str(call: &argus_core::ToolCall) -> &str {
-    match call {
-        argus_core::ToolCall::FunctionCall { call_id, .. } => call_id,
-        argus_core::ToolCall::Builtin(c) => &c.call_id,
-        argus_core::ToolCall::Mcp(c) => &c.id,
-    }
-}
-
-fn call_id_arc(call: &argus_core::ToolCall) -> Arc<str> {
-    call_id_str(call).into()
-}
-
-fn tool_name_str(call: &argus_core::ToolCall) -> &str {
-    match call {
-        argus_core::ToolCall::FunctionCall { name, .. } => name,
-        argus_core::ToolCall::Builtin(c) => c.builtin.canonical_name(),
-        argus_core::ToolCall::Mcp(c) => c.name.as_deref().unwrap_or_default(),
-    }
-}
-
-fn tool_name_arc(call: &argus_core::ToolCall) -> Arc<str> {
-    tool_name_str(call).into()
 }
 
 fn outcome_to_content(outcome: &ToolOutcome) -> Arc<str> {

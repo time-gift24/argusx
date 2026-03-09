@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
-use argus_core::ToolCall;
 use serde::Serialize;
 use serde_json::{json, Value};
 use session::manager::{SessionEvent, SessionManager, TurnDependencies};
 use tauri::{AppHandle, Emitter, State};
-use turn::{PermissionDecision, TurnError, TurnEvent};
+use turn::{call_id_arc, tool_name_arc, PermissionDecision, TurnError, TurnEvent};
 use uuid::Uuid;
 
 use crate::{
@@ -383,8 +382,8 @@ fn turn_event_payload(thread_id: Uuid, turn_id: Uuid, event: TurnEvent) -> Threa
         TurnEvent::ToolCallPrepared { call } => (
             "tool-call-prepared",
             json!({
-                "callId": tool_call_id(call.as_ref()),
-                "toolName": tool_name(call.as_ref()),
+                "callId": call_id_arc(call.as_ref()),
+                "toolName": tool_name_arc(call.as_ref()),
             }),
         ),
         TurnEvent::ToolCallCompleted { call_id, result } => (
@@ -429,22 +428,6 @@ fn turn_event_payload(thread_id: Uuid, turn_id: Uuid, event: TurnEvent) -> Threa
         turn_id: Some(turn_id.to_string()),
         kind: kind.into(),
         data,
-    }
-}
-
-fn tool_call_id(call: &ToolCall) -> &str {
-    match call {
-        ToolCall::FunctionCall { call_id, .. } => call_id,
-        ToolCall::Builtin(call) => &call.call_id,
-        ToolCall::Mcp(call) => &call.id,
-    }
-}
-
-fn tool_name(call: &ToolCall) -> &str {
-    match call {
-        ToolCall::FunctionCall { name, .. } => name,
-        ToolCall::Builtin(call) => call.builtin.canonical_name(),
-        ToolCall::Mcp(call) => call.name.as_deref().unwrap_or_default(),
     }
 }
 

@@ -27,4 +27,4 @@ pub use permission::{AuthorizationDecision, PermissionRequest, ToolAuthorizer};
 pub use state::TurnState;
 pub use summary::{TurnFailure, TurnSummary};
 pub use tool_runner::ToolRunner;
-pub use transcript::{TurnMessage, TurnTranscript};
+pub use transcript::{call_id_arc, tool_name_arc, TurnMessage, TurnTranscript};
