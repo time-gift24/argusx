@@ -90,6 +90,17 @@ impl DesktopSessionState {
             .await
             .map_err(|err| TurnError::Runtime(err.to_string()))
     }
+
+    /// Create a clone of the inner parts needed for ChatController.
+    pub fn clone_inner(&self) -> Self {
+        Self {
+            manager: Arc::clone(&self.manager),
+            provider_settings: Arc::clone(&self.provider_settings),
+            tool_runner: Arc::clone(&self.tool_runner),
+            tool_authorizer: Arc::clone(&self.tool_authorizer),
+            turn_manager: Arc::clone(&self.turn_manager),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

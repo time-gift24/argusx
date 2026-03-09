@@ -2,27 +2,34 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 use tauri::State;
-use uuid::Uuid;
 
 use crate::{
     chat::{
-        HydratedChatTurn, StartTurnInput, StartTurnResult, TauriTurnObserver, TurnTargetKind,
+        submission::PermissionDecision,
+        ChatController, HydratedChatTurn, StartTurnInput, StartTurnResult, TurnTargetKind,
     },
-    session_commands::{DesktopSessionState, hydrate_chat_turn},
+    session_commands::DesktopSessionState,
 };
+
+/// Build a ChatController from DesktopSessionState.
+fn build_controller(state: &DesktopSessionState) -> ChatController<'_> {
+    ChatController::new(
+        Arc::clone(&state.manager),
+        state.turn_manager(),
+        state,
+    )
+}
 
 #[tauri::command]
 pub async fn load_active_chat_thread(
     state: State<'_, DesktopSessionState>,
 ) -> Result<Vec<HydratedChatTurn>, String> {
-    let thread_id = state.ensure_active_chat_thread().await.map_err(stringify)?;
-    let history = state
-        .manager
-        .load_thread_history(thread_id)
+    let controller = build_controller(&state);
+    let result = controller
+        .load_active_thread()
         .await
-        .map_err(stringify)?;
-
-    Ok(history.iter().map(hydrate_chat_turn).collect())
+        .map_err(|e| e.to_string())?;
+    Ok(result.turns)
 }
 
 #[tauri::command]
@@ -35,26 +42,20 @@ pub async fn start_turn(
         return Err("workflow turns are not implemented yet".to_string());
     }
 
-    let thread_id = state.ensure_active_chat_thread().await.map_err(stringify)?;
-    let turn_id = Uuid::new_v4();
-    let observer: Arc<dyn turn::TurnObserver> = Arc::new(TauriTurnObserver::new(
-        app,
-        turn_id.to_string(),
-        input.target_kind,
-        input.target_id,
-    ));
-    let deps = state.build_turn_dependencies(observer).map_err(stringify)?;
+    let controller = build_controller(&state);
+    let prompt_text = input.prompt.clone();
+    let prompt_input = crate::chat::submission::PromptInput {
+        text: input.prompt,
+        target_kind: input.target_kind,
+        target_id: input.target_id,
+    };
 
-    state
-        .manager
-        .send_message_with_turn_id(thread_id, turn_id, input.prompt, deps)
+    let result = controller
+        .start_prompt_turn_with_app(prompt_text, app, Some(prompt_input))
         .await
-        .map_err(stringify)?;
-    state.turn_manager().insert(turn_id.to_string(), thread_id).await;
+        .map_err(|e| e.to_string())?;
 
-    Ok(StartTurnResult {
-        turn_id: turn_id.to_string(),
-    })
+    Ok(StartTurnResult { turn_id: result.turn_id })
 }
 
 #[tauri::command]
@@ -62,13 +63,11 @@ pub async fn cancel_turn(
     state: State<'_, DesktopSessionState>,
     turn_id: String,
 ) -> Result<(), String> {
-    let thread_id = state
-        .turn_manager()
-        .get(&turn_id)
+    let controller = build_controller(&state);
+    controller
+        .cancel_turn(turn_id)
         .await
-        .ok_or_else(|| format!("turn `{turn_id}` not found"))?;
-
-    state.manager.cancel_turn(thread_id).await.map_err(stringify)
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -79,10 +78,10 @@ pub enum ResolveTurnPermissionDecision {
 }
 
 impl ResolveTurnPermissionDecision {
-    fn into_turn_decision(self) -> turn::PermissionDecision {
+    fn into_permission_decision(self) -> PermissionDecision {
         match self {
-            Self::Allow => turn::PermissionDecision::Allow,
-            Self::Deny => turn::PermissionDecision::Deny,
+            Self::Allow => PermissionDecision::Allow,
+            Self::Deny => PermissionDecision::Deny,
         }
     }
 }
@@ -94,21 +93,11 @@ pub async fn resolve_turn_permission(
     request_id: String,
     decision: ResolveTurnPermissionDecision,
 ) -> Result<(), String> {
-    let thread_id = state
-        .turn_manager()
-        .get(&turn_id)
+    let controller = build_controller(&state);
+    controller
+        .resolve_permission(turn_id, request_id, decision.into_permission_decision())
         .await
-        .ok_or_else(|| format!("turn `{turn_id}` not found"))?;
-
-    state
-        .manager
-        .resolve_permission(thread_id, request_id, decision.into_turn_decision())
-        .await
-        .map_err(stringify)
-}
-
-fn stringify(err: impl std::fmt::Display) -> String {
-    err.to_string()
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -118,8 +107,16 @@ mod tests {
     #[test]
     fn resolve_turn_permission_decision_maps_deny() {
         assert!(matches!(
-            ResolveTurnPermissionDecision::Deny.into_turn_decision(),
-            turn::PermissionDecision::Deny
+            ResolveTurnPermissionDecision::Deny.into_permission_decision(),
+            PermissionDecision::Deny
+        ));
+    }
+
+    #[test]
+    fn resolve_turn_permission_decision_maps_allow() {
+        assert!(matches!(
+            ResolveTurnPermissionDecision::Allow.into_permission_decision(),
+            PermissionDecision::Allow
         ));
     }
 }
