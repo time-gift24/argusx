@@ -46,3 +46,21 @@ impl AgentProfileRecord {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ThreadAgentSnapshot {
+    pub profile_id: String,
+    pub display_name_snapshot: String,
+    pub system_prompt_snapshot: String,
+    pub tool_policy_snapshot_json: serde_json::Value,
+    pub model_config_snapshot_json: serde_json::Value,
+    pub allow_subagent_dispatch_snapshot: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ResolvedAgentExecution {
+    pub system_prompt: String,
+    pub tool_policy: serde_json::Value,
+    pub model_override: Option<serde_json::Value>,
+    pub allow_subagent_dispatch: bool,
+}

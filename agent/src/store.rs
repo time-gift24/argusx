@@ -2,7 +2,10 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use sqlx::{Row, SqlitePool};
 
-use crate::types::{AgentProfileKind, AgentProfileRecord};
+use crate::{
+    prompts::builtin_main_profile_prompt,
+    types::{AgentProfileKind, AgentProfileRecord},
+};
 
 const AGENT_SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS agent_profiles (
@@ -113,7 +116,7 @@ fn builtin_main_profile() -> AgentProfileRecord {
         kind: AgentProfileKind::BuiltinMain,
         display_name: "Planner".into(),
         description: "System planning and dispatch agent".into(),
-        system_prompt: builtin_main_prompt(),
+        system_prompt: builtin_main_profile_prompt().into(),
         tool_policy_json: serde_json::json!({
             "builtins": [
                 "read",
@@ -131,10 +134,6 @@ fn builtin_main_profile() -> AgentProfileRecord {
         created_at: now,
         updated_at: now,
     }
-}
-
-fn builtin_main_prompt() -> String {
-    "You are the system planning and dispatch agent. Break work into steps, use update_plan, delegate bounded tasks to subagents, and synthesize final results.".into()
 }
 
 fn decode_profile_row(row: sqlx::sqlite::SqliteRow) -> Result<AgentProfileRecord> {
