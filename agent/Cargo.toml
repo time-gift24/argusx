@@ -1,0 +1,13 @@
+[package]
+name = "agent"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sqlx = { workspace = true, default-features = false, features = ["sqlite", "runtime-tokio-rustls"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
