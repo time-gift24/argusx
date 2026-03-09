@@ -16,7 +16,7 @@ use tokio::{sync::mpsc, task, time::timeout};
 use tool::{ToolContext, ToolResult};
 use turn::{
     AuthorizationDecision, LlmStepRequest, ModelRunner, ToolAuthorizer, ToolRunner, TurnError,
-    TurnEvent, TurnFinishReason, TurnObserver,
+    TurnEvent, TurnFinishReason,
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -36,7 +36,6 @@ async fn concurrent_send_message_rejects_second_turn_for_same_thread() {
             model: Arc::new(SlowTextModel::new(Duration::from_millis(120), "done")),
             tool_runner: Arc::new(NoopToolRunner),
             authorizer: Arc::new(AllowAuthorizer),
-            observer: Arc::new(NoopObserver),
         };
         let barrier = Arc::new(Barrier::new(3));
 
@@ -103,7 +102,6 @@ async fn failed_turn_persists_incremental_transcript_messages() {
         model: Arc::new(FailingAfterTextModel::new("partial", "boom")),
         tool_runner: Arc::new(NoopToolRunner),
         authorizer: Arc::new(AllowAuthorizer),
-        observer: Arc::new(NoopObserver),
     };
 
     manager
@@ -238,14 +236,5 @@ impl ToolAuthorizer for AllowAuthorizer {
         _call: &argus_core::ToolCall,
     ) -> Result<AuthorizationDecision, TurnError> {
         Ok(AuthorizationDecision::Allow)
-    }
-}
-
-struct NoopObserver;
-
-#[async_trait]
-impl TurnObserver for NoopObserver {
-    async fn on_event(&self, _event: &TurnEvent) -> Result<(), TurnError> {
-        Ok(())
     }
 }

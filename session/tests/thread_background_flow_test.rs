@@ -12,7 +12,7 @@ use tokio::{sync::mpsc, task, time::timeout};
 use tool::{ToolContext, ToolResult};
 use turn::{
     AuthorizationDecision, LlmStepRequest, ModelRunner, ToolAuthorizer, ToolRunner, TurnError,
-    TurnEvent, TurnFinishReason, TurnObserver,
+    TurnEvent, TurnFinishReason,
 };
 
 #[tokio::test]
@@ -34,7 +34,6 @@ async fn switching_active_thread_does_not_cancel_running_turn() {
         model: Arc::new(SlowTextModel::new(Duration::from_millis(120), "done")),
         tool_runner: Arc::new(NoopToolRunner),
         authorizer: Arc::new(AllowAuthorizer),
-        observer: Arc::new(NoopObserver),
     };
 
     manager
@@ -130,14 +129,5 @@ impl ToolAuthorizer for AllowAuthorizer {
         _call: &argus_core::ToolCall,
     ) -> Result<AuthorizationDecision, TurnError> {
         Ok(AuthorizationDecision::Allow)
-    }
-}
-
-struct NoopObserver;
-
-#[async_trait]
-impl TurnObserver for NoopObserver {
-    async fn on_event(&self, _event: &TurnEvent) -> Result<(), TurnError> {
-        Ok(())
     }
 }

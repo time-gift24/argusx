@@ -19,7 +19,7 @@ use tokio::{
 use tool::{ToolContext, ToolResult};
 use turn::{
     AuthorizationDecision, LlmStepRequest, ModelRunner, ToolAuthorizer, ToolRunner, TurnError,
-    TurnEvent, TurnFinishReason, TurnObserver,
+    TurnEvent, TurnFinishReason,
 };
 
 #[tokio::test]
@@ -40,7 +40,6 @@ async fn completed_turns_persist_only_incremental_transcript_messages() {
         model: Arc::new(QueuedTextModel::new(["first", "second"])),
         tool_runner: Arc::new(NoopToolRunner),
         authorizer: Arc::new(AllowAuthorizer),
-        observer: Arc::new(NoopObserver),
     };
 
     manager
@@ -151,14 +150,5 @@ impl ToolAuthorizer for AllowAuthorizer {
         _call: &argus_core::ToolCall,
     ) -> Result<AuthorizationDecision, TurnError> {
         Ok(AuthorizationDecision::Allow)
-    }
-}
-
-struct NoopObserver;
-
-#[async_trait]
-impl TurnObserver for NoopObserver {
-    async fn on_event(&self, _event: &TurnEvent) -> Result<(), TurnError> {
-        Ok(())
     }
 }
