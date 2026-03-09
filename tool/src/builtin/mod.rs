@@ -1,3 +1,4 @@
+pub mod browser;
 pub mod domain_cookies;
 pub mod file;
 pub mod fs;
@@ -8,6 +9,7 @@ pub mod read;
 pub mod shell;
 pub mod update_plan;
 
+pub use browser::BrowserTool;
 pub use domain_cookies::DomainCookiesTool;
 pub use file::ReadFileTool;
 pub use git::GitTool;

@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 argus_core = { package = "core", path = "../core" }
 async-trait = { workspace = true }
+futures = { workspace = true }
 git2 = "0.19"
 globset = "0.4"
 grep = "0.2"
@@ -20,6 +21,9 @@ tokio-util = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
 walkdir = "2.0"
+chromiumoxide = { version = "0.5", features = ["tokio-runtime"] }
+rusqlite = { workspace = true }
+base64 = "0.22"
 
 [dev-dependencies]
 axum = "0.8"

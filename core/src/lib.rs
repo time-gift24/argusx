@@ -43,6 +43,7 @@ pub enum Builtin {
     Shell,
     DomainCookies,
     Git,
+    Browser,
     Unknown(String),
 }
 
@@ -56,6 +57,7 @@ impl Builtin {
             Self::Shell => "shell",
             Self::DomainCookies => "domain_cookies",
             Self::Git => "git",
+            Self::Browser => "browser",
             Self::Unknown(name) => name.as_str(),
         }
     }
@@ -69,6 +71,7 @@ impl Builtin {
             "shell" => Self::Shell,
             "domain_cookies" => Self::DomainCookies,
             "git" => Self::Git,
+            "browser" => Self::Browser,
             _ => return None,
         })
     }
