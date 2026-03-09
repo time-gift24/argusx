@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use serde::Deserialize;
 use tauri::State;
 use uuid::Uuid;
 
 use crate::{
     chat::{
-        HydratedChatTurn, StartTurnInput, StartTurnResult, TauriTurnObserver, TurnTargetKind,
+        HydratedChatTurn, StartTurnInput, StartTurnResult, TurnTargetKind,
     },
     session_commands::{DesktopSessionState, hydrate_chat_turn},
 };
@@ -27,7 +25,7 @@ pub async fn load_active_chat_thread(
 
 #[tauri::command]
 pub async fn start_turn(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     state: State<'_, DesktopSessionState>,
     input: StartTurnInput,
 ) -> Result<StartTurnResult, String> {
@@ -37,13 +35,7 @@ pub async fn start_turn(
 
     let thread_id = state.ensure_active_chat_thread().await.map_err(stringify)?;
     let turn_id = Uuid::new_v4();
-    let observer: Arc<dyn turn::TurnObserver> = Arc::new(TauriTurnObserver::new(
-        app,
-        turn_id.to_string(),
-        input.target_kind,
-        input.target_id,
-    ));
-    let deps = state.build_turn_dependencies(observer).map_err(stringify)?;
+    let deps = state.build_turn_dependencies().map_err(stringify)?;
 
     state
         .manager

@@ -55,7 +55,6 @@ async fn turn_tracing_emits_step_and_finish_markers() {
         Arc::new(support::text_only_model(["hello"])),
         Arc::new(support::FakeToolRunner::default()),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     while handle.next_event().await.is_some() {}
@@ -92,7 +91,6 @@ async fn turn_tracing_reports_failed_turn_completion() {
         )]])),
         Arc::new(support::FakeToolRunner::default()),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     while handle.next_event().await.is_some() {}

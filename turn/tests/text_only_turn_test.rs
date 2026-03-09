@@ -21,7 +21,6 @@ async fn text_only_turn_streams_text_and_completes() {
         Arc::new(support::text_only_model(["hel", "lo"])),
         Arc::new(support::FakeToolRunner::default()),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     let mut events = Vec::new();
@@ -47,6 +46,35 @@ async fn text_only_turn_streams_text_and_completes() {
 }
 
 #[tokio::test]
+async fn spawn_without_observer_emits_events_via_handle() {
+    let seed = turn::TurnSeed {
+        session_id: "session-1".into(),
+        turn_id: "turn-1".into(),
+        prior_messages: Vec::new(),
+        user_message: "hello".into(),
+    };
+
+    let (handle, task) = TurnDriver::spawn(
+        seed,
+        Arc::new(support::text_only_model(["done"])),
+        Arc::new(support::FakeToolRunner::default()),
+        Arc::new(support::FakeAuthorizer::default()),
+    );
+
+    let mut saw_finish = false;
+    while let Some(event) = handle.next_event().await {
+        if matches!(event, TurnEvent::TurnFinished { .. }) {
+            saw_finish = true;
+            break;
+        }
+    }
+
+    assert!(saw_finish);
+    let outcome = task.await.unwrap().unwrap();
+    assert_eq!(outcome.final_output.as_deref(), Some("done"));
+}
+
+#[tokio::test]
 async fn completed_turn_returns_transcript_and_final_output() {
     let model = Arc::new(support::FakeModelRunner::new(vec![vec![
         ResponseEvent::ContentDelta("hello".into()),
@@ -67,7 +95,6 @@ async fn completed_turn_returns_transcript_and_final_output() {
         model,
         Arc::new(support::FakeToolRunner::default()),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     while handle.next_event().await.is_some() {}

@@ -29,7 +29,6 @@ pub struct TurnDriver {
     model: Arc<dyn ModelRunner>,
     tool_runner: Arc<dyn ToolRunner>,
     authorizer: Arc<dyn ToolAuthorizer>,
-    observer: Arc<dyn crate::TurnObserver>,
     state: TurnState,
     command_rx: mpsc::Receiver<crate::TurnCommand>,
     event_tx: mpsc::Sender<TurnEvent>,
@@ -45,7 +44,6 @@ impl TurnDriver {
         model: Arc<dyn ModelRunner>,
         tool_runner: Arc<dyn ToolRunner>,
         authorizer: Arc<dyn ToolAuthorizer>,
-        observer: Arc<dyn crate::TurnObserver>,
     ) -> (TurnHandle, JoinHandle<Result<TurnOutcome, TurnError>>) {
         Self::spawn_with_options(
             seed,
@@ -53,7 +51,6 @@ impl TurnDriver {
             model,
             tool_runner,
             authorizer,
-            observer,
         )
     }
 
@@ -63,7 +60,6 @@ impl TurnDriver {
         model: Arc<dyn ModelRunner>,
         tool_runner: Arc<dyn ToolRunner>,
         authorizer: Arc<dyn ToolAuthorizer>,
-        observer: Arc<dyn crate::TurnObserver>,
     ) -> (TurnHandle, JoinHandle<Result<TurnOutcome, TurnError>>) {
         let (command_tx, command_rx) = mpsc::channel(8);
         let (event_tx, event_rx) = mpsc::channel(32);
@@ -75,7 +71,6 @@ impl TurnDriver {
             model,
             tool_runner,
             authorizer,
-            observer,
             command_rx,
             event_tx,
             cancel_token: CancellationToken::new(),
@@ -301,7 +296,6 @@ impl TurnDriver {
     }
 
     async fn emit(&self, event: TurnEvent) -> Result<(), TurnError> {
-        self.observer.on_event(&event).await?;
         self.event_tx
             .send(event)
             .await

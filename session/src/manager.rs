@@ -8,7 +8,7 @@ use chrono::Utc;
 use tokio::{sync::broadcast, task::JoinHandle};
 use turn::{
     ModelRunner, PermissionDecision, StepFinishReason, ToolAuthorizer, ToolOutcome, ToolRunner,
-    TurnDriver, TurnEvent, TurnFinishReason, TurnHandle, TurnObserver, TurnOutcome, TurnSeed,
+    TurnDriver, TurnEvent, TurnFinishReason, TurnHandle, TurnOutcome, TurnSeed,
 };
 use uuid::Uuid;
 
@@ -41,7 +41,6 @@ pub struct TurnDependencies {
     pub model: Arc<dyn ModelRunner>,
     pub tool_runner: Arc<dyn ToolRunner>,
     pub authorizer: Arc<dyn ToolAuthorizer>,
-    pub observer: Arc<dyn TurnObserver>,
 }
 
 #[derive(Clone)]
@@ -230,7 +229,6 @@ impl SessionManager {
             deps.model,
             deps.tool_runner,
             deps.authorizer,
-            deps.observer,
         );
 
         reservation.activate(turn_number, handle.controller())?;

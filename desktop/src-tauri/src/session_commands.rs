@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use argus_core::ToolCall;
-use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::{json, Value};
 use session::manager::{SessionEvent, SessionManager, TurnDependencies};
 use tauri::{AppHandle, Emitter, State};
-use turn::{PermissionDecision, TurnError, TurnEvent, TurnObserver};
+use turn::{PermissionDecision, TurnError, TurnEvent};
 use uuid::Uuid;
 
 use crate::{
@@ -51,7 +50,6 @@ impl DesktopSessionState {
 
     pub fn build_turn_dependencies(
         &self,
-        observer: Arc<dyn TurnObserver>,
     ) -> Result<TurnDependencies, TurnError> {
         let model: Arc<dyn turn::ModelRunner> = Arc::new(ProviderModelRunner::from_provider_settings(
             Some(self.provider_settings.as_ref()),
@@ -63,7 +61,6 @@ impl DesktopSessionState {
             model,
             tool_runner,
             authorizer,
-            observer,
         })
     }
 
@@ -170,7 +167,7 @@ pub async fn send_message(
     content: String,
 ) -> Result<(), String> {
     let deps = state
-        .build_turn_dependencies(Arc::new(NoopTurnObserver))
+        .build_turn_dependencies()
         .map_err(|err| err.to_string())?;
     let thread_id = parse_uuid(&thread_id)?;
     state
@@ -338,15 +335,6 @@ fn hydrated_turn_error(turn: &session::TurnRecord, fallback: &str) -> String {
         .as_ref()
         .map(|reason| format!("Turn ended with {}.", reason.to_ascii_lowercase()))
         .unwrap_or_else(|| fallback.to_string())
-}
-
-struct NoopTurnObserver;
-
-#[async_trait]
-impl TurnObserver for NoopTurnObserver {
-    async fn on_event(&self, _event: &TurnEvent) -> Result<(), TurnError> {
-        Ok(())
-    }
 }
 
 fn session_event_to_payload(event: SessionEvent) -> ThreadEventPayload {

@@ -3,7 +3,6 @@ pub mod commands;
 pub mod events;
 pub mod manager;
 pub mod model;
-pub mod observer;
 pub mod plan;
 pub mod tools;
 
@@ -15,5 +14,4 @@ pub use events::{
 };
 pub use manager::TurnManager;
 pub use model::ProviderModelRunner;
-pub use observer::TauriTurnObserver;
 pub use tools::ScheduledToolRunner;
