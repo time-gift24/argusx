@@ -1,20 +1,24 @@
-use argus_core::{Builtin, ToolCall};
+use agent::AgentToolSurface;
+use argus_core::ToolCall;
 use async_trait::async_trait;
 use turn::{AuthorizationDecision, PermissionRequest, ToolAuthorizer, TurnError};
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct AllowListedToolAuthorizer;
+#[derive(Debug, Clone)]
+pub struct AllowListedToolAuthorizer {
+    surface: AgentToolSurface,
+}
+
+impl AllowListedToolAuthorizer {
+    pub fn new(surface: AgentToolSurface) -> Self {
+        Self { surface }
+    }
+}
 
 #[async_trait]
 impl ToolAuthorizer for AllowListedToolAuthorizer {
     async fn authorize(&self, call: &ToolCall) -> Result<AuthorizationDecision, TurnError> {
         Ok(match call {
-            ToolCall::Builtin(call)
-                if matches!(
-                    call.builtin,
-                    Builtin::Read | Builtin::Glob | Builtin::Grep | Builtin::UpdatePlan
-                ) =>
-            {
+            ToolCall::Builtin(call) if self.surface.allows_builtin(&call.builtin) => {
                 AuthorizationDecision::Allow
             }
             _ => AuthorizationDecision::Ask(PermissionRequest {

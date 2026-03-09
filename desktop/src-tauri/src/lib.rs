@@ -1,6 +1,9 @@
+pub mod agent_profiles;
 pub mod chat;
 pub mod provider_settings;
 mod session_commands;
+
+use std::sync::Arc;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -13,7 +16,12 @@ use session_commands::{
 pub fn run() -> Result<(), BoxError> {
     let runtime = tauri::async_runtime::block_on(runtime::build_runtime())?;
     let manager = runtime.session_manager.clone();
-    let session_state = DesktopSessionState::new(manager).map_err(|err| -> BoxError { Box::new(err) })?;
+    let session_state = DesktopSessionState::new(
+        manager,
+        Arc::clone(&runtime.agent_profiles),
+        Arc::clone(&runtime.agent_execution_resolver),
+    )
+    .map_err(|err| -> BoxError { Box::new(err) })?;
     let bridge_manager = session_state.manager.clone();
 
     let run_result = tauri::Builder::default()
@@ -34,6 +42,7 @@ pub fn run() -> Result<(), BoxError> {
             chat::commands::cancel_turn,
             chat::commands::load_active_chat_thread,
             chat::commands::resolve_turn_permission,
+            agent_profiles::commands::list_agent_profiles,
             provider_settings::commands::list_provider_profiles,
             provider_settings::commands::save_provider_profile,
             provider_settings::commands::delete_provider_profile,

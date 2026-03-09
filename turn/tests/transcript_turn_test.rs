@@ -23,6 +23,7 @@ fn context() -> TurnSeed {
         turn_id: "turn-1".into(),
         prior_messages: vec![],
         user_message: "do tools".into(),
+        system_prompt: None,
     }
 }
 
@@ -72,6 +73,7 @@ async fn first_step_receives_prior_messages_before_current_user_input() {
             },
         ],
         user_message: "continue".into(),
+        system_prompt: None,
     };
 
     let (handle, task) = TurnDriver::spawn(

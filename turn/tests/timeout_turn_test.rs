@@ -23,6 +23,7 @@ async fn slow_tool_times_out_but_turn_still_completes() {
         turn_id: "turn-1".into(),
         prior_messages: vec![],
         user_message: "timeout".into(),
+        system_prompt: None,
     };
 
     let first_step = vec![

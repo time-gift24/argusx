@@ -23,6 +23,7 @@ async fn tool_batch_emits_each_result_immediately_then_finishes_step_once() {
         turn_id: "turn-1".into(),
         prior_messages: vec![],
         user_message: "read files".into(),
+        system_prompt: None,
     };
 
     let first_step = vec![
@@ -114,6 +115,7 @@ async fn completed_tool_turn_returns_transcript_and_final_output() {
             turn_id: "turn-1".into(),
             prior_messages: vec![],
             user_message: "read files".into(),
+            system_prompt: None,
         },
         Arc::new(support::multi_step_model(vec![first_step, second_step])),
         Arc::new(support::delayed_tool_runner([(

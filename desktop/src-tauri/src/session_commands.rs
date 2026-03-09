@@ -11,32 +11,38 @@ use uuid::Uuid;
 
 use crate::{
     chat::{
-        AllowListedToolAuthorizer, HydratedChatTurn, HydratedChatTurnStatus, HydratedToolCall,
-        HydratedToolCallStatus, ProviderModelRunner, ScheduledToolRunner,
-        plan::snapshot_from_output,
+        plan::snapshot_from_output, AllowListedToolAuthorizer, HydratedChatTurn,
+        HydratedChatTurnStatus, HydratedToolCall, HydratedToolCallStatus, ProviderModelRunner,
+        ScheduledToolRunner,
     },
     provider_settings::ProviderSettingsService,
 };
 
 pub type SharedSessionManager = Arc<SessionManager>;
+pub type SharedAgentProfileStore = Arc<agent::AgentProfileStore>;
+pub type SharedAgentExecutionResolver = Arc<agent::AgentExecutionResolver>;
 
 pub struct DesktopSessionState {
     pub manager: SharedSessionManager,
+    agent_profiles: SharedAgentProfileStore,
+    agent_execution_resolver: SharedAgentExecutionResolver,
     provider_settings: Arc<ProviderSettingsService>,
-    tool_runner: Arc<ScheduledToolRunner>,
-    tool_authorizer: Arc<AllowListedToolAuthorizer>,
     turn_manager: Arc<crate::chat::TurnManager>,
 }
 
 impl DesktopSessionState {
-    pub fn new(manager: SessionManager) -> Result<Self, TurnError> {
+    pub fn new(
+        manager: SessionManager,
+        agent_profiles: SharedAgentProfileStore,
+        agent_execution_resolver: SharedAgentExecutionResolver,
+    ) -> Result<Self, TurnError> {
         let provider_settings = ProviderSettingsService::from_default_location()
             .map_err(|err| TurnError::Runtime(err.to_string()))?;
         Ok(Self {
             manager: Arc::new(manager),
+            agent_profiles,
+            agent_execution_resolver,
             provider_settings: Arc::new(provider_settings),
-            tool_runner: Arc::new(ScheduledToolRunner::from_current_dir()?),
-            tool_authorizer: Arc::new(AllowListedToolAuthorizer),
             turn_manager: Arc::new(crate::chat::TurnManager::new()),
         })
     }
@@ -45,21 +51,46 @@ impl DesktopSessionState {
         Arc::clone(&self.provider_settings)
     }
 
+    pub fn agent_profiles(&self) -> SharedAgentProfileStore {
+        Arc::clone(&self.agent_profiles)
+    }
+
+    pub fn agent_execution_resolver(&self) -> SharedAgentExecutionResolver {
+        Arc::clone(&self.agent_execution_resolver)
+    }
+
     pub fn turn_manager(&self) -> Arc<crate::chat::TurnManager> {
         Arc::clone(&self.turn_manager)
     }
 
-    pub fn build_turn_dependencies(
+    pub async fn build_turn_dependencies(
         &self,
+        thread_id: Uuid,
         observer: Arc<dyn TurnObserver>,
     ) -> Result<TurnDependencies, TurnError> {
-        let model: Arc<dyn turn::ModelRunner> = Arc::new(ProviderModelRunner::from_provider_settings(
-            Some(self.provider_settings.as_ref()),
-        )?);
-        let tool_runner: Arc<dyn turn::ToolRunner> = self.tool_runner.clone();
-        let authorizer: Arc<dyn turn::ToolAuthorizer> = self.tool_authorizer.clone();
+        let (session_prompt, snapshot) = load_thread_execution_snapshot(
+            self.manager.as_ref(),
+            self.agent_profiles.as_ref(),
+            thread_id,
+        )
+        .await?;
+        let resolved = self
+            .agent_execution_resolver
+            .resolve(&session_prompt, &snapshot)
+            .map_err(|err| TurnError::Runtime(err.to_string()))?;
+        let surface = crate::chat::build_agent_tool_surface(resolved.tool_policy.clone())?;
+        let model: Arc<dyn turn::ModelRunner> =
+            Arc::new(ProviderModelRunner::from_provider_settings(
+                Some(self.provider_settings.as_ref()),
+                &surface,
+            )?);
+        let tool_runner: Arc<dyn turn::ToolRunner> =
+            Arc::new(ScheduledToolRunner::from_tool_surface(&surface)?);
+        let authorizer: Arc<dyn turn::ToolAuthorizer> =
+            Arc::new(AllowListedToolAuthorizer::new(surface));
 
         Ok(TurnDependencies {
+            system_prompt: Some(resolved.system_prompt),
             model,
             tool_runner,
             authorizer,
@@ -85,10 +116,145 @@ impl DesktopSessionState {
             return Ok(thread_id);
         }
 
+        self.ensure_chat_thread_for_agent("builtin-main").await
+    }
+
+    pub async fn ensure_chat_thread_for_agent(
+        &self,
+        agent_profile_id: &str,
+    ) -> Result<Uuid, TurnError> {
+        let threads = self
+            .manager
+            .list_threads()
+            .await
+            .map_err(|err| TurnError::Runtime(err.to_string()))?;
+
+        if let Some(active_thread_id) = self.manager.active_thread_id() {
+            if threads
+                .iter()
+                .find(|thread| thread.id == active_thread_id)
+                .is_some_and(|thread| thread_matches_agent(thread, agent_profile_id))
+            {
+                return Ok(active_thread_id);
+            }
+        }
+
+        if let Some(thread_id) = choose_chat_thread_for_agent(agent_profile_id, &threads) {
+            self.manager
+                .switch_thread(thread_id)
+                .await
+                .map_err(|err| TurnError::Runtime(err.to_string()))?;
+            return Ok(thread_id);
+        }
+
+        let profile = self
+            .agent_profiles
+            .get_profile(agent_profile_id)
+            .await
+            .map_err(|err| TurnError::Runtime(err.to_string()))?
+            .ok_or_else(|| {
+                TurnError::Runtime(format!("agent profile `{agent_profile_id}` not found"))
+            })?;
+
         self.manager
-            .create_thread(None)
+            .create_thread_with_agent_binding(
+                None,
+                session::ThreadAgentSnapshotSeed {
+                    profile_id: profile.id.clone(),
+                    display_name_snapshot: profile.display_name,
+                    system_prompt_snapshot: profile.system_prompt,
+                    tool_policy_snapshot_json: profile.tool_policy_json,
+                    model_config_snapshot_json: profile.model_config_json,
+                    allow_subagent_dispatch_snapshot: profile.allow_subagent_dispatch,
+                },
+                false,
+                true,
+            )
             .await
             .map_err(|err| TurnError::Runtime(err.to_string()))
+    }
+}
+
+async fn load_thread_execution_snapshot(
+    manager: &SessionManager,
+    agent_profiles: &agent::AgentProfileStore,
+    thread_id: Uuid,
+) -> Result<(String, agent::ThreadAgentSnapshot), TurnError> {
+    let session_prompt = manager
+        .load_session()
+        .await
+        .map_err(|err| TurnError::Runtime(err.to_string()))?
+        .and_then(|session| session.system_prompt)
+        .unwrap_or_default();
+
+    if let Some(snapshot) = manager
+        .load_thread_agent_snapshot(thread_id)
+        .await
+        .map_err(|err| TurnError::Runtime(err.to_string()))?
+    {
+        return Ok((
+            session_prompt,
+            snapshot_record_to_execution_snapshot(snapshot),
+        ));
+    }
+
+    let thread = manager
+        .load_thread(thread_id)
+        .await
+        .map_err(|err| TurnError::Runtime(err.to_string()))?
+        .ok_or_else(|| TurnError::Runtime(format!("thread `{thread_id}` not found")))?;
+    let profile_id = thread.agent_profile_id.as_deref().unwrap_or("builtin-main");
+    let profile = load_fallback_agent_profile(agent_profiles, profile_id).await?;
+
+    Ok((session_prompt, profile_to_execution_snapshot(profile)))
+}
+
+async fn load_fallback_agent_profile(
+    agent_profiles: &agent::AgentProfileStore,
+    profile_id: &str,
+) -> Result<agent::AgentProfileRecord, TurnError> {
+    if let Some(profile) = agent_profiles
+        .get_profile(profile_id)
+        .await
+        .map_err(|err| TurnError::Runtime(err.to_string()))?
+    {
+        return Ok(profile);
+    }
+
+    if profile_id != "builtin-main" {
+        return agent_profiles
+            .get_profile("builtin-main")
+            .await
+            .map_err(|err| TurnError::Runtime(err.to_string()))?
+            .ok_or_else(|| TurnError::Runtime("agent profile `builtin-main` not found".into()));
+    }
+
+    Err(TurnError::Runtime(format!(
+        "agent profile `{profile_id}` not found"
+    )))
+}
+
+fn snapshot_record_to_execution_snapshot(
+    snapshot: session::ThreadAgentSnapshotRecord,
+) -> agent::ThreadAgentSnapshot {
+    agent::ThreadAgentSnapshot {
+        profile_id: snapshot.profile_id,
+        display_name_snapshot: snapshot.display_name_snapshot,
+        system_prompt_snapshot: snapshot.system_prompt_snapshot,
+        tool_policy_snapshot_json: snapshot.tool_policy_snapshot_json,
+        model_config_snapshot_json: snapshot.model_config_snapshot_json,
+        allow_subagent_dispatch_snapshot: snapshot.allow_subagent_dispatch_snapshot,
+    }
+}
+
+fn profile_to_execution_snapshot(profile: agent::AgentProfileRecord) -> agent::ThreadAgentSnapshot {
+    agent::ThreadAgentSnapshot {
+        profile_id: profile.id,
+        display_name_snapshot: profile.display_name,
+        system_prompt_snapshot: profile.system_prompt,
+        tool_policy_snapshot_json: profile.tool_policy_json,
+        model_config_snapshot_json: profile.model_config_json,
+        allow_subagent_dispatch_snapshot: profile.allow_subagent_dispatch,
     }
 }
 
@@ -169,10 +335,11 @@ pub async fn send_message(
     thread_id: String,
     content: String,
 ) -> Result<(), String> {
-    let deps = state
-        .build_turn_dependencies(Arc::new(NoopTurnObserver))
-        .map_err(|err| err.to_string())?;
     let thread_id = parse_uuid(&thread_id)?;
+    let deps = state
+        .build_turn_dependencies(thread_id, Arc::new(NoopTurnObserver))
+        .await
+        .map_err(|err| err.to_string())?;
     state
         .manager
         .send_message(thread_id, content, deps)
@@ -226,9 +393,27 @@ pub(crate) fn choose_active_chat_thread(
     active_thread_id.or_else(|| {
         threads
             .iter()
-            .find(|thread| matches!(thread.lifecycle, session::ThreadLifecycle::Open))
+            .find(|thread| {
+                matches!(thread.lifecycle, session::ThreadLifecycle::Open) && !thread.is_subagent
+            })
             .map(|thread| thread.id)
     })
+}
+
+pub(crate) fn choose_chat_thread_for_agent(
+    agent_profile_id: &str,
+    threads: &[session::ThreadRecord],
+) -> Option<Uuid> {
+    threads
+        .iter()
+        .find(|thread| thread_matches_agent(thread, agent_profile_id))
+        .map(|thread| thread.id)
+}
+
+fn thread_matches_agent(thread: &session::ThreadRecord, agent_profile_id: &str) -> bool {
+    matches!(thread.lifecycle, session::ThreadLifecycle::Open)
+        && !thread.is_subagent
+        && thread.agent_profile_id.as_deref() == Some(agent_profile_id)
 }
 
 pub(crate) fn hydrate_chat_turn(turn: &session::TurnRecord) -> HydratedChatTurn {
@@ -238,7 +423,9 @@ pub(crate) fn hydrate_chat_turn(turn: &session::TurnRecord) -> HydratedChatTurn 
 
     for message in &turn.transcript {
         match message {
-            session::PersistedMessage::AssistantText { content } => assistant_text.push_str(content),
+            session::PersistedMessage::AssistantText { content } => {
+                assistant_text.push_str(content)
+            }
             session::PersistedMessage::AssistantToolCalls { content, calls } => {
                 if let Some(content) = content {
                     assistant_text.push_str(content);
@@ -294,7 +481,8 @@ pub(crate) fn hydrate_chat_turn(turn: &session::TurnRecord) -> HydratedChatTurn 
                     }
                 }
             }
-            session::PersistedMessage::User { .. } | session::PersistedMessage::SystemNote { .. } => {}
+            session::PersistedMessage::User { .. }
+            | session::PersistedMessage::SystemNote { .. } => {}
         }
     }
 
@@ -450,7 +638,11 @@ fn tool_name(call: &ToolCall) -> &str {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use session::{PersistedMessage, PersistedToolCall, PersistedToolKind, ThreadLifecycle, ThreadRecord, TurnRecord, TurnStatus};
+    use session::{
+        PersistedMessage, PersistedToolCall, PersistedToolKind, ThreadLifecycle, ThreadRecord,
+        TurnRecord, TurnStatus,
+    };
+    use sqlx::sqlite::SqlitePoolOptions;
 
     use super::*;
     use tokio::sync::broadcast;
@@ -495,6 +687,8 @@ mod tests {
         let threads = vec![ThreadRecord {
             id: other_thread_id,
             session_id: "default-session".into(),
+            agent_profile_id: None,
+            is_subagent: false,
             title: Some("Other".into()),
             lifecycle: ThreadLifecycle::Open,
             created_at: now,
@@ -516,6 +710,8 @@ mod tests {
             ThreadRecord {
                 id: latest_open_id,
                 session_id: "default-session".into(),
+                agent_profile_id: None,
+                is_subagent: false,
                 title: Some("Latest".into()),
                 lifecycle: ThreadLifecycle::Open,
                 created_at: now,
@@ -525,6 +721,8 @@ mod tests {
             ThreadRecord {
                 id: Uuid::new_v4(),
                 session_id: "default-session".into(),
+                agent_profile_id: None,
+                is_subagent: false,
                 title: Some("Archived".into()),
                 lifecycle: ThreadLifecycle::Archived,
                 created_at: now,
@@ -536,6 +734,76 @@ mod tests {
         let selected = choose_active_chat_thread(None, &threads);
 
         assert_eq!(selected, Some(latest_open_id));
+    }
+
+    #[test]
+    fn choose_active_chat_thread_skips_subagent_threads() {
+        let root_thread_id = Uuid::new_v4();
+        let now = Utc::now();
+
+        let threads = vec![
+            ThreadRecord {
+                id: Uuid::new_v4(),
+                session_id: "default-session".into(),
+                agent_profile_id: Some("reviewer".into()),
+                is_subagent: true,
+                title: Some("Background reviewer".into()),
+                lifecycle: ThreadLifecycle::Open,
+                created_at: now,
+                updated_at: now,
+                last_turn_number: 1,
+            },
+            ThreadRecord {
+                id: root_thread_id,
+                session_id: "default-session".into(),
+                agent_profile_id: Some("builtin-main".into()),
+                is_subagent: false,
+                title: Some("Planner".into()),
+                lifecycle: ThreadLifecycle::Open,
+                created_at: now,
+                updated_at: now,
+                last_turn_number: 2,
+            },
+        ];
+
+        let selected = choose_active_chat_thread(None, &threads);
+
+        assert_eq!(selected, Some(root_thread_id));
+    }
+
+    #[test]
+    fn choose_chat_thread_for_agent_reuses_matching_root_thread() {
+        let reviewer_thread_id = Uuid::new_v4();
+        let now = Utc::now();
+
+        let threads = vec![
+            ThreadRecord {
+                id: Uuid::new_v4(),
+                session_id: "default-session".into(),
+                agent_profile_id: Some("builtin-main".into()),
+                is_subagent: false,
+                title: Some("Planner".into()),
+                lifecycle: ThreadLifecycle::Open,
+                created_at: now,
+                updated_at: now,
+                last_turn_number: 1,
+            },
+            ThreadRecord {
+                id: reviewer_thread_id,
+                session_id: "default-session".into(),
+                agent_profile_id: Some("reviewer".into()),
+                is_subagent: false,
+                title: Some("Reviewer".into()),
+                lifecycle: ThreadLifecycle::Open,
+                created_at: now,
+                updated_at: now,
+                last_turn_number: 3,
+            },
+        ];
+
+        let selected = choose_chat_thread_for_agent("reviewer", &threads);
+
+        assert_eq!(selected, Some(reviewer_thread_id));
     }
 
     #[test]
@@ -559,7 +827,9 @@ mod tests {
                         sequence: 0,
                         call_id: "call-update-plan".into(),
                         tool_name: "update_plan".into(),
-                        arguments: r#"{"plan":[{"step":"Write failing test","status":"completed"}]}"#.into(),
+                        arguments:
+                            r#"{"plan":[{"step":"Write failing test","status":"completed"}]}"#
+                                .into(),
                         kind: PersistedToolKind::Builtin,
                         server_label: None,
                     }],
@@ -601,10 +871,52 @@ mod tests {
         assert_eq!(hydrated.status, HydratedChatTurnStatus::Completed);
         assert_eq!(hydrated.tool_calls.len(), 1);
         assert_eq!(hydrated.tool_calls[0].call_id, "call-update-plan");
-        assert_eq!(hydrated.tool_calls[0].status, HydratedToolCallStatus::Success);
         assert_eq!(
-            hydrated.latest_plan.as_ref().map(|plan| plan.title.as_str()),
+            hydrated.tool_calls[0].status,
+            HydratedToolCallStatus::Success
+        );
+        assert_eq!(
+            hydrated
+                .latest_plan
+                .as_ref()
+                .map(|plan| plan.title.as_str()),
             Some("Execution Plan")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn load_thread_execution_snapshot_falls_back_to_builtin_profile_for_legacy_threads() {
+        let thread_pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let thread_store = session::store::ThreadStore::new(thread_pool);
+        thread_store.init_schema().await.unwrap();
+
+        let agent_pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let agent_store = agent::AgentProfileStore::new(agent_pool);
+        agent_store.init_schema().await.unwrap();
+        agent_store.seed_builtin_profiles().await.unwrap();
+
+        let manager = SessionManager::new("session-1".into(), thread_store);
+        let thread_id = manager.create_thread(Some("Legacy".into())).await.unwrap();
+
+        let (session_prompt, snapshot) =
+            load_thread_execution_snapshot(&manager, &agent_store, thread_id)
+                .await
+                .unwrap();
+
+        assert_eq!(session_prompt, "");
+        assert_eq!(snapshot.profile_id, "builtin-main");
+        assert_eq!(snapshot.display_name_snapshot, "Planner");
+        assert_eq!(
+            snapshot.tool_policy_snapshot_json,
+            serde_json::json!({ "builtins": ["read", "glob", "grep", "update_plan"] })
         );
     }
 }

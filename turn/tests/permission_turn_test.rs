@@ -23,6 +23,7 @@ async fn turn_waits_for_permission_and_resumes_after_allow() {
         turn_id: "turn-1".into(),
         prior_messages: vec![],
         user_message: "read file".into(),
+        system_prompt: None,
     };
 
     let first_step = vec![

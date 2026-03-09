@@ -6,4 +6,5 @@ pub struct TurnSeed {
     pub turn_id: String,
     pub prior_messages: Vec<TurnMessage>,
     pub user_message: String,
+    pub system_prompt: Option<String>,
 }

@@ -50,6 +50,16 @@ where
         .with_context(|| format!("failed to open log file `{}`", log_file.display()))?;
     let (writer, guard) = NonBlocking::new(file);
 
+    // Tests may build more than one runtime in the same process. Tracing is
+    // global, so once a subscriber exists we degrade subsequent bootstraps to
+    // "logging already configured elsewhere" instead of failing startup.
+    if tracing::dispatcher::has_been_set() {
+        return Ok(LoggingRuntime {
+            telemetry: None,
+            log_guard: guard,
+        });
+    }
+
     if !config.enabled {
         install_file_logging(writer)?;
         return Ok(LoggingRuntime {

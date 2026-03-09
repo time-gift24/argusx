@@ -13,6 +13,12 @@ export interface StartTurnResult {
   turnId: string;
 }
 
+export interface AgentProfileSummary {
+  id: string;
+  label: string;
+  description: string;
+}
+
 export type HydratedToolCallStatus =
   | "running"
   | "success"
@@ -67,6 +73,10 @@ export async function startTurn(
   return invoke<StartTurnResult>("start_turn", { input });
 }
 
+export async function listAgentProfiles(): Promise<AgentProfileSummary[]> {
+  return invoke<AgentProfileSummary[]>("list_agent_profiles");
+}
+
 export async function loadActiveChatThread(): Promise<HydratedChatTurn[]> {
   return invoke<HydratedChatTurn[]>("load_active_chat_thread");
 }
@@ -98,6 +108,7 @@ export async function subscribe(
 export function useTurn() {
   return {
     cancelTurn,
+    listAgentProfiles,
     loadActiveChatThread,
     resolveTurnPermission,
     startTurn,

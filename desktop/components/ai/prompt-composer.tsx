@@ -2,7 +2,7 @@
 
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import type { KeyboardEventHandler } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   AI_PROMPT_COMPOSER_STYLES,
@@ -80,6 +80,42 @@ export function PromptComposer({
     currentItems[0] ??
     null;
   const isSubmitting = status === "submitting";
+
+  useEffect(() => {
+    setLastSelectionByCategory((previous) => {
+      const nextAgent =
+        agents.find((item) => item.id === previous.agent)?.id ?? agents[0]?.id ?? "";
+      const nextWorkflow =
+        workflows.find((item) => item.id === previous.workflow)?.id ??
+        workflows[0]?.id ??
+        "";
+
+      if (nextAgent === previous.agent && nextWorkflow === previous.workflow) {
+        return previous;
+      }
+
+      return {
+        agent: nextAgent,
+        workflow: nextWorkflow,
+      };
+    });
+
+    setCategory((previous) => {
+      if (previous === "agent" && agents.length > 0) {
+        return previous;
+      }
+      if (previous === "workflow" && workflows.length > 0) {
+        return previous;
+      }
+      if (agents.length > 0) {
+        return "agent";
+      }
+      if (workflows.length > 0) {
+        return "workflow";
+      }
+      return previous;
+    });
+  }, [agents, workflows]);
 
   const handleCategoryChange = (nextCategory: PromptComposerCategory) => {
     const nextItems = nextCategory === "agent" ? agents : workflows;

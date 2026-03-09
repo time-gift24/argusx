@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+agent = { path = "../agent" }
 anyhow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 session = { path = "../session" }

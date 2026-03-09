@@ -14,6 +14,7 @@ async fn text_only_turn_streams_text_and_completes() {
         turn_id: "turn-1".into(),
         prior_messages: vec![],
         user_message: "hello".into(),
+        system_prompt: None,
     };
 
     let (handle, task) = TurnDriver::spawn(
@@ -63,6 +64,7 @@ async fn completed_turn_returns_transcript_and_final_output() {
             turn_id: "turn-1".into(),
             prior_messages: vec![],
             user_message: "say hello".into(),
+            system_prompt: None,
         },
         model,
         Arc::new(support::FakeToolRunner::default()),

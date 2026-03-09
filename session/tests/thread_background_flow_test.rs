@@ -31,6 +31,7 @@ async fn switching_active_thread_does_not_cancel_running_turn() {
     let mut events = manager.subscribe();
 
     let deps = TurnDependencies {
+        system_prompt: None,
         model: Arc::new(SlowTextModel::new(Duration::from_millis(120), "done")),
         tool_runner: Arc::new(NoopToolRunner),
         authorizer: Arc::new(AllowAuthorizer),

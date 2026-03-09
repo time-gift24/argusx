@@ -16,4 +16,4 @@ pub use events::{
 pub use manager::TurnManager;
 pub use model::ProviderModelRunner;
 pub use observer::TauriTurnObserver;
-pub use tools::ScheduledToolRunner;
+pub use tools::{ScheduledToolRunner, build_agent_tool_surface};

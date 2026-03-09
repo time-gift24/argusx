@@ -22,6 +22,8 @@ pub enum ThreadLifecycle {
 pub struct ThreadRecord {
     pub id: Uuid,
     pub session_id: String,
+    pub agent_profile_id: Option<String>,
+    pub is_subagent: bool,
     pub title: Option<String>,
     pub lifecycle: ThreadLifecycle,
     pub created_at: DateTime<Utc>,
@@ -92,6 +94,51 @@ pub struct TurnRecord {
     pub final_output: Option<String>,
     pub started_at: DateTime<Utc>,
     pub finished_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ThreadAgentSnapshotRecord {
+    pub thread_id: Uuid,
+    pub profile_id: String,
+    pub display_name_snapshot: String,
+    pub system_prompt_snapshot: String,
+    pub tool_policy_snapshot_json: serde_json::Value,
+    pub model_config_snapshot_json: serde_json::Value,
+    pub allow_subagent_dispatch_snapshot: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ThreadAgentSnapshotSeed {
+    pub profile_id: String,
+    pub display_name_snapshot: String,
+    pub system_prompt_snapshot: String,
+    pub tool_policy_snapshot_json: serde_json::Value,
+    pub model_config_snapshot_json: serde_json::Value,
+    pub allow_subagent_dispatch_snapshot: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SubagentDispatchStatus {
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+    Interrupted,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SubagentDispatchRecord {
+    pub id: Uuid,
+    pub parent_thread_id: Uuid,
+    pub parent_turn_id: Uuid,
+    pub dispatch_tool_call_id: String,
+    pub child_thread_id: Uuid,
+    pub child_agent_profile_id: String,
+    pub status: SubagentDispatchStatus,
+    pub requested_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub result_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

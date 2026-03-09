@@ -17,6 +17,7 @@ import {
   ToolPermissionConfirmation,
   ToolCallItem,
   type PlanSnapshot,
+  type PromptComposerOption,
   type PromptComposerSubmitPayload,
 } from "@/components/ai";
 import { Checkpoint } from "@/components/ai-elements/checkpoint";
@@ -27,19 +28,6 @@ import {
   type HydratedChatTurn,
   type PermissionDecision,
 } from "@/lib/chat";
-
-const AGENTS = [
-  {
-    description: "Review a change set with an engineering lens",
-    id: "reviewer",
-    label: "Code Reviewer",
-  },
-  {
-    description: "Break ambiguous work into concrete steps",
-    id: "planner",
-    label: "Planner",
-  },
-] as const;
 
 type ToolCallStatus =
   | "running"
@@ -91,11 +79,13 @@ export const PERMISSION_RESOLUTION_FEEDBACK_MS = 1800;
 export default function ChatPage() {
   const {
     cancelTurn,
+    listAgentProfiles,
     loadActiveChatThread,
     resolveTurnPermission,
     startTurn,
     subscribe,
   } = useTurn();
+  const [agentOptions, setAgentOptions] = useState<PromptComposerOption[]>([]);
   const [composerOffset, setComposerOffset] = useState(MIN_COMPOSER_OFFSET_PX);
   const [permissionActionError, setPermissionActionError] = useState<string | null>(null);
   const [permissionActionKey, setPermissionActionKey] = useState<string | null>(null);
@@ -115,6 +105,28 @@ export default function ChatPage() {
       setTurns((current) => reduceTurnEvent(current, event));
     });
   });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void listAgentProfiles()
+      .then((profiles) => {
+        if (cancelled) {
+          return;
+        }
+
+        startTransition(() => {
+          setAgentOptions(profiles);
+        });
+      })
+      .catch((error) => {
+        console.error("Failed to load agent profiles", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [listAgentProfiles]);
 
   useEffect(() => {
     let cancelled = false;
@@ -456,7 +468,7 @@ export default function ChatPage() {
           ) : null}
           <div className="pointer-events-auto">
             <PromptComposer
-              agents={[...AGENTS]}
+              agents={agentOptions}
               onSubmit={handleSubmit}
               workflows={[]}
             />

@@ -1,8 +1,8 @@
 use std::{env, path::PathBuf};
 
+use agent::AgentToolSurface;
 use async_trait::async_trait;
 use provider::{
-    Dialect, ProviderClient, ProviderConfig, ProviderDevOptions, ReplayTiming, Request,
     dialect::openai::schema::{
         common::{
             FunctionCall, FunctionDefinition, Role, Tool as ProviderTool,
@@ -10,9 +10,10 @@ use provider::{
         },
         request::{ChatCompletionsOptions, ChatMessage},
     },
+    Dialect, ProviderClient, ProviderConfig, ProviderDevOptions, ReplayTiming, Request,
 };
 use serde_json::{Map, Value};
-use tool::{GlobTool, GrepTool, ReadTool, Tool as RuntimeTool, UpdatePlanTool};
+use tool::ToolSpec;
 use turn::{LlmStepRequest, ModelRunner, TurnError, TurnMessage};
 
 use crate::provider_settings::ProviderSettingsService;
@@ -26,6 +27,7 @@ pub struct ProviderModelRunner {
 impl ProviderModelRunner {
     pub fn from_provider_settings(
         settings: Option<&ProviderSettingsService>,
+        surface: &AgentToolSurface,
     ) -> Result<Self, TurnError> {
         if let Some(settings) = settings {
             if let Some(runtime) = settings
@@ -37,14 +39,15 @@ impl ProviderModelRunner {
                     runtime.model,
                     runtime.base_url,
                     runtime.api_key,
+                    surface,
                 );
             }
         }
 
-        Self::from_env()
+        Self::from_env(surface)
     }
 
-    pub fn from_env() -> Result<Self, TurnError> {
+    pub fn from_env(surface: &AgentToolSurface) -> Result<Self, TurnError> {
         let model = required_env("ARGUSX_MODEL")?;
         let dialect = optional_env("ARGUSX_PROVIDER_DIALECT")
             .as_deref()
@@ -63,7 +66,7 @@ impl ProviderModelRunner {
             ),
         };
 
-        Self::new(model, config)
+        Self::new(model, config, surface)
     }
 
     pub fn from_runtime_config(
@@ -71,58 +74,91 @@ impl ProviderModelRunner {
         model: String,
         base_url: String,
         api_key: String,
+        surface: &AgentToolSurface,
     ) -> Result<Self, TurnError> {
         Self::new(
             model,
             ProviderConfig::new(provider_kind.dialect(), base_url, api_key),
+            surface,
         )
     }
 
-    pub fn from_replay(model: &str, path: PathBuf) -> Result<Self, TurnError> {
+    pub fn from_replay(
+        model: &str,
+        path: PathBuf,
+        surface: &AgentToolSurface,
+    ) -> Result<Self, TurnError> {
         Self::new(
             model.to_string(),
             ProviderConfig::new(Dialect::Openai, "http://unused", "test-key")
                 .with_dev_options(ProviderDevOptions::replay(path, ReplayTiming::Fast)),
+            surface,
         )
     }
 
-    fn new(model: String, config: ProviderConfig) -> Result<Self, TurnError> {
+    fn new(
+        model: String,
+        config: ProviderConfig,
+        surface: &AgentToolSurface,
+    ) -> Result<Self, TurnError> {
         Ok(Self {
             client: ProviderClient::new(config).map_err(map_provider_error)?,
             model,
-            tools: read_only_tool_definitions()?,
+            tools: tool_definitions(surface)?,
         })
     }
 
     fn build_request(&self, request: &LlmStepRequest) -> Request {
+        let include_tools = request.allow_tools && !self.tools.is_empty();
         ChatCompletionsOptions {
             model: self.model.clone(),
-            messages: map_messages(&request.messages),
+            messages: map_messages(&request.messages, request.system_prompt.as_deref()),
             stream: Some(true),
-            tools: request.allow_tools.then(|| self.tools.clone()),
-            tool_choice: request
-                .allow_tools
-                .then(|| ToolChoice::String("auto".to_string())),
-            parallel_tool_calls: request.allow_tools.then_some(true),
+            tools: include_tools.then(|| self.tools.clone()),
+            tool_choice: include_tools.then(|| ToolChoice::String("auto".to_string())),
+            parallel_tool_calls: include_tools.then_some(true),
             ..Default::default()
         }
+    }
+
+    pub fn tool_names(&self) -> Vec<String> {
+        self.tools
+            .iter()
+            .map(|tool| tool.function.name.clone())
+            .collect()
     }
 }
 
 #[async_trait]
 impl ModelRunner for ProviderModelRunner {
-    async fn start(&self, request: LlmStepRequest) -> Result<argus_core::ResponseStream, TurnError> {
+    async fn start(
+        &self,
+        request: LlmStepRequest,
+    ) -> Result<argus_core::ResponseStream, TurnError> {
         self.client
             .stream(self.build_request(&request))
             .map_err(map_provider_error)
     }
 }
 
-fn map_messages(messages: &[std::sync::Arc<TurnMessage>]) -> Vec<ChatMessage> {
-    messages
-        .iter()
-        .map(|message| map_message(message.as_ref()))
-        .collect()
+fn map_messages(
+    messages: &[std::sync::Arc<TurnMessage>],
+    system_prompt: Option<&str>,
+) -> Vec<ChatMessage> {
+    let mut mapped = Vec::with_capacity(messages.len() + usize::from(system_prompt.is_some()));
+    if let Some(prompt) = system_prompt {
+        mapped.push(ChatMessage {
+            role: Role::System,
+            content: Some(prompt.to_string()),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+            extra: Map::default(),
+        });
+    }
+
+    mapped.extend(messages.iter().map(|message| map_message(message.as_ref())));
+    mapped
 }
 
 fn map_message(message: &TurnMessage) -> ChatMessage {
@@ -147,7 +183,12 @@ fn map_message(message: &TurnMessage) -> ChatMessage {
             role: Role::Assistant,
             content: content.as_ref().map(ToString::to_string),
             name: None,
-            tool_calls: Some(calls.iter().map(|call| map_tool_call(call.as_ref())).collect()),
+            tool_calls: Some(
+                calls
+                    .iter()
+                    .map(|call| map_tool_call(call.as_ref()))
+                    .collect(),
+            ),
             tool_call_id: None,
             extra: Map::default(),
         },
@@ -183,9 +224,11 @@ fn map_tool_call(call: &argus_core::ToolCall) -> ProviderToolCall {
             arguments_json,
             ..
         } => provider_tool_call(call_id, name, arguments_json),
-        argus_core::ToolCall::Builtin(call) => {
-            provider_tool_call(&call.call_id, call.builtin.canonical_name(), &call.arguments_json)
-        }
+        argus_core::ToolCall::Builtin(call) => provider_tool_call(
+            &call.call_id,
+            call.builtin.canonical_name(),
+            &call.arguments_json,
+        ),
         argus_core::ToolCall::Mcp(call) => provider_tool_call(
             &call.id,
             call.name.as_deref().unwrap_or_default(),
@@ -207,19 +250,17 @@ fn provider_tool_call(call_id: &str, name: &str, arguments_json: &str) -> Provid
     }
 }
 
-fn read_only_tool_definitions() -> Result<Vec<ProviderTool>, TurnError> {
-    Ok(vec![
-        to_provider_tool(&ReadTool::from_current_dir().map_err(map_tool_init_error)?),
-        to_provider_tool(&GlobTool::from_current_dir().map_err(map_tool_init_error)?),
-        to_provider_tool(&GrepTool::from_current_dir().map_err(map_tool_init_error)?),
-        to_provider_tool(&UpdatePlanTool),
-    ])
+fn tool_definitions(surface: &AgentToolSurface) -> Result<Vec<ProviderTool>, TurnError> {
+    surface
+        .tool_specs_from_current_dir()
+        .map_err(map_tool_init_error)?
+        .into_iter()
+        .map(to_provider_tool)
+        .collect()
 }
 
-fn to_provider_tool(tool: &dyn RuntimeTool) -> ProviderTool {
-    let spec = tool.spec();
-
-    ProviderTool {
+fn to_provider_tool(spec: ToolSpec) -> Result<ProviderTool, TurnError> {
+    Ok(ProviderTool {
         type_: "function".to_string(),
         function: FunctionDefinition {
             name: spec.name,
@@ -229,7 +270,7 @@ fn to_provider_tool(tool: &dyn RuntimeTool) -> ProviderTool {
             extra: Map::<String, Value>::default(),
         },
         extra: Map::<String, Value>::default(),
-    }
+    })
 }
 
 fn parse_dialect(raw: &str) -> Result<Dialect, TurnError> {
@@ -275,8 +316,13 @@ mod tests {
 
     #[test]
     fn build_request_maps_turn_messages() {
-        let runner = ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"))
-            .unwrap();
+        let surface = agent::build_agent_tool_surface(serde_json::json!({
+            "builtins": ["read", "update_plan"]
+        }))
+        .unwrap();
+        let runner =
+            ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"), &surface)
+                .unwrap();
         let request = LlmStepRequest {
             session_id: "session-1".into(),
             turn_id: "turn-1".into(),
@@ -301,6 +347,7 @@ mod tests {
                     is_error: false,
                 }),
             ]),
+            system_prompt: None,
             allow_tools: false,
         };
 
@@ -310,18 +357,23 @@ mod tests {
         assert_eq!(built.messages.len(), 3);
         assert!(matches!(built.messages[0].role, Role::User));
         assert!(matches!(built.messages[1].role, Role::Assistant));
-        assert_eq!(built.messages[1].tool_calls.as_ref().unwrap()[0].id, "call-1");
-        assert!(matches!(built.messages[2].role, Role::Tool));
         assert_eq!(
-            built.messages[2].tool_call_id.as_deref(),
-            Some("call-1")
+            built.messages[1].tool_calls.as_ref().unwrap()[0].id,
+            "call-1"
         );
+        assert!(matches!(built.messages[2].role, Role::Tool));
+        assert_eq!(built.messages[2].tool_call_id.as_deref(), Some("call-1"));
     }
 
     #[test]
     fn build_request_includes_read_only_tools_when_allowed() {
-        let runner = ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"))
-            .unwrap();
+        let surface = agent::build_agent_tool_surface(serde_json::json!({
+            "builtins": ["read", "glob", "grep", "update_plan"]
+        }))
+        .unwrap();
+        let runner =
+            ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"), &surface)
+                .unwrap();
         let request = LlmStepRequest {
             session_id: "session-1".into(),
             turn_id: "turn-1".into(),
@@ -329,6 +381,7 @@ mod tests {
             messages: Arc::from([Arc::new(TurnMessage::User {
                 content: "find toml".into(),
             })]),
+            system_prompt: None,
             allow_tools: true,
         };
 
@@ -349,8 +402,13 @@ mod tests {
 
     #[test]
     fn build_request_includes_update_plan_tool_when_allowed() {
-        let runner = ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"))
-            .unwrap();
+        let surface = agent::build_agent_tool_surface(serde_json::json!({
+            "builtins": ["read", "update_plan"]
+        }))
+        .unwrap();
+        let runner =
+            ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"), &surface)
+                .unwrap();
         let request = LlmStepRequest {
             session_id: "session-1".into(),
             turn_id: "turn-1".into(),
@@ -358,6 +416,7 @@ mod tests {
             messages: Arc::from([Arc::new(TurnMessage::User {
                 content: "keep a plan".into(),
             })]),
+            system_prompt: None,
             allow_tools: true,
         };
 
@@ -365,5 +424,64 @@ mod tests {
         let tools = built.tools.expect("tools should be present");
 
         assert!(tools.iter().any(|tool| tool.function.name == "update_plan"));
+    }
+
+    #[test]
+    fn build_request_prepends_system_prompt() {
+        let surface = agent::build_agent_tool_surface(serde_json::json!({
+            "builtins": ["read"]
+        }))
+        .unwrap();
+        let runner =
+            ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"), &surface)
+                .unwrap();
+        let request = LlmStepRequest {
+            session_id: "session-1".into(),
+            turn_id: "turn-1".into(),
+            step_index: 0,
+            messages: Arc::from([Arc::new(TurnMessage::User {
+                content: "hello".into(),
+            })]),
+            system_prompt: Some("You are a planner.".into()),
+            allow_tools: false,
+        };
+
+        let built = runner.build_request(&request);
+
+        assert_eq!(built.messages.len(), 2);
+        assert!(matches!(built.messages[0].role, Role::System));
+        assert_eq!(
+            built.messages[0].content.as_deref(),
+            Some("You are a planner.")
+        );
+        assert!(matches!(built.messages[1].role, Role::User));
+        assert_eq!(request.messages.len(), 1);
+    }
+
+    #[test]
+    fn build_request_omits_tool_fields_when_surface_is_empty() {
+        let surface = agent::build_agent_tool_surface(serde_json::json!({
+            "builtins": ["dispatch_subagent"]
+        }))
+        .unwrap();
+        let runner =
+            ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"), &surface)
+                .unwrap();
+        let request = LlmStepRequest {
+            session_id: "session-1".into(),
+            turn_id: "turn-1".into(),
+            step_index: 0,
+            messages: Arc::from([Arc::new(TurnMessage::User {
+                content: "hello".into(),
+            })]),
+            system_prompt: None,
+            allow_tools: true,
+        };
+
+        let built = runner.build_request(&request);
+
+        assert!(built.tools.is_none());
+        assert!(built.tool_choice.is_none());
+        assert!(built.parallel_tool_calls.is_none());
     }
 }

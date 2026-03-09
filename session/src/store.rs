@@ -3,7 +3,10 @@ use chrono::{DateTime, Utc};
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
-use crate::types::{SessionRecord, ThreadLifecycle, ThreadRecord, TurnRecord, TurnStatus};
+use crate::types::{
+    SessionRecord, SubagentDispatchRecord, SubagentDispatchStatus, ThreadAgentSnapshotRecord,
+    ThreadLifecycle, ThreadRecord, TurnRecord, TurnStatus,
+};
 
 const SESSION_SCHEMA: &str = include_str!("../../sql/session_schema.sql");
 
@@ -63,15 +66,35 @@ impl ThreadStore {
         Ok(())
     }
 
+    pub async fn get_session(&self, session_id: &str) -> Result<Option<SessionRecord>> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, user_id, default_model, system_prompt, created_at, updated_at
+            FROM sessions
+            WHERE id = ?
+            "#,
+        )
+        .bind(session_id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("fetch session")?;
+
+        row.map(decode_session_row).transpose()
+    }
+
     pub async fn insert_thread(&self, thread: &ThreadRecord) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO threads (id, session_id, title, lifecycle, created_at, updated_at, last_turn_number)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO threads (
+                id, session_id, agent_profile_id, is_subagent, title, lifecycle, created_at, updated_at, last_turn_number
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(thread.id.to_string())
         .bind(&thread.session_id)
+        .bind(&thread.agent_profile_id)
+        .bind(thread.is_subagent)
         .bind(&thread.title)
         .bind(thread_lifecycle_to_str(&thread.lifecycle))
         .bind(thread.created_at.to_rfc3339())
@@ -88,10 +111,12 @@ impl ThreadStore {
         sqlx::query(
             r#"
             UPDATE threads
-            SET title = ?, lifecycle = ?, updated_at = ?, last_turn_number = ?
+            SET agent_profile_id = ?, is_subagent = ?, title = ?, lifecycle = ?, updated_at = ?, last_turn_number = ?
             WHERE id = ?
             "#,
         )
+        .bind(&thread.agent_profile_id)
+        .bind(thread.is_subagent)
         .bind(&thread.title)
         .bind(thread_lifecycle_to_str(&thread.lifecycle))
         .bind(thread.updated_at.to_rfc3339())
@@ -107,7 +132,7 @@ impl ThreadStore {
     pub async fn get_thread(&self, thread_id: Uuid) -> Result<Option<ThreadRecord>> {
         let row = sqlx::query(
             r#"
-            SELECT id, session_id, title, lifecycle, created_at, updated_at, last_turn_number
+            SELECT id, session_id, agent_profile_id, is_subagent, title, lifecycle, created_at, updated_at, last_turn_number
             FROM threads
             WHERE id = ?
             "#,
@@ -123,7 +148,7 @@ impl ThreadStore {
     pub async fn list_threads(&self, session_id: &str) -> Result<Vec<ThreadRecord>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, session_id, title, lifecycle, created_at, updated_at, last_turn_number
+            SELECT id, session_id, agent_profile_id, is_subagent, title, lifecycle, created_at, updated_at, last_turn_number
             FROM threads
             WHERE session_id = ?
             ORDER BY updated_at DESC
@@ -284,12 +309,158 @@ impl ThreadStore {
 
         Ok(result.rows_affected())
     }
+
+    pub async fn insert_thread_agent_snapshot(
+        &self,
+        snapshot: &ThreadAgentSnapshotRecord,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO thread_agent_snapshots (
+                thread_id, profile_id, display_name_snapshot, system_prompt_snapshot,
+                tool_policy_snapshot_json, model_config_snapshot_json,
+                allow_subagent_dispatch_snapshot, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(snapshot.thread_id.to_string())
+        .bind(&snapshot.profile_id)
+        .bind(&snapshot.display_name_snapshot)
+        .bind(&snapshot.system_prompt_snapshot)
+        .bind(
+            serde_json::to_string(&snapshot.tool_policy_snapshot_json)
+                .context("serialize thread tool policy snapshot")?,
+        )
+        .bind(
+            serde_json::to_string(&snapshot.model_config_snapshot_json)
+                .context("serialize thread model config snapshot")?,
+        )
+        .bind(snapshot.allow_subagent_dispatch_snapshot)
+        .bind(snapshot.created_at.to_rfc3339())
+        .execute(&self.pool)
+        .await
+        .context("insert thread agent snapshot")?;
+
+        Ok(())
+    }
+
+    pub async fn get_thread_agent_snapshot(
+        &self,
+        thread_id: Uuid,
+    ) -> Result<Option<ThreadAgentSnapshotRecord>> {
+        let row = sqlx::query(
+            r#"
+            SELECT thread_id, profile_id, display_name_snapshot, system_prompt_snapshot,
+                   tool_policy_snapshot_json, model_config_snapshot_json,
+                   allow_subagent_dispatch_snapshot, created_at
+            FROM thread_agent_snapshots
+            WHERE thread_id = ?
+            "#,
+        )
+        .bind(thread_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .context("fetch thread agent snapshot")?;
+
+        row.map(decode_thread_agent_snapshot_row).transpose()
+    }
+
+    pub async fn insert_subagent_dispatch(&self, dispatch: &SubagentDispatchRecord) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO subagent_dispatches (
+                id, parent_thread_id, parent_turn_id, dispatch_tool_call_id,
+                child_thread_id, child_agent_profile_id, status, requested_at,
+                finished_at, result_summary
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(dispatch.id.to_string())
+        .bind(dispatch.parent_thread_id.to_string())
+        .bind(dispatch.parent_turn_id.to_string())
+        .bind(&dispatch.dispatch_tool_call_id)
+        .bind(dispatch.child_thread_id.to_string())
+        .bind(&dispatch.child_agent_profile_id)
+        .bind(subagent_dispatch_status_to_str(&dispatch.status))
+        .bind(dispatch.requested_at.to_rfc3339())
+        .bind(dispatch.finished_at.map(|value| value.to_rfc3339()))
+        .bind(&dispatch.result_summary)
+        .execute(&self.pool)
+        .await
+        .context("insert subagent dispatch")?;
+
+        Ok(())
+    }
+
+    pub async fn update_subagent_dispatch(&self, dispatch: &SubagentDispatchRecord) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE subagent_dispatches
+            SET status = ?, finished_at = ?, result_summary = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(subagent_dispatch_status_to_str(&dispatch.status))
+        .bind(dispatch.finished_at.map(|value| value.to_rfc3339()))
+        .bind(&dispatch.result_summary)
+        .bind(dispatch.id.to_string())
+        .execute(&self.pool)
+        .await
+        .context("update subagent dispatch")?;
+
+        Ok(())
+    }
+
+    pub async fn list_subagent_dispatches(
+        &self,
+        parent_thread_id: Uuid,
+    ) -> Result<Vec<SubagentDispatchRecord>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, parent_thread_id, parent_turn_id, dispatch_tool_call_id,
+                   child_thread_id, child_agent_profile_id, status, requested_at,
+                   finished_at, result_summary
+            FROM subagent_dispatches
+            WHERE parent_thread_id = ?
+            ORDER BY requested_at ASC
+            "#,
+        )
+        .bind(parent_thread_id.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .context("list subagent dispatches")?;
+
+        rows.into_iter().map(decode_subagent_dispatch_row).collect()
+    }
+
+    pub async fn mark_incomplete_dispatches_interrupted(&self) -> Result<u64> {
+        let now = Utc::now().to_rfc3339();
+        let result = sqlx::query(
+            r#"
+            UPDATE subagent_dispatches
+            SET status = 'Interrupted',
+                finished_at = COALESCE(finished_at, ?),
+                result_summary = COALESCE(result_summary, 'Interrupted')
+            WHERE status = 'Running'
+            "#,
+        )
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .context("mark incomplete dispatches interrupted")?;
+
+        Ok(result.rows_affected())
+    }
 }
 
 fn decode_thread_row(row: sqlx::sqlite::SqliteRow) -> Result<ThreadRecord> {
     Ok(ThreadRecord {
         id: parse_uuid(&row.try_get::<String, _>("id")?)?,
         session_id: row.try_get("session_id")?,
+        agent_profile_id: row.try_get("agent_profile_id")?,
+        is_subagent: row.try_get("is_subagent")?,
         title: row.try_get("title")?,
         lifecycle: parse_thread_lifecycle(&row.try_get::<String, _>("lifecycle")?)?,
         created_at: parse_utc(&row.try_get::<String, _>("created_at")?)?,
@@ -298,6 +469,56 @@ fn decode_thread_row(row: sqlx::sqlite::SqliteRow) -> Result<ThreadRecord> {
             row.try_get::<i64, _>("last_turn_number")?,
             "last_turn_number",
         )?,
+    })
+}
+
+fn decode_session_row(row: sqlx::sqlite::SqliteRow) -> Result<SessionRecord> {
+    Ok(SessionRecord {
+        id: row.try_get("id")?,
+        user_id: row.try_get("user_id")?,
+        default_model: row.try_get("default_model")?,
+        system_prompt: row.try_get("system_prompt")?,
+        created_at: parse_utc(&row.try_get::<String, _>("created_at")?)?,
+        updated_at: parse_utc(&row.try_get::<String, _>("updated_at")?)?,
+    })
+}
+
+fn decode_thread_agent_snapshot_row(
+    row: sqlx::sqlite::SqliteRow,
+) -> Result<ThreadAgentSnapshotRecord> {
+    Ok(ThreadAgentSnapshotRecord {
+        thread_id: parse_uuid(&row.try_get::<String, _>("thread_id")?)?,
+        profile_id: row.try_get("profile_id")?,
+        display_name_snapshot: row.try_get("display_name_snapshot")?,
+        system_prompt_snapshot: row.try_get("system_prompt_snapshot")?,
+        tool_policy_snapshot_json: serde_json::from_str(
+            &row.try_get::<String, _>("tool_policy_snapshot_json")?,
+        )
+        .context("deserialize tool policy snapshot")?,
+        model_config_snapshot_json: serde_json::from_str(
+            &row.try_get::<String, _>("model_config_snapshot_json")?,
+        )
+        .context("deserialize model config snapshot")?,
+        allow_subagent_dispatch_snapshot: row.try_get("allow_subagent_dispatch_snapshot")?,
+        created_at: parse_utc(&row.try_get::<String, _>("created_at")?)?,
+    })
+}
+
+fn decode_subagent_dispatch_row(row: sqlx::sqlite::SqliteRow) -> Result<SubagentDispatchRecord> {
+    Ok(SubagentDispatchRecord {
+        id: parse_uuid(&row.try_get::<String, _>("id")?)?,
+        parent_thread_id: parse_uuid(&row.try_get::<String, _>("parent_thread_id")?)?,
+        parent_turn_id: parse_uuid(&row.try_get::<String, _>("parent_turn_id")?)?,
+        dispatch_tool_call_id: row.try_get("dispatch_tool_call_id")?,
+        child_thread_id: parse_uuid(&row.try_get::<String, _>("child_thread_id")?)?,
+        child_agent_profile_id: row.try_get("child_agent_profile_id")?,
+        status: parse_subagent_dispatch_status(&row.try_get::<String, _>("status")?)?,
+        requested_at: parse_utc(&row.try_get::<String, _>("requested_at")?)?,
+        finished_at: row
+            .try_get::<Option<String>, _>("finished_at")?
+            .map(|value| parse_utc(&value))
+            .transpose()?,
+        result_summary: row.try_get("result_summary")?,
     })
 }
 
@@ -358,6 +579,27 @@ fn parse_turn_status(value: &str) -> Result<TurnStatus> {
     }
 }
 
+fn subagent_dispatch_status_to_str(status: &SubagentDispatchStatus) -> &'static str {
+    match status {
+        SubagentDispatchStatus::Running => "Running",
+        SubagentDispatchStatus::Completed => "Completed",
+        SubagentDispatchStatus::Failed => "Failed",
+        SubagentDispatchStatus::Cancelled => "Cancelled",
+        SubagentDispatchStatus::Interrupted => "Interrupted",
+    }
+}
+
+fn parse_subagent_dispatch_status(value: &str) -> Result<SubagentDispatchStatus> {
+    match value {
+        "Running" => Ok(SubagentDispatchStatus::Running),
+        "Completed" => Ok(SubagentDispatchStatus::Completed),
+        "Failed" => Ok(SubagentDispatchStatus::Failed),
+        "Cancelled" => Ok(SubagentDispatchStatus::Cancelled),
+        "Interrupted" => Ok(SubagentDispatchStatus::Interrupted),
+        other => anyhow::bail!("unknown subagent dispatch status: {other}"),
+    }
+}
+
 fn parse_uuid(value: &str) -> Result<Uuid> {
     Uuid::parse_str(value).with_context(|| format!("parse uuid: {value}"))
 }
@@ -409,6 +651,8 @@ mod tests {
         let thread = ThreadRecord {
             id: Uuid::new_v4(),
             session_id: session.id.clone(),
+            agent_profile_id: None,
+            is_subagent: false,
             title: Some("Test".into()),
             lifecycle: ThreadLifecycle::Open,
             created_at: Utc::now(),
@@ -445,6 +689,9 @@ mod tests {
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].final_output.as_deref(), Some("hi"));
         assert_eq!(history[0].transcript.len(), 1);
+
+        let loaded_session = store.get_session(&session.id).await.unwrap().unwrap();
+        assert_eq!(loaded_session.system_prompt, None);
     }
 
     #[tokio::test]
@@ -464,6 +711,8 @@ mod tests {
         let thread = ThreadRecord {
             id: Uuid::new_v4(),
             session_id: session.id.clone(),
+            agent_profile_id: None,
+            is_subagent: false,
             title: None,
             lifecycle: ThreadLifecycle::Open,
             created_at: Utc::now(),
