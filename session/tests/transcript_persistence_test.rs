@@ -6,16 +6,13 @@ use std::{
 use argus_core::{FinishReason, ResponseEvent, ResponseStream, Usage};
 use async_trait::async_trait;
 use session::{
-    manager::{SessionEvent, SessionManager, TurnDependencies},
+    manager::SessionManager,
     store::ThreadStore,
-    types::PersistedMessage,
+    types::{PersistedMessage, TurnStatus},
+    TurnDependencies,
 };
 use sqlx::sqlite::SqlitePoolOptions;
-use tokio::{
-    sync::mpsc,
-    task,
-    time::{Duration, timeout},
-};
+use tokio::{sync::mpsc, task};
 use tool::{ToolContext, ToolResult};
 use turn::{
     AuthorizationDecision, LlmStepRequest, ModelRunner, ToolAuthorizer, ToolRunner, TurnError,
@@ -42,17 +39,29 @@ async fn completed_turns_persist_only_incremental_transcript_messages() {
         authorizer: Arc::new(AllowAuthorizer),
     };
 
-    manager
-        .send_message(thread_id, "hello".into(), deps.clone())
-        .await
-        .unwrap();
-    wait_for_turn_finished(&mut events, thread_id).await;
+    let thread = manager.get_thread(thread_id, Some(deps.clone())).await.unwrap();
+    thread.send_message("hello".into()).await.unwrap();
 
-    manager
-        .send_message(thread_id, "again".into(), deps)
-        .await
-        .unwrap();
-    wait_for_turn_finished(&mut events, thread_id).await;
+    // Wait for turn to complete
+    for _ in 0..20 {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let history = manager.load_thread_history(thread_id).await.unwrap();
+        if !history.is_empty() && history[0].status == TurnStatus::Completed {
+            break;
+        }
+    }
+
+    let thread = manager.get_thread(thread_id, Some(deps)).await.unwrap();
+    thread.send_message("again".into()).await.unwrap();
+
+    // Wait for second turn to complete
+    for _ in 0..20 {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let history = manager.load_thread_history(thread_id).await.unwrap();
+        if history.len() == 2 && history[1].status == TurnStatus::Completed {
+            break;
+        }
+    }
 
     let history = manager.load_thread_history(thread_id).await.unwrap();
     assert_eq!(history.len(), 2);
@@ -69,30 +78,6 @@ async fn completed_turns_persist_only_incremental_transcript_messages() {
             },
         ]
     );
-}
-
-async fn wait_for_turn_finished(
-    events: &mut tokio::sync::broadcast::Receiver<SessionEvent>,
-    thread_id: uuid::Uuid,
-) {
-    timeout(Duration::from_secs(2), async {
-        loop {
-            match events.recv().await {
-                Ok(SessionEvent::Turn {
-                    thread_id: event_thread_id,
-                    event:
-                        TurnEvent::TurnFinished {
-                            reason: TurnFinishReason::Completed,
-                        },
-                    ..
-                }) if event_thread_id == thread_id => break,
-                Ok(_) => continue,
-                Err(err) => panic!("event bridge closed early: {err}"),
-            }
-        }
-    })
-    .await
-    .unwrap();
 }
 
 #[derive(Clone)]

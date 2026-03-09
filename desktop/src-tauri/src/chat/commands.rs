@@ -3,10 +3,8 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::{
-    chat::{
-        HydratedChatTurn, StartTurnInput, StartTurnResult, TurnTargetKind,
-    },
-    session_commands::{DesktopSessionState, hydrate_chat_turn},
+    chat::{HydratedChatTurn, StartTurnInput, StartTurnResult, TurnTargetKind},
+    session_commands::{hydrate_chat_turn, DesktopSessionState},
 };
 
 #[tauri::command]
@@ -37,12 +35,20 @@ pub async fn start_turn(
     let turn_id = Uuid::new_v4();
     let deps = state.build_turn_dependencies().map_err(stringify)?;
 
-    state
+    // Get thread and send message
+    let thread = state
         .manager
-        .send_message_with_turn_id(thread_id, turn_id, input.prompt, deps)
+        .get_thread(thread_id, Some(deps))
         .await
         .map_err(stringify)?;
-    state.turn_manager().insert(turn_id.to_string(), thread_id).await;
+    thread
+        .send_message_with_turn_id(turn_id, input.prompt)
+        .await
+        .map_err(stringify)?;
+    state
+        .turn_manager()
+        .insert(turn_id.to_string(), thread_id)
+        .await;
 
     Ok(StartTurnResult {
         turn_id: turn_id.to_string(),
@@ -60,7 +66,13 @@ pub async fn cancel_turn(
         .await
         .ok_or_else(|| format!("turn `{turn_id}` not found"))?;
 
-    state.manager.cancel_turn(thread_id).await.map_err(stringify)
+    // Get thread and cancel turn on it
+    let thread = state
+        .manager
+        .get_thread(thread_id, None)
+        .await
+        .map_err(stringify)?;
+    thread.cancel_turn().await.map_err(stringify)
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -92,9 +104,14 @@ pub async fn resolve_turn_permission(
         .await
         .ok_or_else(|| format!("turn `{turn_id}` not found"))?;
 
-    state
+    // Get thread and resolve permission on it
+    let thread = state
         .manager
-        .resolve_permission(thread_id, request_id, decision.into_turn_decision())
+        .get_thread(thread_id, None)
+        .await
+        .map_err(stringify)?;
+    thread
+        .resolve_permission(request_id, decision.into_turn_decision())
         .await
         .map_err(stringify)
 }

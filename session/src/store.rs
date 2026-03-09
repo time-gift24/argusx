@@ -1,8 +1,13 @@
+use std::sync::Arc;
+
 use anyhow::{Context, Result, bail};
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
+use crate::database::{DynSessionDatabase, SessionDatabase};
+use crate::error::SessionError;
 use crate::types::{SessionRecord, ThreadLifecycle, ThreadRecord, TurnRecord, TurnStatus};
 
 const SESSION_SCHEMA: &str = include_str!("../../sql/session_schema.sql");
@@ -36,6 +41,21 @@ impl ThreadStore {
         }
 
         Ok(())
+    }
+
+    pub async fn get_session(&self, id: &str) -> Result<Option<SessionRecord>> {
+        let result = sqlx::query(
+            r#"
+            SELECT id, user_id, default_model, system_prompt, created_at, updated_at
+            FROM sessions WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("get session")?;
+
+        Ok(result.map(decode_session_row))
     }
 
     pub async fn upsert_session(&self, session: &SessionRecord) -> Result<()> {
@@ -286,6 +306,17 @@ impl ThreadStore {
     }
 }
 
+fn decode_session_row(row: sqlx::sqlite::SqliteRow) -> SessionRecord {
+    SessionRecord {
+        id: row.try_get("id").unwrap(),
+        user_id: row.try_get("user_id").unwrap(),
+        default_model: row.try_get("default_model").unwrap(),
+        system_prompt: row.try_get("system_prompt").unwrap(),
+        created_at: parse_utc(&row.try_get::<String, _>("created_at").unwrap()).unwrap(),
+        updated_at: parse_utc(&row.try_get::<String, _>("updated_at").unwrap()).unwrap(),
+    }
+}
+
 fn decode_thread_row(row: sqlx::sqlite::SqliteRow) -> Result<ThreadRecord> {
     Ok(ThreadRecord {
         id: parse_uuid(&row.try_get::<String, _>("id")?)?,
@@ -370,6 +401,66 @@ fn parse_utc(value: &str) -> Result<DateTime<Utc>> {
 
 fn parse_u32(value: i64, field_name: &str) -> Result<u32> {
     u32::try_from(value).with_context(|| format!("convert {field_name}={value} to u32"))
+}
+
+#[async_trait]
+impl SessionDatabase for ThreadStore {
+    async fn get_session(&self, id: &str) -> Result<Option<SessionRecord>, SessionError> {
+        Ok(ThreadStore::get_session(self, id).await?)
+    }
+
+    async fn upsert_session(&self, session: &SessionRecord) -> Result<(), SessionError> {
+        Ok(ThreadStore::upsert_session(self, session).await?)
+    }
+
+    async fn get_thread(&self, thread_id: Uuid) -> Result<Option<ThreadRecord>, SessionError> {
+        Ok(ThreadStore::get_thread(self, thread_id).await?)
+    }
+
+    async fn list_threads(&self, session_id: &str) -> Result<Vec<ThreadRecord>, SessionError> {
+        Ok(ThreadStore::list_threads(self, session_id).await?)
+    }
+
+    async fn insert_thread(&self, thread: &ThreadRecord) -> Result<(), SessionError> {
+        Ok(ThreadStore::insert_thread(self, thread).await?)
+    }
+
+    async fn update_thread(&self, thread: &ThreadRecord) -> Result<(), SessionError> {
+        Ok(ThreadStore::update_thread(self, thread).await?)
+    }
+
+    async fn list_turns(&self, thread_id: Uuid) -> Result<Vec<TurnRecord>, SessionError> {
+        Ok(ThreadStore::list_turns(self, thread_id).await?)
+    }
+
+    async fn update_turn(&self, turn: &TurnRecord) -> Result<(), SessionError> {
+        Ok(ThreadStore::update_turn(self, turn).await?)
+    }
+
+    async fn insert_turn_and_advance_thread(
+        &self,
+        turn: &TurnRecord,
+        previous_last_turn_number: u32,
+        updated_at: DateTime<Utc>,
+    ) -> Result<(), SessionError> {
+        Ok(ThreadStore::insert_turn_and_advance_thread(
+            self,
+            turn,
+            previous_last_turn_number,
+            updated_at,
+        )
+        .await?)
+    }
+
+    async fn mark_incomplete_turns_interrupted(&self) -> Result<u64, SessionError> {
+        Ok(ThreadStore::mark_incomplete_turns_interrupted(self).await?)
+    }
+}
+
+impl ThreadStore {
+    pub fn as_database(self: Arc<Self>) -> DynSessionDatabase {
+        self
+    }
 }
 
 #[cfg(test)]

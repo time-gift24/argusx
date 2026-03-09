@@ -5,8 +5,8 @@ pub mod service;
 pub mod store;
 
 pub use commands::{
-    delete_provider_profile, list_provider_profiles, save_provider_profile, set_default_provider_profile,
-    test_provider_profile,
+    delete_provider_profile, list_provider_profiles, save_provider_profile,
+    set_default_provider_profile, test_provider_profile,
 };
 pub use crypto::{AesGcmSecretBox, DataKeyStore, EncryptedSecret, KeyringDataKeyStore};
 pub use model::{

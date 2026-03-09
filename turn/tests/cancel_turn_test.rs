@@ -12,8 +12,8 @@ use tokio::{
 };
 use tool::{ToolContext, ToolResult};
 use turn::{
-    LlmStepRequest, ModelRunner, ToolOutcome, ToolRunner, TurnDriver, TurnError,
-    TurnEvent, TurnFinishReason, TurnSeed,
+    LlmStepRequest, ModelRunner, ToolOutcome, ToolRunner, TurnDriver, TurnError, TurnEvent,
+    TurnFinishReason, TurnSeed,
 };
 
 fn builtin_call(sequence: u32, call_id: &str) -> ToolCall {
@@ -80,10 +80,16 @@ async fn cancelling_before_next_model_invocation_stops_at_step_boundary() {
 
     task.await.unwrap().unwrap();
 
-    assert!(saw_step_finished, "should have seen StepFinished before cancel");
+    assert!(
+        saw_step_finished,
+        "should have seen StepFinished before cancel"
+    );
     // The turn may have already finished by the time we collected events
     // Check if we received either Cancelled or at least saw the step boundary
-    assert!(saw_step_finished, "boundary test: should stop at step boundary");
+    assert!(
+        saw_step_finished,
+        "boundary test: should stop at step boundary"
+    );
 }
 
 #[tokio::test]
@@ -240,4 +246,3 @@ impl ToolRunner for CompletesAfterCancelToolRunner {
         Ok(ToolResult::ok(json!({"source":"completed-after-cancel"})))
     }
 }
-

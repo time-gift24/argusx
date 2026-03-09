@@ -1,4 +1,7 @@
-use desktop_lib::chat::{TurnTargetKind, observer::{map_turn_event, plan_updated_event}};
+use desktop_lib::chat::{
+    observer::{map_turn_event, plan_updated_event},
+    TurnTargetKind,
+};
 use turn::ToolOutcome;
 
 #[test]

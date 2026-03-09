@@ -3,8 +3,8 @@ use std::sync::Arc;
 use argus_core::Builtin;
 use async_trait::async_trait;
 use tool::{
-    GlobTool, GrepTool, ReadTool, ToolContext, ToolError, ToolResult, UpdatePlanTool,
     scheduler::{BuiltinRegistration, EffectiveToolPolicy, ToolScheduler},
+    GlobTool, GrepTool, ReadTool, ToolContext, ToolError, ToolResult, UpdatePlanTool,
 };
 use turn::{ToolRunner, TurnError};
 
@@ -50,7 +50,10 @@ impl ToolRunner for ScheduledToolRunner {
         call: argus_core::ToolCall,
         ctx: ToolContext,
     ) -> Result<ToolResult, TurnError> {
-        self.scheduler.execute(call, ctx).await.map_err(map_tool_error)
+        self.scheduler
+            .execute(call, ctx)
+            .await
+            .map_err(map_tool_error)
     }
 }
 
@@ -99,7 +102,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result.output["plan"]["tasks"][0]["title"], "Write failing test");
+        assert_eq!(
+            result.output["plan"]["tasks"][0]["title"],
+            "Write failing test"
+        );
         assert_eq!(result.output["plan"]["tasks"][0]["status"], "in_progress");
     }
 }

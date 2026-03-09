@@ -21,6 +21,9 @@ pub enum SessionError {
     #[error("Turn error: {0}")]
     Turn(#[from] turn::TurnError),
 
+    #[error("Turn error: {0}")]
+    TurnMessage(String),
+
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 }

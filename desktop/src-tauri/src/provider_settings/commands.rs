@@ -20,7 +20,10 @@ pub fn save_provider_profile(
     state: State<'_, DesktopSessionState>,
     input: SaveProviderProfileInput,
 ) -> Result<ProviderProfileSummary, String> {
-    state.provider_settings().save_profile(input).map_err(stringify)
+    state
+        .provider_settings()
+        .save_profile(input)
+        .map_err(stringify)
 }
 
 #[tauri::command]

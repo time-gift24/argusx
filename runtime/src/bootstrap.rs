@@ -5,7 +5,7 @@ use std::sync::Arc;
 pub struct ArgusxRuntime {
     pub config: Arc<crate::AppConfig>,
     pub sqlite_pool: sqlx::SqlitePool,
-    pub session_manager: session::manager::SessionManager,
+    pub session_manager: Arc<session::manager::SessionManager>,
     pub telemetry: Option<telemetry::TelemetryRuntime>,
     _log_guard: tracing_appender::non_blocking::WorkerGuard,
 }
@@ -65,7 +65,7 @@ pub async fn build_runtime_from_config(config: crate::AppConfig) -> anyhow::Resu
     Ok(ArgusxRuntime {
         config: Arc::new(config),
         sqlite_pool: pool,
-        session_manager: manager,
+        session_manager: Arc::new(manager),
         telemetry: logging.telemetry,
         _log_guard: logging.log_guard,
     })

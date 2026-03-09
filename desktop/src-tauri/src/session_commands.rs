@@ -10,9 +10,9 @@ use uuid::Uuid;
 
 use crate::{
     chat::{
-        AllowListedToolAuthorizer, HydratedChatTurn, HydratedChatTurnStatus, HydratedToolCall,
-        HydratedToolCallStatus, ProviderModelRunner, ScheduledToolRunner,
-        plan::snapshot_from_output,
+        plan::snapshot_from_output, AllowListedToolAuthorizer, HydratedChatTurn,
+        HydratedChatTurnStatus, HydratedToolCall, HydratedToolCallStatus, ProviderModelRunner,
+        ScheduledToolRunner,
     },
     provider_settings::ProviderSettingsService,
 };
@@ -28,11 +28,11 @@ pub struct DesktopSessionState {
 }
 
 impl DesktopSessionState {
-    pub fn new(manager: SessionManager) -> Result<Self, TurnError> {
+    pub fn new(manager: Arc<SessionManager>) -> Result<Self, TurnError> {
         let provider_settings = ProviderSettingsService::from_default_location()
             .map_err(|err| TurnError::Runtime(err.to_string()))?;
         Ok(Self {
-            manager: Arc::new(manager),
+            manager,
             provider_settings: Arc::new(provider_settings),
             tool_runner: Arc::new(ScheduledToolRunner::from_current_dir()?),
             tool_authorizer: Arc::new(AllowListedToolAuthorizer),
@@ -48,12 +48,10 @@ impl DesktopSessionState {
         Arc::clone(&self.turn_manager)
     }
 
-    pub fn build_turn_dependencies(
-        &self,
-    ) -> Result<TurnDependencies, TurnError> {
-        let model: Arc<dyn turn::ModelRunner> = Arc::new(ProviderModelRunner::from_provider_settings(
-            Some(self.provider_settings.as_ref()),
-        )?);
+    pub fn build_turn_dependencies(&self) -> Result<TurnDependencies, TurnError> {
+        let model: Arc<dyn turn::ModelRunner> = Arc::new(
+            ProviderModelRunner::from_provider_settings(Some(self.provider_settings.as_ref()))?,
+        );
         let tool_runner: Arc<dyn turn::ToolRunner> = self.tool_runner.clone();
         let authorizer: Arc<dyn turn::ToolAuthorizer> = self.tool_authorizer.clone();
 
@@ -170,9 +168,13 @@ pub async fn send_message(
         .build_turn_dependencies()
         .map_err(|err| err.to_string())?;
     let thread_id = parse_uuid(&thread_id)?;
-    state
+    let thread = state
         .manager
-        .send_message(thread_id, content, deps)
+        .get_thread(thread_id, Some(deps))
+        .await
+        .map_err(|err| err.to_string())?;
+    thread
+        .send_message(content)
         .await
         .map(|_| ())
         .map_err(|err| err.to_string())
@@ -192,9 +194,13 @@ pub async fn resolve_thread_permission(
         other => return Err(format!("unsupported permission decision: {other}")),
     };
 
-    state
+    let thread = state
         .manager
-        .resolve_permission(thread_id, request_id, decision)
+        .get_thread(thread_id, None)
+        .await
+        .map_err(|err| err.to_string())?;
+    thread
+        .resolve_permission(request_id, decision)
         .await
         .map_err(|err| err.to_string())
 }
@@ -205,9 +211,13 @@ pub async fn cancel_thread_turn(
     thread_id: String,
 ) -> Result<(), String> {
     let thread_id = parse_uuid(&thread_id)?;
-    state
+    let thread = state
         .manager
-        .cancel_turn(thread_id)
+        .get_thread(thread_id, None)
+        .await
+        .map_err(|err| err.to_string())?;
+    thread
+        .cancel_turn()
         .await
         .map_err(|err| err.to_string())
 }
@@ -235,7 +245,9 @@ pub(crate) fn hydrate_chat_turn(turn: &session::TurnRecord) -> HydratedChatTurn 
 
     for message in &turn.transcript {
         match message {
-            session::PersistedMessage::AssistantText { content } => assistant_text.push_str(content),
+            session::PersistedMessage::AssistantText { content } => {
+                assistant_text.push_str(content)
+            }
             session::PersistedMessage::AssistantToolCalls { content, calls } => {
                 if let Some(content) = content {
                     assistant_text.push_str(content);
@@ -291,7 +303,8 @@ pub(crate) fn hydrate_chat_turn(turn: &session::TurnRecord) -> HydratedChatTurn 
                     }
                 }
             }
-            session::PersistedMessage::User { .. } | session::PersistedMessage::SystemNote { .. } => {}
+            session::PersistedMessage::User { .. }
+            | session::PersistedMessage::SystemNote { .. } => {}
         }
     }
 
@@ -438,7 +451,10 @@ fn tool_name(call: &ToolCall) -> &str {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use session::{PersistedMessage, PersistedToolCall, PersistedToolKind, ThreadLifecycle, ThreadRecord, TurnRecord, TurnStatus};
+    use session::{
+        PersistedMessage, PersistedToolCall, PersistedToolKind, ThreadLifecycle, ThreadRecord,
+        TurnRecord, TurnStatus,
+    };
 
     use super::*;
     use tokio::sync::broadcast;
@@ -547,7 +563,9 @@ mod tests {
                         sequence: 0,
                         call_id: "call-update-plan".into(),
                         tool_name: "update_plan".into(),
-                        arguments: r#"{"plan":[{"step":"Write failing test","status":"completed"}]}"#.into(),
+                        arguments:
+                            r#"{"plan":[{"step":"Write failing test","status":"completed"}]}"#
+                                .into(),
                         kind: PersistedToolKind::Builtin,
                         server_label: None,
                     }],
@@ -589,9 +607,15 @@ mod tests {
         assert_eq!(hydrated.status, HydratedChatTurnStatus::Completed);
         assert_eq!(hydrated.tool_calls.len(), 1);
         assert_eq!(hydrated.tool_calls[0].call_id, "call-update-plan");
-        assert_eq!(hydrated.tool_calls[0].status, HydratedToolCallStatus::Success);
         assert_eq!(
-            hydrated.latest_plan.as_ref().map(|plan| plan.title.as_str()),
+            hydrated.tool_calls[0].status,
+            HydratedToolCallStatus::Success
+        );
+        assert_eq!(
+            hydrated
+                .latest_plan
+                .as_ref()
+                .map(|plan| plan.title.as_str()),
             Some("Execution Plan")
         );
     }

@@ -45,13 +45,7 @@ impl TurnDriver {
         tool_runner: Arc<dyn ToolRunner>,
         authorizer: Arc<dyn ToolAuthorizer>,
     ) -> (TurnHandle, JoinHandle<Result<TurnOutcome, TurnError>>) {
-        Self::spawn_with_options(
-            seed,
-            TurnOptions::default(),
-            model,
-            tool_runner,
-            authorizer,
-        )
+        Self::spawn_with_options(seed, TurnOptions::default(), model, tool_runner, authorizer)
     }
 
     pub fn spawn_with_options(
