@@ -11,8 +11,9 @@ import {
 import { Streamdown } from "streamdown";
 
 import {
-  PlanQueue,
+  FloatingPlanCard,
   PromptComposer,
+  ReadTaskGroup,
   Reasoning,
   ToolPermissionConfirmation,
   ToolCallItem,
@@ -159,7 +160,7 @@ export default function ChatPage() {
       cancelled = true;
       dispose?.();
     };
-  }, [handleTurnEvent, subscribe]);
+  }, [subscribe]);
 
   const syncComposerOffset = useEffectEvent(() => {
     const nextHeight = composerShellRef.current?.offsetHeight ?? 0;
@@ -211,6 +212,7 @@ export default function ChatPage() {
   const visiblePermissionKey = visiblePermission
     ? `${visiblePermission.turnId}:${visiblePermission.requestId}:${visiblePermission.state}`
     : null;
+  const activeFloatingPlan = selectActiveFloatingPlan(turns);
   const latestResolvedPermission = findLatestResolvedPermission(turns);
   const latestResolvedPermissionKey = latestResolvedPermission
     ? `${latestResolvedPermission.turnId}:${latestResolvedPermission.requestId}`
@@ -337,7 +339,11 @@ export default function ChatPage() {
                       {turn.status === "running" && turn.turnId ? (
                         <button
                           className="shrink-0 rounded-full border border-border/60 px-3 py-1 text-xs text-foreground transition-colors hover:bg-muted/60"
-                          onClick={() => void cancelTurn(turn.turnId)}
+                          onClick={() => {
+                            if (turn.turnId) {
+                              void cancelTurn(turn.turnId);
+                            }
+                          }}
                           type="button"
                         >
                           Cancel
@@ -358,8 +364,6 @@ export default function ChatPage() {
                       className="space-y-4 text-sm"
                       data-slot="chat-turn-assistant"
                     >
-                      {turn.latestPlan ? <PlanQueue plan={turn.latestPlan} /> : null}
-
                       {turn.assistantText ? (
                         <Streamdown isAnimating={turn.status === "running"}>
                           {turn.assistantText}
@@ -379,8 +383,16 @@ export default function ChatPage() {
                         </Reasoning>
                       ) : null}
 
+                      {getRecentReadTasks(turn).length > 0 ? (
+                        <ReadTaskGroup items={getRecentReadTasks(turn)} />
+                      ) : null}
+
                       {turn.toolCalls
-                        .filter((toolCall) => toolCall.name !== "update_plan")
+                        .filter(
+                          (toolCall) =>
+                            toolCall.name !== "update_plan" &&
+                            !isReadToolName(toolCall.name)
+                        )
                         .map((toolCall) => (
                         <ToolCallItem
                           errorSummary={toolCall.errorSummary}
@@ -453,6 +465,9 @@ export default function ChatPage() {
               state={visiblePermission.state}
               toolName={visiblePermission.toolName}
             />
+          ) : null}
+          {activeFloatingPlan ? (
+            <FloatingPlanCard plan={activeFloatingPlan} />
           ) : null}
           <div className="pointer-events-auto">
             <PromptComposer
@@ -595,7 +610,7 @@ export function reduceTurnEventForTurn(
         ...current,
         turnId,
         assistantText: `${current.assistantText}${text}`,
-        status: "running",
+        status: keepTerminalTurnStatus(current.status),
       };
     }
     case "llm-reasoning-delta": {
@@ -608,7 +623,7 @@ export function reduceTurnEventForTurn(
         ...current,
         turnId,
         reasoningText: `${current.reasoningText}${text}`,
-        status: "running",
+        status: keepTerminalTurnStatus(current.status),
       };
     }
     case "plan-updated": {
@@ -828,6 +843,59 @@ function selectVisiblePermission(turns: ChatTurnView[]) {
   return null;
 }
 
+function selectActiveFloatingPlan(turns: ChatTurnView[]) {
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (turn.status === "running" && turn.latestPlan) {
+      return turn.latestPlan;
+    }
+  }
+
+  return null;
+}
+
+function getRecentReadTasks(turn: ChatTurnView) {
+  return turn.toolCalls
+    .filter((toolCall) => isReadToolName(toolCall.name))
+    .slice(-3)
+    .map((toolCall) => ({
+      callId: toolCall.callId,
+      errorSummary: toolCall.errorSummary,
+      inputSummary: summarizeReadToolInput(toolCall),
+      name: toolCall.name,
+      outputSummary: toolCall.outputSummary,
+      status: toolCall.status,
+    }));
+}
+
+function summarizeReadToolInput(toolCall: ToolCallView) {
+  try {
+    const parsed = JSON.parse(toolCall.argumentsJson) as Record<string, unknown>;
+    const path = getString(parsed.path);
+    const pattern = getString(parsed.pattern);
+
+    if (path && pattern) {
+      return `${path} · ${pattern}`;
+    }
+
+    if (path) {
+      return path;
+    }
+
+    if (pattern) {
+      return pattern;
+    }
+  } catch {
+    return formatArgumentsSummary(toolCall.argumentsJson);
+  }
+
+  return formatArgumentsSummary(toolCall.argumentsJson);
+}
+
+function isReadToolName(name: string) {
+  return name === "read" || name === "glob" || name === "grep";
+}
+
 function findLatestResolvedPermission(turns: ChatTurnView[]) {
   for (let index = turns.length - 1; index >= 0; index -= 1) {
     const turn = turns[index];
@@ -915,6 +983,10 @@ function mapTurnStatus(reason: string | null): TurnStatus {
     default:
       return "failed";
   }
+}
+
+function keepTerminalTurnStatus(status: TurnStatus): TurnStatus {
+  return status === "running" ? "running" : status;
 }
 
 function getString(value: unknown): string | null {
