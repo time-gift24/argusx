@@ -86,6 +86,8 @@ impl SessionManager {
         let thread = ThreadRecord {
             id: Uuid::new_v4(),
             session_id: self.session_id.clone(),
+            agent_profile_id: None,
+            is_subagent: false,
             title,
             lifecycle: ThreadLifecycle::Open,
             created_at: now,

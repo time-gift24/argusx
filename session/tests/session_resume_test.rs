@@ -34,6 +34,8 @@ async fn manager_marks_incomplete_turns_interrupted_on_startup() {
         .insert_thread(&ThreadRecord {
             id: thread_id,
             session_id: session.id.clone(),
+            agent_profile_id: None,
+            is_subagent: false,
             title: Some("A".into()),
             lifecycle: ThreadLifecycle::Open,
             created_at: Utc::now(),

@@ -495,6 +495,8 @@ mod tests {
         let threads = vec![ThreadRecord {
             id: other_thread_id,
             session_id: "default-session".into(),
+            agent_profile_id: None,
+            is_subagent: false,
             title: Some("Other".into()),
             lifecycle: ThreadLifecycle::Open,
             created_at: now,
@@ -516,6 +518,8 @@ mod tests {
             ThreadRecord {
                 id: latest_open_id,
                 session_id: "default-session".into(),
+                agent_profile_id: None,
+                is_subagent: false,
                 title: Some("Latest".into()),
                 lifecycle: ThreadLifecycle::Open,
                 created_at: now,
@@ -525,6 +529,8 @@ mod tests {
             ThreadRecord {
                 id: Uuid::new_v4(),
                 session_id: "default-session".into(),
+                agent_profile_id: None,
+                is_subagent: false,
                 title: Some("Archived".into()),
                 lifecycle: ThreadLifecycle::Archived,
                 created_at: now,
