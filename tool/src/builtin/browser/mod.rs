@@ -1,5 +1,6 @@
 pub mod chrome;
 pub mod config;
+pub mod debug_port;
 
 use async_trait::async_trait;
 use chromiumoxide::cdp::browser_protocol::network::CookieSameSite;
@@ -17,6 +18,7 @@ use crate::trait_def::Tool;
 
 use self::chrome::ChromeManager;
 use self::config::BrowserConfig;
+use self::debug_port::{DEFAULT_DEBUG_PORT, DEFAULT_TIMEOUT_MS};
 
 /// Cookie representation for browser operations
 #[derive(Debug, Serialize, Deserialize)]
@@ -468,6 +470,45 @@ impl BrowserTool {
             "config": config_info,
         })))
     }
+
+    async fn action_ensure_debug_port(
+        &self,
+        port: Option<u16>,
+        timeout_ms: Option<u64>,
+    ) -> Result<ToolResult, ToolError> {
+        let port = port.unwrap_or(DEFAULT_DEBUG_PORT);
+        let timeout_ms = timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
+
+        let config = {
+            let mut chrome_manager = self.chrome_manager.lock().await;
+            let config = chrome_manager
+                .current_config()
+                .map_err(ToolError::ExecutionFailed)?;
+            chrome_manager.reset();
+            config
+        };
+
+        let result = debug_port::ensure_debug_port(
+            &config,
+            port,
+            Duration::from_millis(timeout_ms),
+        )
+        .await
+        .map_err(ToolError::ExecutionFailed)?;
+
+        Ok(ToolResult::ok(json!({
+            "success": true,
+            "action": "ensure_debug_port",
+            "port": result.port,
+            "already_enabled": result.already_enabled,
+            "restarted": result.restarted,
+            "captured_window_count": result.captured_window_count,
+            "captured_tab_count": result.captured_tab_count,
+            "restored_tab_count": result.restored_tab_count,
+            "skipped_tab_count": result.skipped_tab_count,
+            "warnings": result.warnings,
+        })))
+    }
 }
 
 async fn wait_for_condition<F, Fut, T, E>(
@@ -546,6 +587,10 @@ enum BrowserAction {
     GoBack,
     GoForward,
     Reload,
+    EnsureDebugPort {
+        port: Option<u16>,
+        timeout_ms: Option<u64>,
+    },
     SetHeadless { enabled: bool },
     GetConfig,
 }
@@ -584,6 +629,7 @@ impl Tool for BrowserTool {
                             "go_back",
                             "go_forward",
                             "reload",
+                            "ensure_debug_port",
                             "set_headless",
                             "get_config"
                         ],
@@ -641,6 +687,14 @@ impl Tool for BrowserTool {
                     "enabled": {
                         "type": "boolean",
                         "description": "Enable or disable headless mode"
+                    },
+                    "port": {
+                        "type": "number",
+                        "description": "DevTools remote debugging port"
+                    },
+                    "timeout_ms": {
+                        "type": "number",
+                        "description": "Timeout in milliseconds"
                     }
                 }
             }),
@@ -675,6 +729,9 @@ impl Tool for BrowserTool {
             BrowserAction::GoBack => self.action_go_back().await,
             BrowserAction::GoForward => self.action_go_forward().await,
             BrowserAction::Reload => self.action_reload().await,
+            BrowserAction::EnsureDebugPort { port, timeout_ms } => {
+                self.action_ensure_debug_port(port, timeout_ms).await
+            }
             BrowserAction::SetHeadless { enabled } => self.action_set_headless(enabled).await,
             BrowserAction::GetConfig => self.action_get_config().await,
         }
@@ -766,6 +823,50 @@ mod tests {
 
         assert_eq!(err, "still missing");
         assert!(attempts.load(Ordering::SeqCst) > 1);
+    }
+
+    #[test]
+    fn browser_action_accepts_ensure_debug_port() {
+        let action: BrowserAction = serde_json::from_value(json!({
+            "action": "ensure_debug_port",
+            "port": 9222
+        }))
+        .unwrap();
+
+        match action {
+            BrowserAction::EnsureDebugPort { port, timeout_ms } => {
+                assert_eq!(port, Some(9222));
+                assert_eq!(timeout_ms, None);
+            }
+            other => panic!("unexpected action: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn ensure_debug_port_returns_structured_result() {
+        let db_path = temp_db_path("browser-debug-port");
+        let tool = BrowserTool::new(
+            BrowserConfig::default(),
+            config::BrowserConfigManager::new(db_path).unwrap(),
+        );
+
+        let result = Tool::execute(
+            &tool,
+            test_context(),
+            json!({
+                "action": "ensure_debug_port",
+                "port": 9222,
+                "timeout_ms": 1500
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.output["action"], json!("ensure_debug_port"));
+        assert_eq!(result.output["port"], json!(9222));
+        assert!(result.output["already_enabled"].is_boolean());
+        assert!(result.output["restarted"].is_boolean());
+        assert!(result.output["warnings"].is_array());
     }
 
     fn test_context() -> ToolContext {

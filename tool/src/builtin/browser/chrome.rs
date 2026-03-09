@@ -68,6 +68,10 @@ impl ChromeManager {
             .map_err(|err| format!("Failed to update browser config: {err}"))
     }
 
+    pub fn reset(&mut self) {
+        self.replace_state(ChromeState::NotInitialized);
+    }
+
     pub async fn connect_or_launch(&mut self) -> Result<Arc<Mutex<Browser>>, String> {
         if let ChromeState::Ready(session) = &self.state {
             return Ok(session.browser.clone());
