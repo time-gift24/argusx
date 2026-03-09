@@ -134,6 +134,7 @@ impl TurnDriver {
                 turn_id: self.seed.turn_id.clone(),
                 step_index,
                 messages: self.transcript.snapshot(),
+                system_prompt: self.seed.system_prompt.clone(),
                 allow_tools,
             };
 

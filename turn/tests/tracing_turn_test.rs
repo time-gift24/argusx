@@ -48,6 +48,7 @@ async fn turn_tracing_emits_step_and_finish_markers() {
         turn_id: "turn-1".into(),
         prior_messages: vec![],
         user_message: "hello".into(),
+        system_prompt: None,
     };
 
     let (handle, task) = TurnDriver::spawn(
@@ -83,6 +84,7 @@ async fn turn_tracing_reports_failed_turn_completion() {
         turn_id: "turn-1".into(),
         prior_messages: vec![],
         user_message: "hello".into(),
+        system_prompt: None,
     };
 
     let (handle, task) = TurnDriver::spawn(

@@ -32,6 +32,7 @@ async fn cancelling_before_next_model_invocation_stops_at_step_boundary() {
         turn_id: "turn-1".into(),
         prior_messages: vec![],
         user_message: "cancel me".into(),
+        system_prompt: None,
     };
 
     let first_step = vec![
@@ -83,6 +84,7 @@ async fn cancelling_during_model_start_finishes_without_waiting_for_stream_creat
         turn_id: "turn-1".into(),
         prior_messages: vec![],
         user_message: "cancel before stream".into(),
+        system_prompt: None,
     };
     let model = Arc::new(BlockingStartModelRunner::default());
 
@@ -124,6 +126,7 @@ async fn cancelling_during_tool_execution_keeps_results_that_finish_after_cancel
         turn_id: "turn-1".into(),
         prior_messages: vec![],
         user_message: "cancel me".into(),
+        system_prompt: None,
     };
 
     let first_step = vec![

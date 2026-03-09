@@ -97,7 +97,7 @@ impl ProviderModelRunner {
     fn build_request(&self, request: &LlmStepRequest) -> Request {
         ChatCompletionsOptions {
             model: self.model.clone(),
-            messages: map_messages(&request.messages),
+            messages: map_messages(&request.messages, request.system_prompt.as_deref()),
             stream: Some(true),
             tools: request.allow_tools.then(|| self.tools.clone()),
             tool_choice: request
@@ -118,11 +118,24 @@ impl ModelRunner for ProviderModelRunner {
     }
 }
 
-fn map_messages(messages: &[std::sync::Arc<TurnMessage>]) -> Vec<ChatMessage> {
-    messages
-        .iter()
-        .map(|message| map_message(message.as_ref()))
-        .collect()
+fn map_messages(
+    messages: &[std::sync::Arc<TurnMessage>],
+    system_prompt: Option<&str>,
+) -> Vec<ChatMessage> {
+    let mut mapped = Vec::with_capacity(messages.len() + usize::from(system_prompt.is_some()));
+    if let Some(prompt) = system_prompt {
+        mapped.push(ChatMessage {
+            role: Role::System,
+            content: Some(prompt.to_string()),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+            extra: Map::default(),
+        });
+    }
+
+    mapped.extend(messages.iter().map(|message| map_message(message.as_ref())));
+    mapped
 }
 
 fn map_message(message: &TurnMessage) -> ChatMessage {
@@ -301,6 +314,7 @@ mod tests {
                     is_error: false,
                 }),
             ]),
+            system_prompt: None,
             allow_tools: false,
         };
 
@@ -329,6 +343,7 @@ mod tests {
             messages: Arc::from([Arc::new(TurnMessage::User {
                 content: "find toml".into(),
             })]),
+            system_prompt: None,
             allow_tools: true,
         };
 
@@ -358,6 +373,7 @@ mod tests {
             messages: Arc::from([Arc::new(TurnMessage::User {
                 content: "keep a plan".into(),
             })]),
+            system_prompt: None,
             allow_tools: true,
         };
 
@@ -365,5 +381,29 @@ mod tests {
         let tools = built.tools.expect("tools should be present");
 
         assert!(tools.iter().any(|tool| tool.function.name == "update_plan"));
+    }
+
+    #[test]
+    fn build_request_prepends_system_prompt() {
+        let runner = ProviderModelRunner::from_replay("gpt-test", PathBuf::from("fixture.sse"))
+            .unwrap();
+        let request = LlmStepRequest {
+            session_id: "session-1".into(),
+            turn_id: "turn-1".into(),
+            step_index: 0,
+            messages: Arc::from([Arc::new(TurnMessage::User {
+                content: "hello".into(),
+            })]),
+            system_prompt: Some("You are a planner.".into()),
+            allow_tools: false,
+        };
+
+        let built = runner.build_request(&request);
+
+        assert_eq!(built.messages.len(), 2);
+        assert!(matches!(built.messages[0].role, Role::System));
+        assert_eq!(built.messages[0].content.as_deref(), Some("You are a planner."));
+        assert!(matches!(built.messages[1].role, Role::User));
+        assert_eq!(request.messages.len(), 1);
     }
 }

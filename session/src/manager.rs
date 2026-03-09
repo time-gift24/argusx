@@ -226,6 +226,7 @@ impl SessionManager {
             turn_id: turn_id.to_string(),
             prior_messages,
             user_message: content,
+            system_prompt: None,
         };
         let (handle, task) = TurnDriver::spawn(
             seed,

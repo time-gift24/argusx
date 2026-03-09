@@ -18,6 +18,7 @@ async fn provider_model_runner_streams_replay_fixture() {
         messages: Arc::from([Arc::new(TurnMessage::User {
             content: "hello".into(),
         })]),
+        system_prompt: Some("You are a planner.".into()),
         allow_tools: false,
     };
 

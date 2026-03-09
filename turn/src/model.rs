@@ -9,6 +9,7 @@ pub struct LlmStepRequest {
     pub turn_id: String,
     pub step_index: u32,
     pub messages: TurnMessageSnapshot,
+    pub system_prompt: Option<String>,
     pub allow_tools: bool,
 }
 
