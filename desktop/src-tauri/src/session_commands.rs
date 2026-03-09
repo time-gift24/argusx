@@ -19,9 +19,13 @@ use crate::{
 };
 
 pub type SharedSessionManager = Arc<SessionManager>;
+pub type SharedAgentProfileStore = Arc<agent::AgentProfileStore>;
+pub type SharedAgentExecutionResolver = Arc<agent::AgentExecutionResolver>;
 
 pub struct DesktopSessionState {
     pub manager: SharedSessionManager,
+    agent_profiles: SharedAgentProfileStore,
+    agent_execution_resolver: SharedAgentExecutionResolver,
     provider_settings: Arc<ProviderSettingsService>,
     tool_runner: Arc<ScheduledToolRunner>,
     tool_authorizer: Arc<AllowListedToolAuthorizer>,
@@ -29,11 +33,17 @@ pub struct DesktopSessionState {
 }
 
 impl DesktopSessionState {
-    pub fn new(manager: SessionManager) -> Result<Self, TurnError> {
+    pub fn new(
+        manager: SessionManager,
+        agent_profiles: SharedAgentProfileStore,
+        agent_execution_resolver: SharedAgentExecutionResolver,
+    ) -> Result<Self, TurnError> {
         let provider_settings = ProviderSettingsService::from_default_location()
             .map_err(|err| TurnError::Runtime(err.to_string()))?;
         Ok(Self {
             manager: Arc::new(manager),
+            agent_profiles,
+            agent_execution_resolver,
             provider_settings: Arc::new(provider_settings),
             tool_runner: Arc::new(ScheduledToolRunner::from_current_dir()?),
             tool_authorizer: Arc::new(AllowListedToolAuthorizer),
@@ -43,6 +53,14 @@ impl DesktopSessionState {
 
     pub fn provider_settings(&self) -> Arc<ProviderSettingsService> {
         Arc::clone(&self.provider_settings)
+    }
+
+    pub fn agent_profiles(&self) -> SharedAgentProfileStore {
+        Arc::clone(&self.agent_profiles)
+    }
+
+    pub fn agent_execution_resolver(&self) -> SharedAgentExecutionResolver {
+        Arc::clone(&self.agent_execution_resolver)
     }
 
     pub fn turn_manager(&self) -> Arc<crate::chat::TurnManager> {

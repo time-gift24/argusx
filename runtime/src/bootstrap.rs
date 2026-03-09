@@ -6,6 +6,8 @@ pub struct ArgusxRuntime {
     pub config: Arc<crate::AppConfig>,
     pub sqlite_pool: sqlx::SqlitePool,
     pub session_manager: session::manager::SessionManager,
+    pub agent_profiles: Arc<agent::AgentProfileStore>,
+    pub agent_execution_resolver: Arc<agent::AgentExecutionResolver>,
     pub telemetry: Option<telemetry::TelemetryRuntime>,
     _log_guard: tracing_appender::non_blocking::WorkerGuard,
 }
@@ -42,6 +44,23 @@ pub async fn build_runtime_from_config(config: crate::AppConfig) -> anyhow::Resu
             tracing::error!(event_name = "runtime_bootstrap_failed", stage = "sqlite_connect", error = %err);
             err
         })?;
+    let agent_profiles = Arc::new(agent::AgentProfileStore::new(pool.clone()));
+    agent_profiles
+        .init_schema()
+        .await
+        .context("failed to initialize agent schema")
+        .map_err(|err| {
+            tracing::error!(event_name = "runtime_bootstrap_failed", stage = "agent_init_schema", error = %err);
+            err
+        })?;
+    agent_profiles
+        .seed_builtin_profiles()
+        .await
+        .context("failed to seed builtin agent profiles")
+        .map_err(|err| {
+            tracing::error!(event_name = "runtime_bootstrap_failed", stage = "agent_seed_builtin_profiles", error = %err);
+            err
+        })?;
     let store = session::store::ThreadStore::new(pool.clone());
     store
         .init_schema()
@@ -66,6 +85,8 @@ pub async fn build_runtime_from_config(config: crate::AppConfig) -> anyhow::Resu
         config: Arc::new(config),
         sqlite_pool: pool,
         session_manager: manager,
+        agent_profiles,
+        agent_execution_resolver: Arc::new(agent::AgentExecutionResolver::new()),
         telemetry: logging.telemetry,
         _log_guard: logging.log_guard,
     })
