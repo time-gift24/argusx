@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use argus_core::ToolCall;
 use async_trait::async_trait;
@@ -11,9 +11,9 @@ use uuid::Uuid;
 
 use crate::{
     chat::{
-        AllowListedToolAuthorizer, HydratedChatTurn, HydratedChatTurnStatus, HydratedToolCall,
-        HydratedToolCallStatus, ProviderModelRunner, ScheduledToolRunner,
-        plan::snapshot_from_output,
+        plan::snapshot_from_output, AllowListedToolAuthorizer, HydratedChatTurn,
+        HydratedChatTurnStatus, HydratedToolCall, HydratedToolCallStatus, ProviderModelRunner,
+        ScheduledToolRunner,
     },
     provider_settings::ProviderSettingsService,
 };
@@ -26,23 +26,32 @@ pub struct DesktopSessionState {
     tool_runner: Arc<ScheduledToolRunner>,
     tool_authorizer: Arc<AllowListedToolAuthorizer>,
     turn_manager: Arc<crate::chat::TurnManager>,
+    allowed_tool_roots: Vec<PathBuf>,
 }
 
 impl DesktopSessionState {
-    pub fn new(manager: SessionManager) -> Result<Self, TurnError> {
-        let provider_settings = ProviderSettingsService::from_default_location()
-            .map_err(|err| TurnError::Runtime(err.to_string()))?;
+    pub(crate) fn from_bootstrap(
+        manager: SessionManager,
+        provider_settings: ProviderSettingsService,
+        allowed_tool_roots: Vec<PathBuf>,
+    ) -> Result<Self, TurnError> {
+        let tool_runner = ScheduledToolRunner::new(allowed_tool_roots.clone())?;
         Ok(Self {
             manager: Arc::new(manager),
             provider_settings: Arc::new(provider_settings),
-            tool_runner: Arc::new(ScheduledToolRunner::from_current_dir()?),
+            tool_runner: Arc::new(tool_runner),
             tool_authorizer: Arc::new(AllowListedToolAuthorizer),
             turn_manager: Arc::new(crate::chat::TurnManager::new()),
+            allowed_tool_roots,
         })
     }
 
     pub fn provider_settings(&self) -> Arc<ProviderSettingsService> {
         Arc::clone(&self.provider_settings)
+    }
+
+    pub fn tool_runner(&self) -> Arc<ScheduledToolRunner> {
+        Arc::clone(&self.tool_runner)
     }
 
     pub fn turn_manager(&self) -> Arc<crate::chat::TurnManager> {
@@ -53,9 +62,12 @@ impl DesktopSessionState {
         &self,
         observer: Arc<dyn TurnObserver>,
     ) -> Result<TurnDependencies, TurnError> {
-        let model: Arc<dyn turn::ModelRunner> = Arc::new(ProviderModelRunner::from_provider_settings(
-            Some(self.provider_settings.as_ref()),
-        )?);
+        let model: Arc<dyn turn::ModelRunner> = Arc::new(
+            ProviderModelRunner::from_provider_settings_with_allowed_roots(
+                Some(self.provider_settings.as_ref()),
+                &self.allowed_tool_roots,
+            )?,
+        );
         let tool_runner: Arc<dyn turn::ToolRunner> = self.tool_runner.clone();
         let authorizer: Arc<dyn turn::ToolAuthorizer> = self.tool_authorizer.clone();
 
@@ -238,7 +250,9 @@ pub(crate) fn hydrate_chat_turn(turn: &session::TurnRecord) -> HydratedChatTurn 
 
     for message in &turn.transcript {
         match message {
-            session::PersistedMessage::AssistantText { content } => assistant_text.push_str(content),
+            session::PersistedMessage::AssistantText { content } => {
+                assistant_text.push_str(content)
+            }
             session::PersistedMessage::AssistantToolCalls { content, calls } => {
                 if let Some(content) = content {
                     assistant_text.push_str(content);
@@ -294,7 +308,8 @@ pub(crate) fn hydrate_chat_turn(turn: &session::TurnRecord) -> HydratedChatTurn 
                     }
                 }
             }
-            session::PersistedMessage::User { .. } | session::PersistedMessage::SystemNote { .. } => {}
+            session::PersistedMessage::User { .. }
+            | session::PersistedMessage::SystemNote { .. } => {}
         }
     }
 
@@ -450,7 +465,10 @@ fn tool_name(call: &ToolCall) -> &str {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use session::{PersistedMessage, PersistedToolCall, PersistedToolKind, ThreadLifecycle, ThreadRecord, TurnRecord, TurnStatus};
+    use session::{
+        PersistedMessage, PersistedToolCall, PersistedToolKind, ThreadLifecycle, ThreadRecord,
+        TurnRecord, TurnStatus,
+    };
 
     use super::*;
     use tokio::sync::broadcast;
@@ -559,7 +577,9 @@ mod tests {
                         sequence: 0,
                         call_id: "call-update-plan".into(),
                         tool_name: "update_plan".into(),
-                        arguments: r#"{"plan":[{"step":"Write failing test","status":"completed"}]}"#.into(),
+                        arguments:
+                            r#"{"plan":[{"step":"Write failing test","status":"completed"}]}"#
+                                .into(),
                         kind: PersistedToolKind::Builtin,
                         server_label: None,
                     }],
@@ -601,9 +621,15 @@ mod tests {
         assert_eq!(hydrated.status, HydratedChatTurnStatus::Completed);
         assert_eq!(hydrated.tool_calls.len(), 1);
         assert_eq!(hydrated.tool_calls[0].call_id, "call-update-plan");
-        assert_eq!(hydrated.tool_calls[0].status, HydratedToolCallStatus::Success);
         assert_eq!(
-            hydrated.latest_plan.as_ref().map(|plan| plan.title.as_str()),
+            hydrated.tool_calls[0].status,
+            HydratedToolCallStatus::Success
+        );
+        assert_eq!(
+            hydrated
+                .latest_plan
+                .as_ref()
+                .map(|plan| plan.title.as_str()),
             Some("Execution Plan")
         );
     }

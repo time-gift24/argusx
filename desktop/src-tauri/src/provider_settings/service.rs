@@ -6,12 +6,12 @@ use reqwest::Url;
 use uuid::Uuid;
 
 use crate::provider_settings::{
-    AesGcmSecretBox, EncryptedSecret, KeyringDataKeyStore, ProviderProfileStore,
-    ProviderSettingsError,
     model::{
         ProviderConnectionResult, ProviderKind, ProviderProfileRecord, ProviderProfileSummary,
         ProviderRuntimeConfig, SaveProviderProfileInput, TestProviderProfileInput,
     },
+    AesGcmSecretBox, EncryptedSecret, KeyringDataKeyStore, ProviderProfileStore,
+    ProviderSettingsError,
 };
 
 #[derive(Clone)]
@@ -25,10 +25,14 @@ impl ProviderSettingsService {
         Self { store, secret_box }
     }
 
-    pub fn from_default_location() -> Result<Self, ProviderSettingsError> {
-        let store = ProviderProfileStore::new(default_db_path())?;
+    pub fn from_db_path(db_path: PathBuf) -> Result<Self, ProviderSettingsError> {
+        let store = ProviderProfileStore::new(db_path)?;
         let secret_box = AesGcmSecretBox::new(Arc::new(KeyringDataKeyStore::default()));
         Ok(Self::new(store, secret_box))
+    }
+
+    pub fn from_default_location() -> Result<Self, ProviderSettingsError> {
+        Self::from_db_path(default_db_path())
     }
 
     pub fn list_profiles(&self) -> Result<Vec<ProviderProfileSummary>, ProviderSettingsError> {
@@ -44,15 +48,11 @@ impl ProviderSettingsService {
         let base_url = normalize_url(trim_required("base_url", input.base_url)?)?;
         let model = trim_required("model", input.model)?;
         let existing = match input.id.as_deref() {
-            Some(profile_id) => Some(
-                self.store
-                    .load_profile(profile_id)?
-                    .ok_or_else(|| {
-                        ProviderSettingsError::NotFound(format!(
-                            "provider profile `{profile_id}` not found"
-                        ))
-                    })?,
-            ),
+            Some(profile_id) => Some(self.store.load_profile(profile_id)?.ok_or_else(|| {
+                ProviderSettingsError::NotFound(format!(
+                    "provider profile `{profile_id}` not found"
+                ))
+            })?),
             None => None,
         };
         self.ensure_provider_kind_constraints(provider_kind, existing.as_ref())?;
@@ -83,8 +83,7 @@ impl ProviderSettingsService {
         } else if let Some(existing) = existing.as_ref() {
             if existing.is_default && !input.is_default {
                 return Err(ProviderSettingsError::Validation(
-                    "default profile cannot be unset without selecting another default"
-                        .to_string(),
+                    "default profile cannot be unset without selecting another default".to_string(),
                 ));
             }
             input.is_default
@@ -118,14 +117,9 @@ impl ProviderSettingsService {
     }
 
     pub fn delete_profile(&self, profile_id: &str) -> Result<(), ProviderSettingsError> {
-        let profile = self
-            .store
-            .load_profile(profile_id)?
-            .ok_or_else(|| {
-                ProviderSettingsError::NotFound(format!(
-                    "provider profile `{profile_id}` not found"
-                ))
-            })?;
+        let profile = self.store.load_profile(profile_id)?.ok_or_else(|| {
+            ProviderSettingsError::NotFound(format!("provider profile `{profile_id}` not found"))
+        })?;
 
         if profile.is_default {
             return Err(ProviderSettingsError::Validation(
@@ -209,14 +203,9 @@ impl ProviderSettingsService {
         }
 
         let current_id = existing.map(|record| record.id.as_str());
-        let has_other_zai = self
-            .store
-            .list_profiles()?
-            .into_iter()
-            .any(|profile| {
-                profile.provider_kind == ProviderKind::Zai
-                    && Some(profile.id.as_str()) != current_id
-            });
+        let has_other_zai = self.store.list_profiles()?.into_iter().any(|profile| {
+            profile.provider_kind == ProviderKind::Zai && Some(profile.id.as_str()) != current_id
+        });
 
         if has_other_zai {
             return Err(ProviderSettingsError::Validation(
@@ -235,8 +224,8 @@ fn default_db_path() -> PathBuf {
 }
 
 fn build_models_endpoint(base_url: &str) -> Result<Url, ProviderSettingsError> {
-    let mut url = Url::parse(base_url)
-        .map_err(|err| ProviderSettingsError::Validation(err.to_string()))?;
+    let mut url =
+        Url::parse(base_url).map_err(|err| ProviderSettingsError::Validation(err.to_string()))?;
     let mut path = url.path().trim_end_matches('/').to_string();
     if path.is_empty() {
         path.push('/');

@@ -21,7 +21,7 @@ toml = { workspace = true }
 tracing = { workspace = true }
 walkdir = "2.0"
 chromiumoxide = { version = "0.5", features = ["tokio-runtime"] }
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { workspace = true }
 base64 = "0.22"
 
 [dev-dependencies]

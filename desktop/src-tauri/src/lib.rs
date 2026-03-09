@@ -1,23 +1,25 @@
+pub mod bootstrap;
 pub mod chat;
 pub mod provider_settings;
 mod session_commands;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
+use bootstrap::build_desktop_bootstrap;
 use session_commands::{
     cancel_thread_turn, create_thread, list_threads, resolve_thread_permission, send_message,
-    spawn_session_event_bridge, switch_thread, DesktopSessionState,
+    spawn_session_event_bridge, switch_thread,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> Result<(), BoxError> {
     let runtime = tauri::async_runtime::block_on(runtime::build_runtime())?;
-    let manager = runtime.session_manager.clone();
-    let session_state = DesktopSessionState::new(manager).map_err(|err| -> BoxError { Box::new(err) })?;
-    let bridge_manager = session_state.manager.clone();
+    let bootstrap =
+        build_desktop_bootstrap(runtime).map_err(|err| -> BoxError { Box::new(err) })?;
+    let bridge_manager = bootstrap.session_state.manager.clone();
 
     let run_result = tauri::Builder::default()
-        .manage(session_state)
+        .manage(bootstrap.session_state)
         .setup(move |app| {
             spawn_session_event_bridge(app.handle().clone(), bridge_manager.clone());
             Ok(())
@@ -52,7 +54,8 @@ pub fn run() -> Result<(), BoxError> {
         tracing::error!(event_name = "tauri_run_error", error = %err);
     }
 
-    let shutdown_result = runtime
+    let shutdown_result = bootstrap
+        .runtime
         .shutdown(std::time::Duration::from_secs(10))
         .map_err(Into::into);
     if let Err(ref err) = shutdown_result {

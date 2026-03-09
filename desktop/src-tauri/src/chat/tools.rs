@@ -1,10 +1,10 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use argus_core::Builtin;
 use async_trait::async_trait;
 use tool::{
-    GlobTool, GrepTool, ReadTool, ToolContext, ToolError, ToolResult, UpdatePlanTool,
     scheduler::{BuiltinRegistration, EffectiveToolPolicy, ToolScheduler},
+    GlobTool, GrepTool, ReadTool, ToolContext, ToolError, ToolResult, UpdatePlanTool,
 };
 use turn::{ToolRunner, TurnError};
 
@@ -13,33 +13,30 @@ pub struct ScheduledToolRunner {
 }
 
 impl ScheduledToolRunner {
-    pub fn from_current_dir() -> Result<Self, TurnError> {
+    pub fn new(allowed_roots: Vec<PathBuf>) -> Result<Self, TurnError> {
+        let read_tool = Arc::new(ReadTool::new(allowed_roots.clone()).map_err(map_init_error)?);
+        let glob_tool = Arc::new(GlobTool::new(allowed_roots.clone()).map_err(map_init_error)?);
+        let grep_tool = Arc::new(GrepTool::new(allowed_roots).map_err(map_init_error)?);
         let policy = EffectiveToolPolicy {
             allow_parallel: true,
             max_concurrency: 4,
         };
 
         let scheduler = ToolScheduler::new([
-            BuiltinRegistration::new(
-                Builtin::Read,
-                Arc::new(ReadTool::from_current_dir().map_err(map_init_error)?),
-                policy,
-            ),
-            BuiltinRegistration::new(
-                Builtin::Glob,
-                Arc::new(GlobTool::from_current_dir().map_err(map_init_error)?),
-                policy,
-            ),
-            BuiltinRegistration::new(
-                Builtin::Grep,
-                Arc::new(GrepTool::from_current_dir().map_err(map_init_error)?),
-                policy,
-            ),
+            BuiltinRegistration::new(Builtin::Read, read_tool, policy),
+            BuiltinRegistration::new(Builtin::Glob, glob_tool, policy),
+            BuiltinRegistration::new(Builtin::Grep, grep_tool, policy),
             BuiltinRegistration::new(Builtin::UpdatePlan, Arc::new(UpdatePlanTool), policy),
         ])
         .map_err(map_tool_error)?;
 
         Ok(Self { scheduler })
+    }
+
+    pub fn from_current_dir() -> Result<Self, TurnError> {
+        Self::new(vec![
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        ])
     }
 }
 
@@ -50,7 +47,10 @@ impl ToolRunner for ScheduledToolRunner {
         call: argus_core::ToolCall,
         ctx: ToolContext,
     ) -> Result<ToolResult, TurnError> {
-        self.scheduler.execute(call, ctx).await.map_err(map_tool_error)
+        self.scheduler
+            .execute(call, ctx)
+            .await
+            .map_err(map_tool_error)
     }
 }
 
@@ -99,7 +99,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result.output["plan"]["tasks"][0]["title"], "Write failing test");
+        assert_eq!(
+            result.output["plan"]["tasks"][0]["title"],
+            "Write failing test"
+        );
         assert_eq!(result.output["plan"]["tasks"][0]["status"], "in_progress");
     }
 }
