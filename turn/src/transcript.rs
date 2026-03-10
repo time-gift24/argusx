@@ -46,6 +46,12 @@ impl TurnTranscript {
         self.messages.push(Arc::new(message));
     }
 
+    /// Push a message that is already wrapped in Arc.
+    /// Avoids an extra allocation compared to `push()`.
+    pub fn push_arc(&mut self, message: Arc<TurnMessage>) {
+        self.messages.push(message);
+    }
+
     pub fn messages(&self) -> &[SharedTurnMessage] {
         &self.messages
     }
@@ -60,6 +66,34 @@ impl TurnTranscript {
             .map(|message| message.as_ref().clone())
             .collect()
     }
+}
+
+/// Extract the call ID from a ToolCall as a string slice.
+pub fn call_id_str(call: &ToolCall) -> &str {
+    match call {
+        ToolCall::FunctionCall { call_id, .. } => call_id,
+        ToolCall::Builtin(c) => &c.call_id,
+        ToolCall::Mcp(c) => &c.id,
+    }
+}
+
+/// Extract the call ID from a ToolCall as an Arc<str>.
+pub fn call_id_arc(call: &ToolCall) -> Arc<str> {
+    call_id_str(call).into()
+}
+
+/// Extract the tool name from a ToolCall as a string slice.
+pub fn tool_name_str(call: &ToolCall) -> &str {
+    match call {
+        ToolCall::FunctionCall { name, .. } => name,
+        ToolCall::Builtin(c) => c.builtin.canonical_name(),
+        ToolCall::Mcp(c) => c.name.as_deref().unwrap_or_default(),
+    }
+}
+
+/// Extract the tool name from a ToolCall as an Arc<str>.
+pub fn tool_name_arc(call: &ToolCall) -> Arc<str> {
+    tool_name_str(call).into()
 }
 
 #[cfg(test)]

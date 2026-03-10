@@ -53,7 +53,6 @@ async fn slow_tool_times_out_but_turn_still_completes() {
             ToolResult::ok(json!({"source":"slow"})),
         )])),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     let mut events = Vec::new();

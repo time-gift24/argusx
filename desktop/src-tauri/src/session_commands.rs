@@ -1,19 +1,17 @@
 use std::sync::Arc;
 
-use argus_core::ToolCall;
-use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::{json, Value};
 use session::manager::{SessionEvent, SessionManager, TurnDependencies};
 use tauri::{AppHandle, Emitter, State};
-use turn::{PermissionDecision, TurnError, TurnEvent, TurnObserver};
+use turn::{call_id_arc, tool_name_arc, PermissionDecision, TurnError, TurnEvent};
 use uuid::Uuid;
 
 use crate::{
     chat::{
-        AllowListedToolAuthorizer, HydratedChatTurn, HydratedChatTurnStatus, HydratedToolCall,
+        plan::snapshot_from_output, AllowListedToolAuthorizer, DesktopTurnEvent,
+        DesktopTurnEventMapper, HydratedChatTurn, HydratedChatTurnStatus, HydratedToolCall,
         HydratedToolCallStatus, ProviderModelRunner, ScheduledToolRunner,
-        plan::snapshot_from_output,
     },
     provider_settings::ProviderSettingsService,
 };
@@ -29,11 +27,11 @@ pub struct DesktopSessionState {
 }
 
 impl DesktopSessionState {
-    pub fn new(manager: SessionManager) -> Result<Self, TurnError> {
+    pub fn new(manager: Arc<SessionManager>) -> Result<Self, TurnError> {
         let provider_settings = ProviderSettingsService::from_default_location()
             .map_err(|err| TurnError::Runtime(err.to_string()))?;
         Ok(Self {
-            manager: Arc::new(manager),
+            manager,
             provider_settings: Arc::new(provider_settings),
             tool_runner: Arc::new(ScheduledToolRunner::from_current_dir()?),
             tool_authorizer: Arc::new(AllowListedToolAuthorizer),
@@ -49,13 +47,10 @@ impl DesktopSessionState {
         Arc::clone(&self.turn_manager)
     }
 
-    pub fn build_turn_dependencies(
-        &self,
-        observer: Arc<dyn TurnObserver>,
-    ) -> Result<TurnDependencies, TurnError> {
-        let model: Arc<dyn turn::ModelRunner> = Arc::new(ProviderModelRunner::from_provider_settings(
-            Some(self.provider_settings.as_ref()),
-        )?);
+    pub fn build_turn_dependencies(&self) -> Result<TurnDependencies, TurnError> {
+        let model: Arc<dyn turn::ModelRunner> = Arc::new(
+            ProviderModelRunner::from_provider_settings(Some(self.provider_settings.as_ref()))?,
+        );
         let tool_runner: Arc<dyn turn::ToolRunner> = self.tool_runner.clone();
         let authorizer: Arc<dyn turn::ToolAuthorizer> = self.tool_authorizer.clone();
 
@@ -63,7 +58,6 @@ impl DesktopSessionState {
             model,
             tool_runner,
             authorizer,
-            observer,
         })
     }
 
@@ -103,10 +97,16 @@ pub struct ThreadEventPayload {
 pub fn spawn_session_event_bridge(app: AppHandle, manager: SharedSessionManager) {
     tauri::async_runtime::spawn(async move {
         let mut rx = manager.subscribe();
+        let mut turn_event_mapper = DesktopTurnEventMapper::default();
 
         while let Some(event) = recv_session_event(&mut rx).await {
-            let payload = session_event_to_payload(event);
+            let payload = session_event_to_payload(event.clone());
             let _ = app.emit("thread-event", payload);
+
+            for compat_event in session_event_to_desktop_turn_events(&mut turn_event_mapper, &event)
+            {
+                let _ = app.emit("turn-event", compat_event);
+            }
         }
     });
 }
@@ -170,12 +170,16 @@ pub async fn send_message(
     content: String,
 ) -> Result<(), String> {
     let deps = state
-        .build_turn_dependencies(Arc::new(NoopTurnObserver))
+        .build_turn_dependencies()
         .map_err(|err| err.to_string())?;
     let thread_id = parse_uuid(&thread_id)?;
-    state
+    let thread = state
         .manager
-        .send_message(thread_id, content, deps)
+        .get_thread(thread_id, Some(deps))
+        .await
+        .map_err(|err| err.to_string())?;
+    thread
+        .send_message(content)
         .await
         .map(|_| ())
         .map_err(|err| err.to_string())
@@ -195,9 +199,13 @@ pub async fn resolve_thread_permission(
         other => return Err(format!("unsupported permission decision: {other}")),
     };
 
-    state
+    let thread = state
         .manager
-        .resolve_permission(thread_id, request_id, decision)
+        .get_thread(thread_id, None)
+        .await
+        .map_err(|err| err.to_string())?;
+    thread
+        .resolve_permission(request_id, decision)
         .await
         .map_err(|err| err.to_string())
 }
@@ -208,11 +216,12 @@ pub async fn cancel_thread_turn(
     thread_id: String,
 ) -> Result<(), String> {
     let thread_id = parse_uuid(&thread_id)?;
-    state
+    let thread = state
         .manager
-        .cancel_turn(thread_id)
+        .get_thread(thread_id, None)
         .await
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+    thread.cancel_turn().await.map_err(|err| err.to_string())
 }
 
 fn parse_uuid(raw: &str) -> Result<Uuid, String> {
@@ -238,7 +247,9 @@ pub(crate) fn hydrate_chat_turn(turn: &session::TurnRecord) -> HydratedChatTurn 
 
     for message in &turn.transcript {
         match message {
-            session::PersistedMessage::AssistantText { content } => assistant_text.push_str(content),
+            session::PersistedMessage::AssistantText { content } => {
+                assistant_text.push_str(content)
+            }
             session::PersistedMessage::AssistantToolCalls { content, calls } => {
                 if let Some(content) = content {
                     assistant_text.push_str(content);
@@ -294,7 +305,8 @@ pub(crate) fn hydrate_chat_turn(turn: &session::TurnRecord) -> HydratedChatTurn 
                     }
                 }
             }
-            session::PersistedMessage::User { .. } | session::PersistedMessage::SystemNote { .. } => {}
+            session::PersistedMessage::User { .. }
+            | session::PersistedMessage::SystemNote { .. } => {}
         }
     }
 
@@ -340,15 +352,6 @@ fn hydrated_turn_error(turn: &session::TurnRecord, fallback: &str) -> String {
         .unwrap_or_else(|| fallback.to_string())
 }
 
-struct NoopTurnObserver;
-
-#[async_trait]
-impl TurnObserver for NoopTurnObserver {
-    async fn on_event(&self, _event: &TurnEvent) -> Result<(), TurnError> {
-        Ok(())
-    }
-}
-
 fn session_event_to_payload(event: SessionEvent) -> ThreadEventPayload {
     match event {
         SessionEvent::Thread { thread_id, event } => ThreadEventPayload {
@@ -372,6 +375,16 @@ fn session_event_to_payload(event: SessionEvent) -> ThreadEventPayload {
     }
 }
 
+fn session_event_to_desktop_turn_events(
+    mapper: &mut DesktopTurnEventMapper,
+    event: &SessionEvent,
+) -> Vec<DesktopTurnEvent> {
+    match event {
+        SessionEvent::Thread { .. } => Vec::new(),
+        SessionEvent::Turn { turn_id, event, .. } => mapper.map_event(&turn_id.to_string(), event),
+    }
+}
+
 fn turn_event_payload(thread_id: Uuid, turn_id: Uuid, event: TurnEvent) -> ThreadEventPayload {
     let (kind, data) = match event {
         TurnEvent::TurnStarted => ("turn-started", json!({})),
@@ -382,8 +395,8 @@ fn turn_event_payload(thread_id: Uuid, turn_id: Uuid, event: TurnEvent) -> Threa
         TurnEvent::ToolCallPrepared { call } => (
             "tool-call-prepared",
             json!({
-                "callId": tool_call_id(call.as_ref()),
-                "toolName": tool_name(call.as_ref()),
+                "callId": call_id_arc(call.as_ref()),
+                "toolName": tool_name_arc(call.as_ref()),
             }),
         ),
         TurnEvent::ToolCallCompleted { call_id, result } => (
@@ -431,26 +444,13 @@ fn turn_event_payload(thread_id: Uuid, turn_id: Uuid, event: TurnEvent) -> Threa
     }
 }
 
-fn tool_call_id(call: &ToolCall) -> &str {
-    match call {
-        ToolCall::FunctionCall { call_id, .. } => call_id,
-        ToolCall::Builtin(call) => &call.call_id,
-        ToolCall::Mcp(call) => &call.id,
-    }
-}
-
-fn tool_name(call: &ToolCall) -> &str {
-    match call {
-        ToolCall::FunctionCall { name, .. } => name,
-        ToolCall::Builtin(call) => call.builtin.canonical_name(),
-        ToolCall::Mcp(call) => call.name.as_deref().unwrap_or_default(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use session::{PersistedMessage, PersistedToolCall, PersistedToolKind, ThreadLifecycle, ThreadRecord, TurnRecord, TurnStatus};
+    use session::{
+        PersistedMessage, PersistedToolCall, PersistedToolKind, ThreadLifecycle, ThreadRecord,
+        TurnRecord, TurnStatus,
+    };
 
     use super::*;
     use tokio::sync::broadcast;
@@ -559,7 +559,9 @@ mod tests {
                         sequence: 0,
                         call_id: "call-update-plan".into(),
                         tool_name: "update_plan".into(),
-                        arguments: r#"{"plan":[{"step":"Write failing test","status":"completed"}]}"#.into(),
+                        arguments:
+                            r#"{"plan":[{"step":"Write failing test","status":"completed"}]}"#
+                                .into(),
                         kind: PersistedToolKind::Builtin,
                         server_label: None,
                     }],
@@ -601,9 +603,15 @@ mod tests {
         assert_eq!(hydrated.status, HydratedChatTurnStatus::Completed);
         assert_eq!(hydrated.tool_calls.len(), 1);
         assert_eq!(hydrated.tool_calls[0].call_id, "call-update-plan");
-        assert_eq!(hydrated.tool_calls[0].status, HydratedToolCallStatus::Success);
         assert_eq!(
-            hydrated.latest_plan.as_ref().map(|plan| plan.title.as_str()),
+            hydrated.tool_calls[0].status,
+            HydratedToolCallStatus::Success
+        );
+        assert_eq!(
+            hydrated
+                .latest_plan
+                .as_ref()
+                .map(|plan| plan.title.as_str()),
             Some("Execution Plan")
         );
     }

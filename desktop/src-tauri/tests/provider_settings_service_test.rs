@@ -1,8 +1,8 @@
 use std::{path::PathBuf, sync::Arc};
 
 use desktop_lib::provider_settings::{
-    AesGcmSecretBox, DataKeyStore, ProviderKind, ProviderProfileStore,
-    ProviderSettingsError, ProviderSettingsService, SaveProviderProfileInput,
+    AesGcmSecretBox, DataKeyStore, ProviderKind, ProviderProfileStore, ProviderSettingsError,
+    ProviderSettingsService, SaveProviderProfileInput,
 };
 use rusqlite::Connection;
 use uuid::Uuid;

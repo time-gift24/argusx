@@ -49,7 +49,6 @@ async fn tool_batch_emits_each_result_immediately_then_finishes_step_once() {
             ("call-2", 5, ToolResult::ok(json!({"source":"fast"}))),
         ])),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     let mut events = Vec::new();
@@ -122,7 +121,6 @@ async fn completed_tool_turn_returns_transcript_and_final_output() {
             ToolResult::ok(json!({"source":"fast"})),
         )])),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     while handle.next_event().await.is_some() {}

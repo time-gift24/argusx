@@ -3,11 +3,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::provider_settings::{
-    ProviderSettingsError,
     model::{ProviderKind, ProviderProfileRecord, ProviderProfileSummary},
+    ProviderSettingsError,
 };
 
 const SCHEMA_SQL: &str = r#"
@@ -47,7 +47,9 @@ impl ProviderProfileStore {
         Ok(store)
     }
 
-    pub(crate) fn list_profiles(&self) -> Result<Vec<ProviderProfileSummary>, ProviderSettingsError> {
+    pub(crate) fn list_profiles(
+        &self,
+    ) -> Result<Vec<ProviderProfileSummary>, ProviderSettingsError> {
         let conn = self.connection()?;
         let mut stmt = conn.prepare(
             "SELECT id, provider_kind, name, base_url, model, is_default
@@ -93,7 +95,9 @@ impl ProviderProfileStore {
             .map_err(ProviderSettingsError::from)
     }
 
-    pub(crate) fn load_default_profile(&self) -> Result<Option<ProviderProfileRecord>, ProviderSettingsError> {
+    pub(crate) fn load_default_profile(
+        &self,
+    ) -> Result<Option<ProviderProfileRecord>, ProviderSettingsError> {
         let conn = self.connection()?;
         let mut stmt = conn.prepare(
             "SELECT id, provider_kind, name, base_url, model, api_key_ciphertext, api_key_nonce,
@@ -119,7 +123,10 @@ impl ProviderProfileStore {
         Ok(exists == 1)
     }
 
-    pub(crate) fn save_profile(&self, record: &ProviderProfileRecord) -> Result<(), ProviderSettingsError> {
+    pub(crate) fn save_profile(
+        &self,
+        record: &ProviderProfileRecord,
+    ) -> Result<(), ProviderSettingsError> {
         let mut conn = self.connection()?;
         let tx = conn.transaction()?;
 
@@ -238,7 +245,11 @@ impl ProviderProfileStore {
 }
 
 fn bool_to_int(value: bool) -> i64 {
-    if value { 1 } else { 0 }
+    if value {
+        1
+    } else {
+        0
+    }
 }
 
 fn map_record_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProviderProfileRecord> {

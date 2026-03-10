@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use aead::{
+    aead::{rand_core::RngCore, Aead, OsRng},
     Aes256Gcm, KeyInit, Nonce,
-    aead::{Aead, OsRng, rand_core::RngCore},
 };
 use keyring::{Entry, Error as KeyringError};
 
@@ -49,7 +49,10 @@ impl AesGcmSecretBox {
         let cipher = Aes256Gcm::new_from_slice(&key)
             .map_err(|err| ProviderSettingsError::Crypto(err.to_string()))?;
         let plaintext = cipher
-            .decrypt(Nonce::from_slice(&encrypted.nonce), encrypted.ciphertext.as_ref())
+            .decrypt(
+                Nonce::from_slice(&encrypted.nonce),
+                encrypted.ciphertext.as_ref(),
+            )
             .map_err(|err| ProviderSettingsError::Crypto(err.to_string()))?;
 
         String::from_utf8(plaintext).map_err(|err| ProviderSettingsError::Crypto(err.to_string()))

@@ -79,7 +79,6 @@ async fn first_step_receives_prior_messages_before_current_user_input() {
         model,
         Arc::new(support::instant_tool_runner()),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     collect_events(handle).await;
@@ -130,7 +129,6 @@ async fn second_step_receives_tool_calls_and_result_in_messages() {
         model,
         Arc::new(support::instant_tool_runner()),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     collect_events(handle).await;
@@ -198,7 +196,6 @@ async fn second_step_replays_tool_results_in_original_call_order() {
             ("call-2", 5, ToolResult::ok(json!({"source":"fast"}))),
         ])),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     collect_events(handle).await;
@@ -261,7 +258,6 @@ async fn denied_tool_appears_as_error_tool_result_in_next_step() {
         model,
         Arc::new(support::instant_tool_runner()),
         Arc::new(authorizer),
-        Arc::new(support::FakeObserver),
     );
 
     collect_events(handle).await;
@@ -324,7 +320,6 @@ async fn timed_out_tool_appears_as_error_tool_result_in_next_step() {
             ToolResult::ok(json!({})),
         )])),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     collect_events(handle).await;
@@ -364,7 +359,6 @@ async fn length_finish_reason_maps_to_model_length_limit() {
         Arc::new(support::FakeModelRunner::new(vec![step])),
         Arc::new(support::instant_tool_runner()),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     let events = collect_events(handle).await;
@@ -406,7 +400,6 @@ async fn unknown_finish_reason_maps_to_model_protocol_error() {
         Arc::new(support::FakeModelRunner::new(vec![step])),
         Arc::new(support::instant_tool_runner()),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     let events = collect_events(handle).await;
@@ -466,7 +459,6 @@ async fn max_steps_force_text_makes_turn_complete_despite_greedy_model() {
         model,
         Arc::new(support::instant_tool_runner()),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     let events = collect_events(handle).await;
@@ -527,7 +519,6 @@ async fn max_steps_fail_policy_produces_max_steps_exceeded() {
         Arc::new(support::FakeModelRunner::new(steps)),
         Arc::new(support::instant_tool_runner()),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     let events = collect_events(handle).await;
@@ -585,7 +576,6 @@ async fn stream_idle_timeout_produces_llm_timeout() {
         Arc::new(HangingModel),
         Arc::new(support::instant_tool_runner()),
         Arc::new(support::FakeAuthorizer::default()),
-        Arc::new(support::FakeObserver),
     );
 
     let events = collect_events(handle).await;

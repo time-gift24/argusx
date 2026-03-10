@@ -52,7 +52,6 @@ async fn turn_waits_for_permission_and_resumes_after_allow() {
             "call-1",
             support::ask_permission("call-1", "perm-1"),
         )])),
-        Arc::new(support::FakeObserver),
     );
 
     let mut events = Vec::new();

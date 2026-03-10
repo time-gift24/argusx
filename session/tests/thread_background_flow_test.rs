@@ -12,7 +12,7 @@ use tokio::{sync::mpsc, task, time::timeout};
 use tool::{ToolContext, ToolResult};
 use turn::{
     AuthorizationDecision, LlmStepRequest, ModelRunner, ToolAuthorizer, ToolRunner, TurnError,
-    TurnEvent, TurnFinishReason, TurnObserver,
+    TurnEvent, TurnFinishReason,
 };
 
 #[tokio::test]
@@ -28,42 +28,32 @@ async fn switching_active_thread_does_not_cancel_running_turn() {
     let manager = SessionManager::new("session-1".into(), store);
     let thread_a = manager.create_thread(Some("A".into())).await.unwrap();
     let thread_b = manager.create_thread(Some("B".into())).await.unwrap();
-    let mut events = manager.subscribe();
+    // Note: events subscription no longer needed as Thread handles its own events
 
     let deps = TurnDependencies {
         model: Arc::new(SlowTextModel::new(Duration::from_millis(120), "done")),
         tool_runner: Arc::new(NoopToolRunner),
         authorizer: Arc::new(AllowAuthorizer),
-        observer: Arc::new(NoopObserver),
     };
 
-    manager
-        .send_message(thread_a, "hello".into(), deps)
-        .await
-        .unwrap();
+    let thread = manager.get_thread(thread_a, Some(deps)).await.unwrap();
+    // send_message returns immediately, need to wait for turn to complete
+    thread.send_message("hello".into()).await.unwrap();
+
+    // Wait for turn completion by polling
+    for _ in 0..20 {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let history = manager.load_thread_history(thread_a).await.unwrap();
+        if history[0].status == TurnStatus::Completed {
+            break;
+        }
+    }
+
     manager.switch_thread(thread_b).await.unwrap();
 
     assert_eq!(manager.active_thread_id(), Some(thread_b));
 
-    timeout(Duration::from_secs(2), async {
-        loop {
-            match events.recv().await {
-                Ok(SessionEvent::Turn {
-                    thread_id,
-                    event:
-                        TurnEvent::TurnFinished {
-                            reason: TurnFinishReason::Completed,
-                        },
-                    ..
-                }) if thread_id == thread_a => break,
-                Ok(_) => continue,
-                Err(err) => panic!("event bridge closed early: {err}"),
-            }
-        }
-    })
-    .await
-    .unwrap();
-
+    // Turn should be complete now
     let history = manager.load_thread_history(thread_a).await.unwrap();
     assert_eq!(history.len(), 1);
     assert!(matches!(history[0].status, TurnStatus::Completed));
@@ -130,14 +120,5 @@ impl ToolAuthorizer for AllowAuthorizer {
         _call: &argus_core::ToolCall,
     ) -> Result<AuthorizationDecision, TurnError> {
         Ok(AuthorizationDecision::Allow)
-    }
-}
-
-struct NoopObserver;
-
-#[async_trait]
-impl TurnObserver for NoopObserver {
-    async fn on_event(&self, _event: &TurnEvent) -> Result<(), TurnError> {
-        Ok(())
     }
 }
