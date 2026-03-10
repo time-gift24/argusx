@@ -9,9 +9,9 @@ use uuid::Uuid;
 
 use crate::{
     chat::{
-        plan::snapshot_from_output, AllowListedToolAuthorizer, HydratedChatTurn,
-        HydratedChatTurnStatus, HydratedToolCall, HydratedToolCallStatus, ProviderModelRunner,
-        ScheduledToolRunner,
+        plan::snapshot_from_output, AllowListedToolAuthorizer, DesktopTurnEvent,
+        DesktopTurnEventMapper, HydratedChatTurn, HydratedChatTurnStatus, HydratedToolCall,
+        HydratedToolCallStatus, ProviderModelRunner, ScheduledToolRunner,
     },
     provider_settings::ProviderSettingsService,
 };
@@ -97,10 +97,16 @@ pub struct ThreadEventPayload {
 pub fn spawn_session_event_bridge(app: AppHandle, manager: SharedSessionManager) {
     tauri::async_runtime::spawn(async move {
         let mut rx = manager.subscribe();
+        let mut turn_event_mapper = DesktopTurnEventMapper::default();
 
         while let Some(event) = recv_session_event(&mut rx).await {
-            let payload = session_event_to_payload(event);
+            let payload = session_event_to_payload(event.clone());
             let _ = app.emit("thread-event", payload);
+
+            for compat_event in session_event_to_desktop_turn_events(&mut turn_event_mapper, &event)
+            {
+                let _ = app.emit("turn-event", compat_event);
+            }
         }
     });
 }
@@ -215,10 +221,7 @@ pub async fn cancel_thread_turn(
         .get_thread(thread_id, None)
         .await
         .map_err(|err| err.to_string())?;
-    thread
-        .cancel_turn()
-        .await
-        .map_err(|err| err.to_string())
+    thread.cancel_turn().await.map_err(|err| err.to_string())
 }
 
 fn parse_uuid(raw: &str) -> Result<Uuid, String> {
@@ -369,6 +372,16 @@ fn session_event_to_payload(event: SessionEvent) -> ThreadEventPayload {
             turn_id,
             event,
         } => turn_event_payload(thread_id, turn_id, event),
+    }
+}
+
+fn session_event_to_desktop_turn_events(
+    mapper: &mut DesktopTurnEventMapper,
+    event: &SessionEvent,
+) -> Vec<DesktopTurnEvent> {
+    match event {
+        SessionEvent::Thread { .. } => Vec::new(),
+        SessionEvent::Turn { turn_id, event, .. } => mapper.map_event(&turn_id.to_string(), event),
     }
 }
 
